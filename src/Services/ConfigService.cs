@@ -15,21 +15,29 @@ namespace ScreenLock.Services
             get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ScreenLock"); }
         }
 
-        private static string PortableFilePath
+        public static string PortableFlagPath
         {
-            get { return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config.json"); }
+            get { return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "portable.ini"); }
         }
 
-        public static bool IsPortableMode { get; private set; }
+        public static string PortableDataDirPath
+        {
+            get { return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "app_data"); }
+        }
+
+        public static bool IsPortableMode
+        {
+            get { return File.Exists(PortableFlagPath); }
+        }
 
         public static string DirPath
         {
-            get { return IsPortableMode ? AppDomain.CurrentDomain.BaseDirectory : AppDataDirPath; }
+            get { return IsPortableMode ? PortableDataDirPath : AppDataDirPath; }
         }
 
         public static string FilePath
         {
-            get { return IsPortableMode ? PortableFilePath : Path.Combine(AppDataDirPath, "config.json"); }
+            get { return Path.Combine(DirPath, "config.json"); }
         }
 
         public static string TaskFilePath
@@ -61,14 +69,7 @@ namespace ScreenLock.Services
 
         public void LoadOrCreate()
         {
-            if (File.Exists(PortableFilePath))
-            {
-                IsPortableMode = true;
-                Current = ReadFile();
-                EnsureSampleCopied();
-                return;
-            }
-            if (!Directory.Exists(AppDataDirPath)) Directory.CreateDirectory(AppDataDirPath);
+            if (!Directory.Exists(DirPath)) Directory.CreateDirectory(DirPath);
             if (!File.Exists(FilePath))
             {
                 Current = new AppSettings();
@@ -107,10 +108,6 @@ namespace ScreenLock.Services
         {
             try
             {
-                if (!IsPortableMode && File.Exists(PortableFilePath))
-                {
-                    IsPortableMode = true;
-                }
                 if (!File.Exists(FilePath)) return false;
                 var settings = ReadFile();
                 Current = settings;

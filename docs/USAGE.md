@@ -1,16 +1,18 @@
 # ScreenLock AutoRun 使用说明
 
 > 宿主：`ScreenLock.exe` 常驻托盘即启用调度，无需额外服务或管理员权限。  
-> 配置与脚本路径跟随 `ScreenLock` 便携/漫游判定（`exe 同目录存在 config.json` 即便携）。
+> 配置与脚本路径跟随 `ScreenLock` 便携/漫游判定（`exe` 同目录下存在 `portable.ini` 即便携，所有数据隔离在 `app_data/` 目录中）。
 
 ## 1. 目录约定
 
-| 内容 | 便携模式 (`exe` 同目录有 `config.json`) | 漫游模式（默认） |
+| 内容 | 便携模式 (`exe` 同目录有 `portable.ini`) | 漫游模式（默认） |
 |---|---|---|
-| 主配置 | `ScreenLock.exe` 同目录 `config.json` | `%AppData%\ScreenLock\config.json` |
-| 任务配置 | `tasks.json` | `%AppData%\ScreenLock\tasks.json` |
-| 日志 | `logs/tasks.log` + `logs/task-<name>.log` | 同上 |
-| 脚本 | `scripts/` | `%AppData%\ScreenLock\scripts/` |
+| 数据根目录 | `ScreenLock.exe` 同目录 `app_data/` | `%AppData%\ScreenLock\` |
+| 主配置 | `app_data/config.json` | `%AppData%\ScreenLock\config.json` |
+| 任务配置 | `app_data/tasks.json` | `%AppData%\ScreenLock\tasks.json` |
+| 日志 | `app_data/logs/tasks.log` + `task-<name>.log` | `%AppData%\ScreenLock\logs/` |
+| 脚本 | `app_data/scripts/` | `%AppData%\ScreenLock\scripts/` |
+| 便携优势 | 程序升级时直接覆盖 exe/dll，完全不影响 `app_data/` 数据 | 系统原生 AppData 漫游支持 |
 
 首次启动自动生成 `tasks.json`（带注释示例）与 `scripts/` 空目录。托盘 `任务` 菜单可一键打开上述目录。
 

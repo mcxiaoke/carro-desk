@@ -38,18 +38,7 @@ namespace ScreenLock.Services.Tasks
         {
             if (_started) return;
             _started = true;
-            // read global switch from config (default true)
-            try
-            {
-                if (ConfigService.IsPortableMode || File.Exists(ConfigService.FilePath))
-                {
-                    // Config.Current may not be loaded yet if Start called before Config.LoadOrCreate, fallback true
-                    try { _globalEnabled = ConfigService.IsPortableMode ? true : true; } catch { _globalEnabled = true; }
-                    // try read from AppSettings if available
-                    // This will be corrected after App sets TasksEnabled
-                }
-            }
-            catch { }
+
             try
             {
                 // prefer AppSettings value if Config.Current exists

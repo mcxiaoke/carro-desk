@@ -835,7 +835,7 @@ namespace ScreenLock.Services.Tasks
             return @"// ScreenLock AutoRun tasks - place alongside config.json
 // docs: docs/AUTORUN-DESIGN.md / docs/USAGE.md
 // Trigger types: startup | interval | daily | cron | sessionLock | sessionUnlock | idle | manual | hotkey | watch
-// Scripts without path are resolved from: <DirPath>/scripts/  (portable: exe/scripts/, roaming: %AppData%/ScreenLock/scripts/)
+// Scripts without path are resolved from: <DirPath>/scripts/  (portable: <exe>/app_data/scripts/, roaming: %AppData%/ScreenLock/scripts/)
 // Supported: .ps1/.bat/.cmd/.vbs (hidden), .js -> node, .py/.pyw -> python (auto from PATH, hidden)
 // Manual tasks appear in tray -> Tasks -> Manual Run (click to execute)
 // Hotkey: Ctrl+Alt+Shift+Win + A-Z/0-9/F1-24 ; Watch: file watcher with debounce 500ms

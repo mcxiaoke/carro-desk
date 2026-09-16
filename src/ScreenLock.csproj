@@ -27,6 +27,9 @@
     <None Include="Samples\tasks.sample.json" Link="tasks.sample.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Include="Samples\portable.sample.ini" Link="portable.sample.ini">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <ItemGroup>

@@ -188,10 +188,10 @@
         <MenuItem x:Name="RecentMenu" Header="最近运行"/>
         <Separator/>
         <MenuItem Header="任务编辑器..." Click="OnTaskEditorClick"/>
-        <MenuItem Header="重载任务 (tasks.json)" Click="OnReloadTasksClick"/>
+        <MenuItem Header="重载任务" Click="OnReloadTasksClick"/>
     </MenuItem>
     <MenuItem Header="打开配置目录" Click="OnOpenConfigDirClick"/>
-    <MenuItem Header="重载配置 (settings.json)" Click="OnReloadConfigClick"/>
+    <MenuItem Header="重载配置" Click="OnReloadConfigClick"/>
 
     <Separator/>
 

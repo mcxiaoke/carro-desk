@@ -31,7 +31,7 @@ namespace ScreenLock.Views
                 _editing = cur.Clone();
 
                 PathText.Text = ConfigService.FilePath;
-                ModeText.Text = ConfigService.IsPortableMode ? "便携模式（exe 同目录）" : "漫游模式（%AppData%\\ScreenLock）";
+                ModeText.Text = ConfigService.IsPortableMode ? "便携模式（exe 目录\\app_data）" : "漫游模式（%AppData%\\ScreenLock）";
 
                 // IdleMinutes -> ComboBox (editable)
                 string idleStr = _editing.IdleMinutes.ToString();
