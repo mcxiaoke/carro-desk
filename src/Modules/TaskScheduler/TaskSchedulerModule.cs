@@ -5,9 +5,9 @@ using CarroDesk.Core;
 using CarroDesk.Core.Models;
 using CarroDesk.Host.Services;
 using CarroDesk.Modules.TaskScheduler.Models;
-using ScreenLock.Services;
-using ScreenLock.Services.Localization;
-using ScreenLock.Services.Tasks;
+using CarroDesk.Services;
+using CarroDesk.Services.Localization;
+using CarroDesk.Services.Tasks;
 
 namespace CarroDesk.Modules.TaskScheduler
 {
@@ -23,10 +23,9 @@ namespace CarroDesk.Modules.TaskScheduler
 
         public bool IsGlobalEnabled => Scheduler != null && Scheduler.IsGlobalEnabled;
 
-        public TaskSchedulerModule(IdleDetector idleDetector)
+        public TaskSchedulerModule()
         {
             Instance = this;
-            Scheduler = new TaskSchedulerService(idleDetector);
         }
 
         protected override void OnStart()
@@ -39,6 +38,11 @@ namespace CarroDesk.Modules.TaskScheduler
 
             try
             {
+                if (Scheduler == null)
+                {
+                    var idle = Context?.GetService<IIdleService>();
+                    Scheduler = new TaskSchedulerService(idle);
+                }
                 Scheduler?.Start();
             }
             catch (Exception ex)

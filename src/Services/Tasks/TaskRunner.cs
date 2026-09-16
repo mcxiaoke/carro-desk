@@ -4,9 +4,9 @@ using System.IO;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using ScreenLock.Models;
+using CarroDesk.Models;
 
-namespace ScreenLock.Services.Tasks
+namespace CarroDesk.Services.Tasks
 {
     public static class TaskRunner
     {
@@ -32,7 +32,7 @@ namespace ScreenLock.Services.Tasks
             }
             catch { }
 
-            // resolve script path via scripts/ subdir (portable: exe/scripts, non-portable: %AppData%/ScreenLock/scripts)
+            // resolve script path via scripts/ subdir (portable: exe/scripts, non-portable: %AppData%/CarroDesk/scripts)
             try { ScriptResolver.EnsureScriptsDir(); } catch { }
             string resolvedFile = file;
             try

@@ -1,8 +1,8 @@
 using System;
 using System.Text.RegularExpressions;
-using ScreenLock.Models;
+using CarroDesk.Models;
 
-namespace ScreenLock.Services.Tasks
+namespace CarroDesk.Services.Tasks
 {
     public static class TemplateExpander
     {

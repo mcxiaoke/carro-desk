@@ -1,10 +1,10 @@
 using System;
 using System.Windows;
 using System.Windows.Media.Animation;
-using ScreenLock.Services;
-using ScreenLock.Services.Localization;
+using CarroDesk.Services;
+using CarroDesk.Services.Localization;
 
-namespace ScreenLock.Views
+namespace CarroDesk.Views
 {
     public partial class VerifyPinWindow : Window
     {

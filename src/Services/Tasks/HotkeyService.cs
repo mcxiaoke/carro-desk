@@ -3,9 +3,9 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using CarroDesk.Core;
-using ScreenLock.Models;
+using CarroDesk.Models;
 
-namespace ScreenLock.Services.Tasks
+namespace CarroDesk.Services.Tasks
 {
     internal class HotkeyService : NativeWindow, IDisposable, IHotkeyService
     {

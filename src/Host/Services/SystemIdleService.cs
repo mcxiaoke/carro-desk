@@ -8,7 +8,7 @@ namespace CarroDesk.Host.Services
     /// <summary>
     /// 纯物理闲时服务实现（规范 §3.4）。
     /// 唯一 1s 线程池 Timer 扇出 IdleTick；SystemBusy 缓存轮询 2s，变化才广播。
-    /// 首次有 IdleTick 订阅者时懒启动，最后一个取消后自动停。
+    /// 首个 IdleTick/UserActiveDetected/SystemBusyChanged 订阅者出现时懒启动，最后一个取消后自动停。
     /// </summary>
     public class SystemIdleService : IIdleService
     {
@@ -33,16 +33,32 @@ namespace CarroDesk.Host.Services
 
         private readonly Timer _timer;
 
+        private Action<TimeSpan> _idleTickHandlers;
+        private Action _userActiveHandlers;
+        private Action<bool> _systemBusyHandlers;
+
         public TimeSpan RawIdle { get; private set; }
         public bool IsSystemBusyCached { get; private set; }
 
-        public event Action<TimeSpan> IdleTick;
-        public event Action UserActiveDetected;
-        public event Action<bool> SystemBusyChanged;
+        // 显式 add/remove：首个订阅者懒启动，最后一个取消自动停，无消费者不占 Timer。
+        public event Action<TimeSpan> IdleTick
+        {
+            add { _idleTickHandlers += value; RefreshLazy(); }
+            remove { _idleTickHandlers -= value; RefreshLazy(); }
+        }
+        public event Action UserActiveDetected
+        {
+            add { _userActiveHandlers += value; RefreshLazy(); }
+            remove { _userActiveHandlers -= value; RefreshLazy(); }
+        }
+        public event Action<bool> SystemBusyChanged
+        {
+            add { _systemBusyHandlers += value; RefreshLazy(); }
+            remove { _systemBusyHandlers -= value; RefreshLazy(); }
+        }
 
         public SystemIdleService()
         {
-            // 无消费者时惰性启动：TODO 供未来 ScreenLock/TaskScheduler 迁移到纯 IdleService 后订阅启用
             _timer = new Timer(Tick, null, Timeout.Infinite, Timeout.Infinite);
         }
 
@@ -56,16 +72,22 @@ namespace CarroDesk.Host.Services
             _timer.Change(Timeout.Infinite, Timeout.Infinite);
         }
 
+        private void RefreshLazy()
+        {
+            bool hasConsumers = _idleTickHandlers != null || _userActiveHandlers != null || _systemBusyHandlers != null;
+            if (hasConsumers) Start(); else Stop();
+        }
+
         private void Tick(object state)
         {
             TimeSpan raw = GetRawIdle();
             bool prevActive = RawIdle <= TimeSpan.Zero;
             RawIdle = raw;
-            try { IdleTick?.Invoke(raw); } catch { }
+            try { _idleTickHandlers?.Invoke(raw); } catch { }
 
             if (raw <= TimeSpan.FromMilliseconds(1500) && prevActive == false)
             {
-                try { UserActiveDetected?.Invoke(); } catch { }
+                try { _userActiveHandlers?.Invoke(); } catch { }
             }
 
             // 每约 2 次 tick 轮询一次系统忙碌状态
@@ -81,7 +103,7 @@ namespace CarroDesk.Host.Services
             if (busy != IsSystemBusyCached)
             {
                 IsSystemBusyCached = busy;
-                try { SystemBusyChanged?.Invoke(busy); } catch { }
+                try { _systemBusyHandlers?.Invoke(busy); } catch { }
             }
         }
 

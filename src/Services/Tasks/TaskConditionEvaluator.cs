@@ -2,9 +2,9 @@ using System;
 using System.IO;
 using System.Net.NetworkInformation;
 using System.Windows.Forms;
-using ScreenLock.Models;
+using CarroDesk.Models;
 
-namespace ScreenLock.Services.Tasks
+namespace CarroDesk.Services.Tasks
 {
     internal static class TaskConditionEvaluator
     {

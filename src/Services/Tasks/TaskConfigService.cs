@@ -2,10 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
-using ScreenLock.Models;
+using CarroDesk.Models;
 using SimpleJSON;
 
-namespace ScreenLock.Services.Tasks
+namespace CarroDesk.Services.Tasks
 {
     public class TaskLoadResult
     {
@@ -832,10 +832,10 @@ namespace ScreenLock.Services.Tasks
             // 回退：若随包样例文件缺失（极端情况），仍用硬编码兜底
             string fromFile = TryReadSampleFile();
             if (fromFile != null) return fromFile;
-            return @"// ScreenLock AutoRun tasks - place alongside config.json
+            return @"// CarroDesk AutoRun tasks - place alongside config.json
 // docs: docs/AUTORUN-DESIGN.md / docs/USAGE.md
 // Trigger types: startup | interval | daily | cron | sessionLock | sessionUnlock | idle | manual | hotkey | watch
-// Scripts without path are resolved from: <DirPath>/scripts/  (portable: <exe>/app_data/scripts/, roaming: %AppData%/ScreenLock/scripts/)
+// Scripts without path are resolved from: <DirPath>/scripts/  (portable: <exe>/app_data/scripts/, roaming: %AppData%/CarroDesk/scripts/)
 // Supported: .ps1/.bat/.cmd/.vbs (hidden), .js -> node, .py/.pyw -> python (auto from PATH, hidden)
 // Manual tasks appear in tray -> Tasks -> Manual Run (click to execute)
 // Hotkey: Ctrl+Alt+Shift+Win + A-Z/0-9/F1-24 ; Watch: file watcher with debounce 500ms

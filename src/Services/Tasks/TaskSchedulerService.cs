@@ -4,10 +4,11 @@ using System.IO;
 using System.Threading.Tasks;
 using System.Windows.Threading;
 using Microsoft.Win32;
-using ScreenLock.Models;
-using ScreenLock.Services.Tasks.Triggers;
+using CarroDesk.Core;
+using CarroDesk.Models;
+using CarroDesk.Services.Tasks.Triggers;
 
-namespace ScreenLock.Services.Tasks
+namespace CarroDesk.Services.Tasks
 {
     public class TaskSchedulerService : IDisposable
     {
@@ -17,7 +18,7 @@ namespace ScreenLock.Services.Tasks
         private Dictionary<string, bool> _running = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
         private bool _started;
         private bool _globalEnabled = true;
-        private IdleDetector _idleDetector;
+        private readonly IIdleService _idleService;
 
         public IReadOnlyList<TaskDefinition> Tasks
         {
@@ -29,9 +30,9 @@ namespace ScreenLock.Services.Tasks
             get { lock (_lock) return _globalEnabled; }
         }
 
-        public TaskSchedulerService(IdleDetector idleDetector)
+        public TaskSchedulerService(IIdleService idleService)
         {
-            _idleDetector = idleDetector;
+            _idleService = idleService;
         }
 
         public void Start()
@@ -62,7 +63,7 @@ namespace ScreenLock.Services.Tasks
             {
                 // use reflection to avoid circular dep if Config not yet init, but we can try direct
                 // App.Config may be null at this point
-                var cfg = ScreenLock.App.Config;
+                var cfg = CarroDesk.App.Config;
                 if (cfg != null && cfg.Current != null) return cfg.Current.TasksEnabled;
             }
             catch { }
@@ -90,7 +91,7 @@ namespace ScreenLock.Services.Tasks
             // persist to config.json if possible
             try
             {
-                var cfg = ScreenLock.App.Config;
+                var cfg = CarroDesk.App.Config;
                 if (cfg != null && cfg.Current != null)
                 {
                     cfg.Current.TasksEnabled = enabled;
@@ -183,7 +184,7 @@ namespace ScreenLock.Services.Tasks
                 case TaskTriggerType.Cron: return new CronTrigger(task);
                 case TaskTriggerType.SessionLock:
                 case TaskTriggerType.SessionUnlock: return new SessionEventTrigger(task);
-                case TaskTriggerType.Idle: return new IdleTrigger(task, _idleDetector);
+                case TaskTriggerType.Idle: return new IdleTrigger(task, _idleService);
                 case TaskTriggerType.Manual: return new ManualTrigger(task);
                 case TaskTriggerType.Hotkey: return new HotkeyTrigger(task);
                 case TaskTriggerType.Watch: return new FileWatcherTrigger(task);
@@ -231,7 +232,7 @@ namespace ScreenLock.Services.Tasks
                 // try show balloon via App
                 try
                 {
-                    ScreenLock.App.ShowBalloonPublic("任务失败 [" + task.Name + "] exit=" + code + "，详见 logs/task-" + task.Name + ".log");
+                    CarroDesk.App.ShowBalloonPublic("任务失败 [" + task.Name + "] exit=" + code + "，详见 logs/task-" + task.Name + ".log");
                 }
                 catch { }
             }

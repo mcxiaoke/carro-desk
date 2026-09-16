@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
 using CarroDesk.Core;
-using ScreenLock.Models;
-using ScreenLock.Services;
+using CarroDesk.Models;
+using CarroDesk.Services;
 using SimpleJSON;
 
 namespace CarroDesk.Host.Services

@@ -1,8 +1,8 @@
 using System;
-using ScreenLock.Models;
-using ScreenLock.Services.Tasks;
+using CarroDesk.Models;
+using CarroDesk.Services.Tasks;
 
-namespace ScreenLock.Services.Tasks.Triggers
+namespace CarroDesk.Services.Tasks.Triggers
 {
     public class HotkeyTrigger : ITrigger
     {

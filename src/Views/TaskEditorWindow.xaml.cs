@@ -4,11 +4,11 @@ using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
-using ScreenLock.Models;
-using ScreenLock.Services.Localization;
-using ScreenLock.Services.Tasks;
+using CarroDesk.Models;
+using CarroDesk.Services.Localization;
+using CarroDesk.Services.Tasks;
 
-namespace ScreenLock.Views
+namespace CarroDesk.Views
 {
     public partial class TaskEditorWindow : Window
     {
@@ -779,10 +779,10 @@ namespace ScreenLock.Views
             if (!SaveTasksInternal()) return;
             try
             {
-                var app = Application.Current as ScreenLock.App;
-                if (app != null && ScreenLock.App.TaskScheduler != null)
+                var app = Application.Current as CarroDesk.App;
+                if (app != null && CarroDesk.App.TaskScheduler != null)
                 {
-                    var res = ScreenLock.App.TaskScheduler.Reload();
+                    var res = CarroDesk.App.TaskScheduler.Reload();
                     string msg = res.Errors.Count == 0 ? Loc.T("Tasks.ReloadSuccess", res.Tasks.Count) : Loc.T("Tasks.ReloadWithErrors", res.Errors.Count);
                     MessageBox.Show(msg, Loc.T("Tray.ReloadTasks", "重载任务"), MessageBoxButton.OK, MessageBoxImage.Information);
                     try { app.Dispatcher.Invoke(new Action(() => app.RefreshTaskMenu())); } catch { }

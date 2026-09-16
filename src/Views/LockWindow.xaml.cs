@@ -6,10 +6,10 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
-using ScreenLock.Services;
-using ScreenLock.Services.Localization;
+using CarroDesk.Services;
+using CarroDesk.Services.Localization;
 
-namespace ScreenLock.Views
+namespace CarroDesk.Views
 {
     public partial class LockWindow : Window
     {

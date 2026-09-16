@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
-using ScreenLock.Services.Localization;
+using CarroDesk.Services.Localization;
 
-namespace ScreenLock.Models
+namespace CarroDesk.Models
 {
     public enum TaskTriggerType
     {

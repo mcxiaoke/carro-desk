@@ -1,12 +1,12 @@
 using System;
 using Microsoft.Win32;
 
-namespace ScreenLock.Services
+namespace CarroDesk.Services
 {
     public static class AutoStartService
     {
         private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
-        private const string ValueName = "ScreenLock";
+        private const string ValueName = "CarroDesk";
 
         public static bool IsEnabled()
         {

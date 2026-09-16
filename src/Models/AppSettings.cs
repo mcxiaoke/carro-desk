@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace ScreenLock.Models
+namespace CarroDesk.Models
 {
     public class AppSettings
     {

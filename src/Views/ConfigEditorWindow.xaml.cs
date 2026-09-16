@@ -3,11 +3,11 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
-using ScreenLock.Models;
-using ScreenLock.Services;
-using ScreenLock.Services.Localization;
+using CarroDesk.Models;
+using CarroDesk.Services;
+using CarroDesk.Services.Localization;
 
-namespace ScreenLock.Views
+namespace CarroDesk.Views
 {
     public partial class ConfigEditorWindow : Window
     {
@@ -365,11 +365,7 @@ namespace ScreenLock.Views
                 // pin -> controller
                 try { if (App.Controller != null) App.Controller.ApplyPinFromConfig(); } catch { }
                 // Idle threshold
-                if (App.Idle != null)
-                {
-                    App.Idle.Threshold = TimeSpan.FromMinutes(s.IdleMinutes);
-                    App.Idle.Reset();
-                }
+                try { App.ScreenLockMod?.SetIdleMinutes(s.IdleMinutes); } catch { }
                 // AutoStart
                 AutoStartService.Sync(s.AutoStart);
                 // Tasks global switch

@@ -3,16 +3,16 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Text;
-using ScreenLock.Models;
+using CarroDesk.Models;
 using SimpleJSON;
 
-namespace ScreenLock.Services
+namespace CarroDesk.Services
 {
     public class ConfigService
     {
         public static string AppDataDirPath
         {
-            get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ScreenLock"); }
+            get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CarroDesk"); }
         }
 
         public static string PortableFlagPath

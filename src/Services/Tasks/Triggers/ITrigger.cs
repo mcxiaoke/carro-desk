@@ -1,7 +1,7 @@
 using System;
-using ScreenLock.Models;
+using CarroDesk.Models;
 
-namespace ScreenLock.Services.Tasks.Triggers
+namespace CarroDesk.Services.Tasks.Triggers
 {
     public interface ITrigger : IDisposable
     {

@@ -1,8 +1,8 @@
 using System;
 using System.IO;
-using ScreenLock.Models;
+using CarroDesk.Models;
 
-namespace ScreenLock.Services.Tasks.Triggers
+namespace CarroDesk.Services.Tasks.Triggers
 {
     public class FileWatcherTrigger : ITrigger
     {

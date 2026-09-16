@@ -2,11 +2,10 @@ using System;
 using System.Collections.Generic;
 using CarroDesk.Core;
 using CarroDesk.Core.Models;
-using CarroDesk.Host.Services;
 using CarroDesk.Modules.ScreenLock.Models;
 using Microsoft.Win32;
-using ScreenLock.Services;
-using ScreenLock.Services.Localization;
+using CarroDesk.Services;
+using CarroDesk.Services.Localization;
 
 namespace CarroDesk.Modules.ScreenLock
 {
@@ -19,10 +18,19 @@ namespace CarroDesk.Modules.ScreenLock
         public override string Description => "提供闲时伪锁屏保护、PIN验证与键盘输入防御";
 
         public LockController Controller { get; private set; }
-        public IdleDetector Idle { get; private set; }
 
         private bool _sessionLocked;
         private DateTime _pauseUntil = DateTime.MinValue;
+
+        // 闲时业务状态机（规范 §3.4）：纯 IIdleService 广播 + 模块内复刻 IdleDetector 语义
+        private const double IdleIntervalMs = 1000;
+        private static readonly TimeSpan WarnBefore = TimeSpan.FromSeconds(30);
+        private readonly object _idleLock = new object();
+        private IIdleService _idleService;
+        private bool _idleFired;
+        private bool _warnedIdle;
+        private double _effectiveMs;
+        private double _lastRawMs = -1;
 
         public bool IsSessionLocked => _sessionLocked;
         public DateTime PauseUntil => _pauseUntil;
@@ -34,7 +42,6 @@ namespace CarroDesk.Modules.ScreenLock
         {
             Instance = this;
             Controller = new LockController(configService);
-            Idle = new IdleDetector();
         }
 
         protected override void OnStart()
@@ -42,12 +49,12 @@ namespace CarroDesk.Modules.ScreenLock
             var configMgr = Context.GetService<IConfigManager>();
             var config = Config ?? new ScreenLockConfig();
 
-            Idle.Threshold = TimeSpan.FromMinutes(config.IdleMinutes);
-            Idle.WarnBefore = TimeSpan.FromSeconds(30);
-            Idle.ShouldSuspend = ShouldSuspendIdle;
-            Idle.Warning += OnIdleWarning;
-            Idle.ThresholdReached += OnIdleThresholdReached;
-            Idle.Start();
+            _idleService = Context.GetService<IIdleService>();
+            if (_idleService != null)
+            {
+                _idleService.IdleTick += OnIdleTick;
+                _idleService.UserActiveDetected += OnUserActive;
+            }
 
             Controller.Unlocked += OnControllerUnlocked;
             SystemEvents.SessionSwitch += OnSessionSwitch;
@@ -56,11 +63,11 @@ namespace CarroDesk.Modules.ScreenLock
         protected override void OnStop()
         {
             SystemEvents.SessionSwitch -= OnSessionSwitch;
-            if (Idle != null)
+            if (_idleService != null)
             {
-                Idle.Warning -= OnIdleWarning;
-                Idle.ThresholdReached -= OnIdleThresholdReached;
-                Idle.Stop();
+                _idleService.IdleTick -= OnIdleTick;
+                _idleService.UserActiveDetected -= OnUserActive;
+                _idleService = null;
             }
             if (Controller != null)
             {
@@ -71,14 +78,72 @@ namespace CarroDesk.Modules.ScreenLock
         public override void OnConfigReloaded()
         {
             base.OnConfigReloaded();
-            if (Idle != null && Config != null)
-            {
-                Idle.Threshold = TimeSpan.FromMinutes(Config.IdleMinutes);
-                Idle.Reset();
-            }
+            ResetIdleMachine();
             if (Controller != null)
             {
                 Controller.ApplyPinFromConfig();
+            }
+        }
+
+        private void OnIdleTick(TimeSpan rawIdle)
+        {
+            double thresholdMs = (Config != null ? Config.IdleMinutes : 0) * 60000.0;
+            if (thresholdMs <= 0) return;
+
+            bool fireThreshold = false;
+            bool fireWarn = false;
+            lock (_idleLock)
+            {
+                if (_idleFired) return;
+                double raw = rawIdle.TotalMilliseconds;
+                bool hasInput = raw < _lastRawMs || raw < IdleIntervalMs * 2;
+                _lastRawMs = raw;
+                bool suspended = ShouldSuspendIdle();
+                if (hasInput) _effectiveMs = raw;
+                else if (!suspended) _effectiveMs += IdleIntervalMs;
+                if (suspended) return;
+
+                if (_effectiveMs >= thresholdMs)
+                {
+                    _idleFired = true;
+                    fireThreshold = true;
+                }
+                else if (WarnBefore.TotalMilliseconds > 0 && thresholdMs > WarnBefore.TotalMilliseconds
+                         && _effectiveMs >= thresholdMs - WarnBefore.TotalMilliseconds && !_warnedIdle)
+                {
+                    _warnedIdle = true;
+                    fireWarn = true;
+                }
+                else if (_effectiveMs < thresholdMs - WarnBefore.TotalMilliseconds)
+                {
+                    _warnedIdle = false;
+                }
+            }
+            if (fireThreshold)
+            {
+                var d = Context?.Dispatcher;
+                if (d != null) d.BeginInvoke(new Action(OnIdleThresholdReached));
+            }
+            else if (fireWarn)
+            {
+                var d = Context?.Dispatcher;
+                if (d != null) d.BeginInvoke(new Action(OnIdleWarning));
+            }
+        }
+
+        private void OnUserActive()
+        {
+            ResetIdleMachine();
+        }
+
+        private void ResetIdleMachine()
+        {
+            lock (_idleLock)
+            {
+                _idleFired = false;
+                _warnedIdle = false;
+                _effectiveMs = 0;
+                _lastRawMs = -1;
             }
         }
 
@@ -86,7 +151,7 @@ namespace CarroDesk.Modules.ScreenLock
         {
             if (_sessionLocked) return true;
             if (DateTime.Now < _pauseUntil) return true;
-            if (IdleDetector.IsSystemBusy()) return true;
+            if (_idleService != null && _idleService.IsSystemBusyCached) return true;
             try
             {
                 var excl = Config != null ? Config.ExcludeProcesses : null;
@@ -110,16 +175,16 @@ namespace CarroDesk.Modules.ScreenLock
 
         private void OnControllerUnlocked()
         {
-            Idle?.Reset();
+            ResetIdleMachine();
         }
 
         public void OnSessionSwitch(object sender, SessionSwitchEventArgs e)
         {
-            if (Idle == null || Controller == null) return;
+            if (Controller == null) return;
             if (e.Reason == SessionSwitchReason.SessionLock)
             {
                 _sessionLocked = true;
-                Idle.Suspend();
+                lock (_idleLock) _idleFired = true; // 会话锁定视为已消费一次触发，解锁后重置
             }
             else if (e.Reason == SessionSwitchReason.SessionUnlock)
             {
@@ -128,7 +193,7 @@ namespace CarroDesk.Modules.ScreenLock
                 {
                     Controller.Unlock();
                 }
-                Idle.Reset();
+                ResetIdleMachine();
             }
         }
 
@@ -156,11 +221,7 @@ namespace CarroDesk.Modules.ScreenLock
                 var configMgr = Context?.GetService<IConfigManager>();
                 configMgr?.SaveModuleConfig(Id, Config);
             }
-            if (Idle != null)
-            {
-                Idle.Threshold = TimeSpan.FromMinutes(mins);
-                Idle.Reset();
-            }
+            ResetIdleMachine();
         }
 
         public void PauseFor(TimeSpan span)
@@ -171,7 +232,7 @@ namespace CarroDesk.Modules.ScreenLock
         public void ResumeIdle()
         {
             _pauseUntil = DateTime.MinValue;
-            Idle?.Reset();
+            ResetIdleMachine();
         }
 
         public override IEnumerable<TrayMenuItem> GetTrayMenuItems()

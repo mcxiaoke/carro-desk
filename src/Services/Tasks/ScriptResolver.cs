@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 
-namespace ScreenLock.Services.Tasks
+namespace CarroDesk.Services.Tasks
 {
     internal static class ScriptResolver
     {

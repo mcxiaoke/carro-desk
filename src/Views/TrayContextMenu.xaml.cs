@@ -6,12 +6,12 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Interop;
 using System.Windows.Media;
-using ScreenLock.Models;
-using ScreenLock.Services;
-using ScreenLock.Services.Localization;
+using CarroDesk.Models;
+using CarroDesk.Services;
+using CarroDesk.Services.Localization;
 using CarroDesk.Views;
 
-namespace ScreenLock.Views
+namespace CarroDesk.Views
 {
     public partial class TrayContextMenu : ContextMenu
     {

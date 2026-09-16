@@ -7,7 +7,7 @@ using System.Reflection;
 using System.Text;
 using SimpleJSON;
 
-namespace ScreenLock.Services.Localization
+namespace CarroDesk.Services.Localization
 {
     public class I18nService : INotifyPropertyChanged
     {

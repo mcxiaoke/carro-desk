@@ -10,14 +10,14 @@ using CarroDesk.Modules.ScreenLock;
 using CarroDesk.Modules.TaskScheduler;
 using Hardcodet.Wpf.TaskbarNotification;
 using Microsoft.Win32;
-using ScreenLock.Services;
-using ScreenLock.Services.Localization;
+using CarroDesk.Services;
+using CarroDesk.Services.Localization;
 using CarroDesk.Modules.AudioSwitch;
 using CarroDesk.Modules.AppAutoMute;
-using ScreenLock.Services.Tasks;
-using ScreenLock.Views;
+using CarroDesk.Services.Tasks;
+using CarroDesk.Views;
 
-namespace ScreenLock
+namespace CarroDesk
 {
     public partial class App : System.Windows.Application
     {
@@ -34,7 +34,6 @@ namespace ScreenLock
         // 向后兼容各 View 和旧逻辑的静态门面
         public static ConfigService Config => (Services?.GetService<IConfigManager>() as ConfigManager)?.Underlying;
         public static LockController Controller => ScreenLockMod?.Controller;
-        public static IdleDetector Idle => ScreenLockMod?.Idle;
         public static TaskSchedulerService TaskScheduler => TaskSchedulerMod?.Scheduler;
         public static bool IsShuttingDown { get; private set; }
 
@@ -138,7 +137,7 @@ namespace ScreenLock
             };
             Modules.RegisterModule(screenLockModule);
 
-            var taskSchedulerModule = new TaskSchedulerModule(screenLockModule.Idle);
+            var taskSchedulerModule = new TaskSchedulerModule();
             Modules.RegisterModule(taskSchedulerModule);
 
             var audioSwitchModule = new AudioSwitchModule()

@@ -2,7 +2,7 @@ using System;
 using System.Runtime.InteropServices;
 using System.Windows.Threading;
 
-namespace ScreenLock.Services
+namespace CarroDesk.Services
 {
     public class IdleDetector : IDisposable
     {

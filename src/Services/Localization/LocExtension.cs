@@ -3,7 +3,7 @@ using System.Windows;
 using System.Windows.Data;
 using System.Windows.Markup;
 
-namespace ScreenLock.Services.Localization
+namespace CarroDesk.Services.Localization
 {
     [MarkupExtensionReturnType(typeof(string))]
     public class LocExtension : MarkupExtension

@@ -1,7 +1,7 @@
-<Window x:Class="ScreenLock.Views.ConfigEditorWindow"
+<Window x:Class="CarroDesk.Views.ConfigEditorWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:loc="clr-namespace:ScreenLock.Services.Localization"
+        xmlns:loc="clr-namespace:CarroDesk.Services.Localization"
         Title="{loc:Loc Config.Title}" Height="720" Width="580"
         WindowStartupLocation="CenterScreen" ResizeMode="CanResize"
         Background="#FFF6F7F9">

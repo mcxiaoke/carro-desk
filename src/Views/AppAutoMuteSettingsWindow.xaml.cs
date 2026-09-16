@@ -9,8 +9,8 @@ using System.Windows.Input;
 using CarroDesk.Core;
 using CarroDesk.Host.Services;
 using CarroDesk.Modules.AppAutoMute.Models;
-using ScreenLock;
-using ScreenLock.Models;
+using CarroDesk;
+using CarroDesk.Models;
 
 namespace CarroDesk.Views
 {

@@ -1,7 +1,7 @@
 using System;
 using System.Globalization;
 
-namespace ScreenLock.Services.Localization
+namespace CarroDesk.Services.Localization
 {
     public static class Loc
     {

@@ -1,7 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 
-namespace ScreenLock.Services
+namespace CarroDesk.Services
 {
     public class KeyboardBlocker : IDisposable
     {

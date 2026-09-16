@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Windows.Forms;
-using ScreenLock.Services.Localization;
-using ScreenLock.Views;
+using CarroDesk.Services.Localization;
+using CarroDesk.Views;
 
-namespace ScreenLock.Services
+namespace CarroDesk.Services
 {
     public class LockController : IDisposable
     {
