@@ -40,6 +40,7 @@ namespace CarroDesk
         private static Mutex _mutex;
         private static TaskbarIcon _tbIcon;
         private static TrayContextMenu _trayMenu;
+        private DynamicTrayController _trayController;
 
         internal static App CurrentApp => Current as App;
         internal DateTime PauseUntil => ScreenLockMod != null ? ScreenLockMod.PauseUntil : DateTime.MinValue;
@@ -79,7 +80,7 @@ namespace CarroDesk
             {
                 UpdateTrayText();
                 Modules?.OnLanguageChangedAll();
-                _trayMenu?.RefreshAll();
+                _trayMenu?.RefreshTray();
             };
             Services.AddSingleton(I18nService.Instance);
 
@@ -123,13 +124,15 @@ namespace CarroDesk
             Modules = new ModuleManager
             {
                 Dispatcher = Dispatcher,
-                RequestTrayRefresh = () => Dispatcher.BeginInvoke(new Action(() =>
-                {
-                    try { _trayMenu?.RefreshAll(); } catch { }
-                })),
+                RequestTrayRefresh = () => { _trayController?.RequestRefresh(); },
                 ShowNotification = (msg, title) => ShowBalloon(msg)
             };
             Services.AddSingleton(Modules);
+
+            var trayLogger = Services.GetService<ILoggerService>();
+            _trayController = new DynamicTrayController(Modules, Dispatcher, trayLogger,
+                (msg, title) => ShowBalloon(msg));
+            _trayController.Attach(_trayMenu);
 
             var screenLockModule = new ScreenLockModule(rawConfig)
             {
@@ -159,7 +162,7 @@ namespace CarroDesk
             screenLockModule.Controller.Unlocked += () =>
             {
                 UpdateTrayText();
-                _trayMenu?.RefreshStatus();
+                _trayController?.RequestRefresh();
             };
 
             Exit += OnAppExit;
@@ -175,9 +178,8 @@ namespace CarroDesk
             Modules?.ReloadAll();
             AutoStartService.Sync(c.AutoStart);
             try { ProcessExclusionService.InvalidateCache(); } catch { }
-            RefreshMenuChecks();
+            _trayController?.RequestRefresh();
             UpdateTrayText();
-            _trayMenu?.RefreshStatus();
             if (_tbIcon != null)
             {
                 string balloonMsg = Loc.T("Tray.BalloonConfigReloaded", c.IdleMinutes);
@@ -211,7 +213,7 @@ namespace CarroDesk
         {
             try
             {
-                _trayMenu?.RefreshTaskSubmenu();
+                _trayController?.RequestRefresh();
             }
             catch { }
         }
@@ -244,16 +246,15 @@ namespace CarroDesk
         internal void SetIdleMinutes(int minutes)
         {
             ScreenLockMod?.SetIdleMinutes(minutes);
-            RefreshMenuChecks();
             UpdateTrayText();
-            _trayMenu?.RefreshStatus();
+            _trayController?.RequestRefresh();
         }
 
         internal void PauseFor(TimeSpan duration)
         {
             ScreenLockMod?.PauseFor(duration);
             UpdateTrayText();
-            _trayMenu?.RefreshStatus();
+            _trayController?.RequestRefresh();
             ShowBalloon(Loc.T("Tray.BalloonPause", ScreenLockMod.PauseUntil));
         }
 
@@ -261,12 +262,12 @@ namespace CarroDesk
         {
             ScreenLockMod?.ResumeIdle();
             UpdateTrayText();
-            _trayMenu?.RefreshStatus();
+            _trayController?.RequestRefresh();
         }
 
         internal void RefreshMenuChecks()
         {
-            _trayMenu?.RefreshChecks();
+            _trayController?.RequestRefresh();
         }
 
         internal void ShowBalloon(string text)
@@ -300,16 +301,8 @@ namespace CarroDesk
             if (_tbIcon == null) return;
             try
             {
-                string text;
-                if (ScreenLockMod != null && ScreenLockMod.IsPaused)
-                    text = Loc.T("Tray.TooltipPaused", ScreenLockMod.PauseUntil);
-                else if (Config != null && Config.Current.IdleMinutes <= 0)
-                    text = Loc.T("Tray.TooltipDisabled");
-                else if (Config != null)
-                    text = Loc.T("Tray.TooltipIdle", Config.Current.IdleMinutes);
-                else
-                    text = "CarroDesk";
-                _tbIcon.ToolTipText = text;
+                // 不做四态聚合（§4.4/§M13）：ToolTipText 保持最简应用名，状态由各模块菜单项自述
+                _tbIcon.ToolTipText = "CarroDesk";
             }
             catch { }
         }

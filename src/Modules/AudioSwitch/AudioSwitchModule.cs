@@ -31,14 +31,28 @@ namespace CarroDesk.Modules.AudioSwitch
         {
             _audioService = Context.GetService<IAudioService>();
             _hotkeys = Context.GetService<IHotkeyService>();
+            if (_audioService != null)
+            {
+                _audioService.DevicesChanged += OnDevicesChanged;
+            }
             UpdateCurrentDevice();
             RegisterHotkey();
         }
 
         protected override void OnStop()
         {
+            if (_audioService != null)
+            {
+                _audioService.DevicesChanged -= OnDevicesChanged;
+            }
             UnregisterHotkey();
             _hotkeys?.UnregisterAll(Id);
+        }
+
+        private void OnDevicesChanged()
+        {
+            UpdateCurrentDevice();
+            RequestRefreshSelf();
         }
 
         public override void OnConfigReloaded()
@@ -171,37 +185,88 @@ namespace CarroDesk.Modules.AudioSwitch
         {
             try
             {
-                CurrentDefaultDevice = _audioService.GetDefaultPlaybackDevice();
-                if (_trayItem != null)
-                {
-                    string icon = "🔈";
-                    string devName = CurrentDefaultDevice != null ? CurrentDefaultDevice.Name : "未检测到设备";
-                    if (Config != null)
-                    {
-                        if (devName.IndexOf(Config.HeadphonePattern ?? "耳机", StringComparison.OrdinalIgnoreCase) >= 0) icon = "🎧";
-                        else if (devName.IndexOf(Config.SpeakerPattern ?? "扬声器", StringComparison.OrdinalIgnoreCase) >= 0) icon = "🔊";
-                    }
-                    _trayItem.Header = $"切换音频设备 (当前: {icon} {devName})";
-                }
+                CurrentDefaultDevice = _audioService?.GetDefaultPlaybackDevice();
+                SetTrayHeaderSelf(BuildDeviceHeader());
             }
             catch { }
+        }
+
+        private string BuildDeviceHeader()
+        {
+            string devName = CurrentDefaultDevice?.Name;
+            if (string.IsNullOrEmpty(devName)) return "音频输出设备";
+            string icon = GetDeviceIcon(devName);
+            return $"音频输出设备 ({icon} {devName})";
+        }
+
+        private string GetDeviceIcon(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return "🔈";
+            if (Config != null)
+            {
+                if (name.IndexOf(Config.HeadphonePattern ?? "耳机", StringComparison.OrdinalIgnoreCase) >= 0) return "🎧";
+                if (name.IndexOf(Config.SpeakerPattern ?? "扬声器", StringComparison.OrdinalIgnoreCase) >= 0) return "🔊";
+            }
+            return "🔈";
+        }
+
+        /// <summary>节点属性变更若在后台线程触发，模块自行 Dispatcher 封送回 UI（规范 §4.3）。</summary>
+        private void SetTrayHeaderSelf(string header)
+        {
+            if (_trayItem == null) return;
+            var d = Context?.Dispatcher;
+            if (d != null && !d.CheckAccess())
+            {
+                d.BeginInvoke(new Action(() => SetTrayHeaderSelf(header)));
+                return;
+            }
+            _trayItem.Header = header;
+        }
+
+        private void RequestRefreshSelf()
+        {
+            try { Context?.RequestTrayRefresh(); } catch { }
         }
 
         public override IEnumerable<TrayMenuItem> GetTrayMenuItems()
         {
             var items = new List<TrayMenuItem>();
-
-            _trayItem = new TrayMenuItem
-            {
-                Id = "audioswitch_toggle",
-                Header = "切换音频设备",
-                InputGestureText = Config?.Hotkey ?? "Ctrl+`",
-                ClickAction = () => ToggleAudioDevice()
-            };
-
             UpdateCurrentDevice();
-            items.Add(_trayItem);
 
+            var root = new TrayMenuItem
+            {
+                Id = "audioswitch_root",
+                Header = BuildDeviceHeader()
+            };
+            _trayItem = root;
+
+            root.Children.Add(new TrayMenuItem
+            {
+                Id = "audioswitch_fast_toggle",
+                Header = "快捷切换",
+                InputGestureText = Config?.Hotkey ?? "Ctrl+`",
+                ClickAction = () => { ToggleAudioDevice(); RequestRefreshSelf(); }
+            });
+
+            root.Children.Add(TrayMenuItem.Separator());
+
+            string currentId = CurrentDefaultDevice?.Id;
+            foreach (var d in GetPlaybackDevices())
+            {
+                if (d == null) continue;
+                string name = d.Name ?? "(未知设备)";
+                string icon = GetDeviceIcon(name);
+                string devId = d.Id;
+                root.Children.Add(new TrayMenuItem
+                {
+                    Id = "audioswitch_dev_" + devId,
+                    Header = $"{icon} {name}",
+                    IsChecked = string.Equals(d.Id, currentId, StringComparison.OrdinalIgnoreCase),
+                    ClickAction = () => { SwitchToDevice(devId); RequestRefreshSelf(); }
+                });
+            }
+
+            items.Add(root);
             return items;
         }
     }

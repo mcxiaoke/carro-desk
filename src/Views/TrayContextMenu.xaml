@@ -118,10 +118,9 @@
             </Style.Triggers>
         </Style>
 
-
     </ContextMenu.Resources>
 
-    <!-- 顶部实时状态指示卡片 -->
+    <!-- ① 宿主标题项（仅应用名，状态卡已砍 §4.4） -->
     <MenuItem Focusable="False" StaysOpenOnClick="True" Cursor="Arrow">
         <MenuItem.Template>
             <ControlTemplate TargetType="{x:Type MenuItem}">
@@ -130,79 +129,18 @@
         </MenuItem.Template>
         <MenuItem.Header>
             <Border Background="#FFF8FAFC" BorderBrush="#FFE2E8F0" BorderThickness="1" CornerRadius="6" Padding="10,7" Margin="2,2,2,4">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <StackPanel>
-                        <StackPanel Orientation="Horizontal">
-                            <Ellipse x:Name="StatusDot" Width="7" Height="7" Fill="#10B981" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                            <TextBlock Text="{loc:Loc Tray.Title, Default='CarroDesk'}" FontWeight="Bold" FontSize="12" Foreground="#FF1E293B"/>
-                        </StackPanel>
-                        <TextBlock x:Name="StatusDetailText" Text="--" FontSize="11" Foreground="#FF64748B" Margin="13,2,0,0"/>
-                    </StackPanel>
-                    <Border x:Name="StatusBadgeBorder" Grid.Column="1" Background="#FFECFDF5" CornerRadius="3" Padding="6,2" VerticalAlignment="Center">
-                        <TextBlock x:Name="StatusBadge" Text="--" FontSize="10" FontWeight="SemiBold" Foreground="#FF059669"/>
-                    </Border>
-                </Grid>
+                <TextBlock Text="{loc:Loc Tray.Title, Default='CarroDesk'}" FontWeight="Bold" FontSize="12" Foreground="#FF1E293B"/>
             </Border>
         </MenuItem.Header>
     </MenuItem>
 
-    <Separator/>
+    <!-- ② 双锚点：动态注入各模块 GetTrayMenuItems()（运行时由 DynamicTrayController 填充） -->
+    <Separator x:Name="PluginSlotAnchorTop"/>
+    <Separator x:Name="PluginSlotAnchorBottom"/>
 
-    <!-- 核心操作 -->
-    <MenuItem x:Name="LockNowItem" Header="{loc:Loc Tray.LockNow}" FontWeight="SemiBold" Click="OnLockNowClick"/>
-
-    <Separator/>
-
-    <!-- 空闲锁定预设档位 -->
-    <MenuItem x:Name="IdleMenu" Header="{loc:Loc Tray.IdleLock}">
-        <MenuItem x:Name="Idle0Item" Header="{loc:Loc Tray.IdleDisabled}" Tag="0" Click="OnIdlePresetClick"/>
-        <MenuItem Tag="1" Click="OnIdlePresetClick"/>
-        <MenuItem Tag="3" Click="OnIdlePresetClick"/>
-        <MenuItem Tag="5" Click="OnIdlePresetClick"/>
-        <MenuItem Tag="10" Click="OnIdlePresetClick"/>
-        <MenuItem Tag="15" Click="OnIdlePresetClick"/>
-        <MenuItem Tag="30" Click="OnIdlePresetClick"/>
-    </MenuItem>
-
-    <!-- 暂停计时 -->
-    <MenuItem x:Name="PauseMenu" Header="{loc:Loc Tray.PauseTimer}">
-        <MenuItem Header="{loc:Loc Tray.Pause30Min}" Click="OnPause30Click"/>
-        <MenuItem Header="{loc:Loc Tray.Pause1Hour}" Click="OnPause60Click"/>
-        <MenuItem Header="{loc:Loc Tray.ResumeTimer}" Click="OnResumeIdleClick"/>
-    </MenuItem>
-
-    <!-- 开机自启 -->
+    <!-- ③ 宿主通用区：开机自启/配置目录/语言/退出（仅真正宿主项，不含业务） -->
     <MenuItem x:Name="AutoStartItem" Header="{loc:Loc Tray.AutoStart}" Click="OnAutoStartClick"/>
-
-    <Separator/>
-
-    <!-- 配置与任务编辑器 -->
     <MenuItem Header="{loc:Loc Tray.ConfigEditor}" Click="OnConfigEditorClick"/>
-    <MenuItem x:Name="TaskMenu" Header="{loc:Loc Tray.Tasks}">
-        <MenuItem x:Name="TasksEnabledItem" Header="{loc:Loc Tray.TasksEnabled}" Click="OnTasksEnabledToggleClick"/>
-        <Separator/>
-        <MenuItem x:Name="ManualMenu" Header="{loc:Loc Tray.ManualRun}"/>
-        <MenuItem x:Name="RecentMenu" Header="{loc:Loc Tray.RecentRun}"/>
-        <Separator/>
-        <MenuItem Header="{loc:Loc Tray.TaskEditor}" Click="OnTaskEditorClick"/>
-        <MenuItem Header="{loc:Loc Tray.ReloadTasks}" Click="OnReloadTasksClick"/>
-    </MenuItem>
-
-    <!-- 音频工具 (Audio Tools) -->
-    <MenuItem x:Name="AudioMenu" Header="{loc:Loc Tray.AudioTools, Default='音频工具'}">
-        <MenuItem x:Name="AudioSwitchMenu" Header="{loc:Loc Tray.AudioSwitch, Default='音频输出设备'}">
-            <MenuItem x:Name="AudioSwitchFastToggleItem" Header="快捷切换 (耳机 ⇄ 扬声器)" InputGestureText="Ctrl+`" Click="OnAudioSwitchClick"/>
-            <Separator x:Name="AudioDeviceSeparator"/>
-        </MenuItem>
-        <Separator/>
-        <MenuItem x:Name="AppAutoMuteItem" Header="{loc:Loc Tray.AppAutoMute, Default='应用后台自动静音'}" InputGestureText="Ctrl+Win+S" Click="OnAppAutoMuteClick"/>
-        <MenuItem x:Name="AppAutoMuteSettingsItem" Header="{loc:Loc Tray.AppAutoMuteSettings, Default='后台静音设置...'}" Click="OnAppAutoMuteSettingsClick"/>
-    </MenuItem>
-
     <MenuItem Header="{loc:Loc Tray.OpenConfigDir}" Click="OnOpenConfigDirClick"/>
     <MenuItem Header="{loc:Loc Tray.ReloadConfig}" Click="OnReloadConfigClick"/>
 

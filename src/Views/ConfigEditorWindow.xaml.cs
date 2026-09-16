@@ -381,7 +381,7 @@ namespace CarroDesk.Views
                 {
                     try { app.Dispatcher.Invoke(new Action(() => app.RefreshMenuChecks())); } catch { }
                     try { app.Dispatcher.Invoke(new Action(() => app.UpdateTrayText())); } catch { }
-                    try { app.Dispatcher.Invoke(new Action(() => App.TrayMenu?.RefreshStatus())); } catch { }
+                    try { app.Dispatcher.Invoke(new Action(() => App.TrayMenu?.RequestTrayRefresh())); } catch { }
                 }
             }
             catch { }

@@ -111,10 +111,7 @@ namespace CarroDesk.Modules.AppAutoMute
             if (Config == null) return;
             Config.Enabled = !Config.Enabled;
 
-            if (_trayItem != null)
-            {
-                _trayItem.IsChecked = Config.Enabled;
-            }
+            SetCheckedSelf(Config.Enabled);
 
             var configMgr = Context?.GetService<IConfigManager>();
             configMgr?.SaveModuleConfig(Id, Config);
@@ -132,6 +129,19 @@ namespace CarroDesk.Modules.AppAutoMute
             {
                 EvaluateForeground(_foregroundTracker.CurrentProcessName);
             }
+        }
+
+        /// <summary>节点属性变更若在后台线程触发，模块自行 Dispatcher 封送回 UI（规范 §4.3）。</summary>
+        private void SetCheckedSelf(bool value)
+        {
+            if (_trayItem == null) return;
+            var d = Context?.Dispatcher;
+            if (d != null && !d.CheckAccess())
+            {
+                d.BeginInvoke(new Action(() => SetCheckedSelf(value)));
+                return;
+            }
+            _trayItem.IsChecked = value;
         }
 
         private void OnForegroundChanged(IntPtr hwnd, string procName)
@@ -240,7 +250,32 @@ namespace CarroDesk.Modules.AppAutoMute
             };
 
             items.Add(_trayItem);
+
+            items.Add(new TrayMenuItem
+            {
+                Id = "appautomute_settings",
+                Header = "后台静音设置...",
+                ClickAction = () =>
+                {
+                    try
+                    {
+                        var win = new CarroDesk.Views.AppAutoMuteSettingsWindow
+                        {
+                            WindowStartupLocation = System.Windows.WindowStartupLocation.CenterScreen
+                        };
+                        win.ShowDialog();
+                        RequestRefreshSelf();
+                    }
+                    catch { }
+                }
+            });
+
             return items;
+        }
+
+        private void RequestRefreshSelf()
+        {
+            try { Context?.RequestTrayRefresh(); } catch { }
         }
     }
 }

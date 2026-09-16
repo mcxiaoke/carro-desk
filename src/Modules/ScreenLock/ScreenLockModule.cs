@@ -222,23 +222,32 @@ namespace CarroDesk.Modules.ScreenLock
                 configMgr?.SaveModuleConfig(Id, Config);
             }
             ResetIdleMachine();
+            RequestTrayRefreshSelf();
         }
 
         public void PauseFor(TimeSpan span)
         {
             _pauseUntil = DateTime.Now.Add(span);
+            RequestTrayRefreshSelf();
         }
 
         public void ResumeIdle()
         {
             _pauseUntil = DateTime.MinValue;
             ResetIdleMachine();
+            RequestTrayRefreshSelf();
+        }
+
+        private void RequestTrayRefreshSelf()
+        {
+            try { Context?.RequestTrayRefresh(); } catch { }
         }
 
         public override IEnumerable<TrayMenuItem> GetTrayMenuItems()
         {
-            // 模块自包含的托盘菜单项暴露
+            // 托盘业务项全量并入本模块（规范 §4.1/§4.4）
             var items = new List<TrayMenuItem>();
+            int currentMinutes = Config != null ? Config.IdleMinutes : 0;
 
             var lockItem = new TrayMenuItem
             {
@@ -249,7 +258,65 @@ namespace CarroDesk.Modules.ScreenLock
             };
             items.Add(lockItem);
 
+            // 空闲锁定档位：当前档位用 IsChecked 表达，"0-禁用" 即禁用态
+            var idleRoot = new TrayMenuItem
+            {
+                Id = "screenlock_idle_root",
+                Header = Loc.T("Tray.IdleLock", "空闲锁定")
+            };
+            AddIdlePreset(idleRoot, 0, Loc.T("Tray.IdleDisabled", "0 - 禁用"), currentMinutes);
+            foreach (var m in new[] { 1, 3, 5, 10, 15, 30 })
+            {
+                AddIdlePreset(idleRoot, m, Loc.T("Tray.IdleMinutesFormat", m), currentMinutes);
+            }
+            items.Add(idleRoot);
+
+            // 暂停计时：暂停态以其根节点 IsChecked 表达（§4.4），子项执行暂停/恢复
+            var pauseRoot = new TrayMenuItem
+            {
+                Id = "screenlock_pause_root",
+                Header = Loc.T("Tray.PauseTimer", "暂停计时"),
+                IsChecked = IsPaused,
+                ToolTip = IsPaused ? Loc.T("Tray.StatusPausedDetail", PauseUntil) : null
+            };
+            pauseRoot.Children.Add(new TrayMenuItem
+            {
+                Id = "screenlock_pause_30",
+                Header = Loc.T("Tray.Pause30Min", "暂停 30 分钟"),
+                ClickAction = () => { PauseFor(TimeSpan.FromMinutes(30)); ShowNotifySelf(Loc.T("Tray.BalloonPause", PauseUntil)); }
+            });
+            pauseRoot.Children.Add(new TrayMenuItem
+            {
+                Id = "screenlock_pause_1h",
+                Header = Loc.T("Tray.Pause1Hour", "暂停 1 小时"),
+                ClickAction = () => { PauseFor(TimeSpan.FromHours(1)); ShowNotifySelf(Loc.T("Tray.BalloonPause", PauseUntil)); }
+            });
+            pauseRoot.Children.Add(new TrayMenuItem
+            {
+                Id = "screenlock_resume",
+                Header = Loc.T("Tray.ResumeTimer", "恢复计时"),
+                IsChecked = IsPaused,
+                ClickAction = () => ResumeIdle()
+            });
+            items.Add(pauseRoot);
+
             return items;
+        }
+
+        private void AddIdlePreset(TrayMenuItem root, int mins, string header, int currentMinutes)
+        {
+            root.Children.Add(new TrayMenuItem
+            {
+                Id = "screenlock_idle_" + mins,
+                Header = header,
+                IsChecked = mins == currentMinutes,
+                ClickAction = () => SetIdleMinutes(mins)
+            });
+        }
+
+        private void ShowNotifySelf(string msg)
+        {
+            try { Context?.ShowNotification(msg, "CarroDesk"); } catch { }
         }
     }
 }
