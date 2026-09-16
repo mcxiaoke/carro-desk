@@ -30,7 +30,7 @@
 
     <!-- 共享程序集元数据 -->
     <Company>mcxiaoke</Company>
-    <Product>ScreenLock</Product>
+    <Product>CarroDesk</Product>
     <Authors>$(Company)</Authors>
     <Copyright>Copyright © $(Company) 2026</Copyright>
   </PropertyGroup>
@@ -94,7 +94,7 @@
     </ItemGroup>
 
     <Message Importance="high"
-             Text="=== [ScreenLock 编译信息] Version=$(Version) | AssemblyVersion=$(AssemblyVersion) | FileVersion=$(FileVersion) (天数=$(DaysSinceEpoch)) ===" />
+             Text="=== [CarroDesk 编译信息] Version=$(Version) | AssemblyVersion=$(AssemblyVersion) | FileVersion=$(FileVersion) (天数=$(DaysSinceEpoch)) ===" />
   </Target>
 
 </Project>

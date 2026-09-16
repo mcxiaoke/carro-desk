@@ -115,6 +115,19 @@ namespace ScreenLock.Views
                         TasksEnabledItem.IsChecked = App.TaskScheduler != null && App.TaskScheduler.IsGlobalEnabled;
                     }
 
+                    if (AppAutoMuteItem != null)
+                    {
+                        AppAutoMuteItem.IsChecked = App.AppAutoMuteMod != null && App.AppAutoMuteMod.IsEnabledUser;
+                    }
+
+                    if (AudioSwitchItem != null && App.AudioSwitchMod != null)
+                    {
+                        var dev = App.AudioSwitchMod.CurrentDefaultDevice;
+                        string devName = dev != null ? dev.Name : "默认设备";
+                        string icon = devName.IndexOf("耳机", StringComparison.OrdinalIgnoreCase) >= 0 ? "🎧" : "🔊";
+                        AudioSwitchItem.Header = $"{Loc.T("Tray.AudioSwitch", "切换输出设备")} ({icon} {devName})";
+                    }
+
                     string currentLang = config.Language ?? "auto";
                     if (LangAutoItem != null) LangAutoItem.IsChecked = string.Equals(currentLang, "auto", StringComparison.OrdinalIgnoreCase);
                     if (LangZhItem != null) LangZhItem.IsChecked = string.Equals(currentLang, "zh-CN", StringComparison.OrdinalIgnoreCase);
@@ -303,6 +316,18 @@ namespace ScreenLock.Views
         private void OnReloadConfigClick(object sender, RoutedEventArgs e)
         {
             App.CurrentApp?.ReloadConfig();
+        }
+
+        private void OnAudioSwitchClick(object sender, RoutedEventArgs e)
+        {
+            App.AudioSwitchMod?.ToggleAudioDevice();
+            RefreshChecks();
+        }
+
+        private void OnAppAutoMuteClick(object sender, RoutedEventArgs e)
+        {
+            App.AppAutoMuteMod?.ToggleEnabled();
+            RefreshChecks();
         }
 
         private void OnExitClick(object sender, RoutedEventArgs e)

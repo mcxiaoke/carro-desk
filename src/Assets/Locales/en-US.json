@@ -26,7 +26,7 @@
     "Times": "times"
   },
   "Tray": {
-    "Title": "ScreenLock",
+    "Title": "CarroDesk",
     "Running": "Running",
     "Locked": "Locked",
     "Paused": "Paused",
@@ -53,6 +53,9 @@
     "ReloadTasks": "Reload Tasks",
     "OpenConfigDir": "Open Config Directory",
     "ReloadConfig": "Reload Config",
+    "AudioTools": "Audio Tools",
+    "AudioSwitch": "Switch Output Device",
+    "AppAutoMute": "Auto-Mute Background Apps",
     "Language": "Language / 语言",
     "LangAuto": "Follow System (Auto)",
     "LangZh": "简体中文 (Chinese)",

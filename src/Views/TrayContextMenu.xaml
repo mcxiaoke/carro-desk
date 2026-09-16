@@ -138,7 +138,7 @@
                     <StackPanel>
                         <StackPanel Orientation="Horizontal">
                             <Ellipse x:Name="StatusDot" Width="7" Height="7" Fill="#10B981" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                            <TextBlock Text="ScreenLock" FontWeight="Bold" FontSize="12" Foreground="#FF1E293B"/>
+                            <TextBlock Text="{loc:Loc Tray.Title, Default='CarroDesk'}" FontWeight="Bold" FontSize="12" Foreground="#FF1E293B"/>
                         </StackPanel>
                         <TextBlock x:Name="StatusDetailText" Text="--" FontSize="11" Foreground="#FF64748B" Margin="13,2,0,0"/>
                     </StackPanel>
@@ -191,6 +191,13 @@
         <MenuItem Header="{loc:Loc Tray.TaskEditor}" Click="OnTaskEditorClick"/>
         <MenuItem Header="{loc:Loc Tray.ReloadTasks}" Click="OnReloadTasksClick"/>
     </MenuItem>
+
+    <!-- 音频工具 (Audio Tools) -->
+    <MenuItem x:Name="AudioMenu" Header="{loc:Loc Tray.AudioTools, Default='音频工具'}">
+        <MenuItem x:Name="AudioSwitchItem" Header="{loc:Loc Tray.AudioSwitch, Default='切换输出设备'}" InputGestureText="Ctrl+`" Click="OnAudioSwitchClick"/>
+        <MenuItem x:Name="AppAutoMuteItem" Header="{loc:Loc Tray.AppAutoMute, Default='应用后台自动静音'}" InputGestureText="Ctrl+Win+S" Click="OnAppAutoMuteClick"/>
+    </MenuItem>
+
     <MenuItem Header="{loc:Loc Tray.OpenConfigDir}" Click="OnOpenConfigDirClick"/>
     <MenuItem Header="{loc:Loc Tray.ReloadConfig}" Click="OnReloadConfigClick"/>
 

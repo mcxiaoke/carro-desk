@@ -69,7 +69,7 @@ namespace ScreenLock.Views
             CoverPanel.Visibility = primary ? Visibility.Collapsed : Visibility.Visible;
             Cursor = primary ? System.Windows.Input.Cursors.Arrow : System.Windows.Input.Cursors.None;
 
-            bool showClock = App.Config.Current.ShowClock;
+            bool showClock = App.Config != null && App.Config.Current != null ? App.Config.Current.ShowClock : true;
             LargeClockText.Visibility = showClock ? Visibility.Visible : Visibility.Collapsed;
             DateText.Visibility = showClock ? Visibility.Visible : Visibility.Collapsed;
             CoverLargeClockText.Visibility = showClock ? Visibility.Visible : Visibility.Collapsed;

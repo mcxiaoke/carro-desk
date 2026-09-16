@@ -26,7 +26,7 @@
     "Times": "次"
   },
   "Tray": {
-    "Title": "ScreenLock",
+    "Title": "CarroDesk",
     "Running": "运行中",
     "Locked": "已锁定",
     "Paused": "已暂停",
@@ -53,6 +53,9 @@
     "ReloadTasks": "重载任务",
     "OpenConfigDir": "打开配置目录",
     "ReloadConfig": "重载配置",
+    "AudioTools": "音频工具",
+    "AudioSwitch": "切换输出设备",
+    "AppAutoMute": "应用后台自动静音",
     "Language": "语言 / Language",
     "LangAuto": "自动跟随系统 (Auto)",
     "LangZh": "简体中文 (Chinese)",
