@@ -65,7 +65,6 @@ namespace ScreenLock.Views
 
                 PinStatusText.Text = _editing.HasPin() ? "已设置（" + MaskHash(_editing.PinHash) + "）" : "未设置";
                 ValidateText.Text = "";
-                ExcludeInputBox.KeyDown += ExcludeInputBox_KeyDown;
             }
             catch (Exception ex)
             {
@@ -342,6 +341,7 @@ namespace ScreenLock.Views
                 {
                     try { app.Dispatcher.Invoke(new Action(() => app.RefreshMenuChecks())); } catch { }
                     try { app.Dispatcher.Invoke(new Action(() => app.UpdateTrayText())); } catch { }
+                    try { app.Dispatcher.Invoke(new Action(() => App.TrayMenu?.RefreshStatus())); } catch { }
                 }
             }
             catch { }

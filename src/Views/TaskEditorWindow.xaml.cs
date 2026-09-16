@@ -63,6 +63,7 @@ namespace ScreenLock.Views
         {
             try
             {
+                _isUpdating = true;
                 ScriptQuickBox.Items.Clear();
                 var hdr = new ComboBoxItem { Content = "scripts/ 快速选择", IsEnabled = false };
                 ScriptQuickBox.Items.Add(hdr);
@@ -89,9 +90,12 @@ namespace ScreenLock.Views
                     }
                 }
                 ScriptQuickBox.SelectedIndex = 0;
-                ScriptQuickBox.SelectionChanged += ScriptQuickBox_SelectionChanged;
             }
             catch { }
+            finally
+            {
+                _isUpdating = false;
+            }
         }
 
         private void ScriptQuickBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
