@@ -8,12 +8,12 @@ namespace CarroDesk.Views
 {
     public partial class VerifyPinWindow : Window
     {
-        private readonly LockController _controller;
+        private readonly IPinService _pinService;
 
-        public VerifyPinWindow(LockController controller, string title)
+        public VerifyPinWindow(IPinService pinService, string title)
         {
             InitializeComponent();
-            _controller = controller;
+            _pinService = pinService;
             if (!string.IsNullOrWhiteSpace(title))
                 TitleText.Text = title;
 
@@ -44,7 +44,7 @@ namespace CarroDesk.Views
                 return;
             }
 
-            if (_controller != null && _controller.VerifyForExit(PinBox.Password))
+            if (_pinService != null && _pinService.Verify(PinBox.Password))
             {
                 DialogResult = true;
                 Close();

@@ -81,7 +81,7 @@ namespace CarroDesk.Views
         {
             try
             {
-                var win = new ConfigEditorWindow
+                var win = new ConfigEditorWindow(App.Services?.GetService<IPinService>())
                 {
                     WindowStartupLocation = WindowStartupLocation.CenterScreen
                 };

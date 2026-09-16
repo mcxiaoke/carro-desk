@@ -28,13 +28,10 @@ namespace CarroDesk
 
         public static ScreenLockModule ScreenLockMod => ScreenLockModule.Instance;
         public static TaskSchedulerModule TaskSchedulerMod => TaskSchedulerModule.Instance;
-        public static AudioSwitchModule AudioSwitchMod => AudioSwitchModule.Instance;
         public static AppAutoMuteModule AppAutoMuteMod => AppAutoMuteModule.Instance;
 
-        // 向后兼容各 View 和旧逻辑的静态门面
+        // 向后兼容各 View 的配置门面（全局 AppSettings，非模块专属）
         public static ConfigService Config => (Services?.GetService<IConfigManager>() as ConfigManager)?.Underlying;
-        public static LockController Controller => ScreenLockMod?.Controller;
-        public static TaskSchedulerService TaskScheduler => TaskSchedulerMod?.Scheduler;
         public static bool IsShuttingDown { get; private set; }
 
         private static Mutex _mutex;
@@ -75,6 +72,10 @@ namespace CarroDesk
             var configMgr = new ConfigManager(rawConfig);
             Services.AddSingleton<IConfigManager>(configMgr);
 
+            // PIN 能力下沉 Host（规范 §3.5）：缺模块仍按"有 PIN 则验"兜底
+            var hostPinService = new HostPinService(rawConfig);
+            Services.AddSingleton<IPinService>(hostPinService);
+
             I18nService.Instance.Init(configMgr.Current.Language);
             I18nService.Instance.LanguageChanged += () =>
             {
@@ -87,13 +88,12 @@ namespace CarroDesk
             // 2. 首次运行安全向导
             if (!configMgr.Current.HasPin())
             {
-                var tempController = new LockController(rawConfig);
                 var wizard = new FirstRunWindow();
                 if (wizard.ShowDialog() == true)
                 {
-                    tempController.Pins.SetNewPin(wizard.NewPin);
-                    configMgr.Current.PinSalt = tempController.Pins.Salt;
-                    configMgr.Current.PinHash = tempController.Pins.Hash;
+                    hostPinService.SetNewPin(wizard.NewPin);
+                    configMgr.Current.PinSalt = hostPinService.Salt;
+                    configMgr.Current.PinHash = hostPinService.Hash;
                     configMgr.Save();
                 }
                 else
@@ -142,6 +142,7 @@ namespace CarroDesk
 
             var taskSchedulerModule = new TaskSchedulerModule();
             Modules.RegisterModule(taskSchedulerModule);
+            Services.AddSingleton<ITaskSchedulerService>(sp => taskSchedulerModule.Scheduler);
 
             var audioSwitchModule = new AudioSwitchModule()
             {
@@ -189,20 +190,19 @@ namespace CarroDesk
 
         internal void ReloadTasks()
         {
-            if (TaskSchedulerMod == null)
+            var scheduler = Services?.GetService<ITaskSchedulerService>();
+            if (scheduler == null)
             {
                 ShowBalloon(Loc.T("Tray.BalloonTasksNotInit"));
                 return;
             }
-            var scheduler = TaskScheduler;
-            if (scheduler == null) return;
             var result = scheduler.Reload();
             try { RefreshTaskMenu(); } catch { }
             try { RefreshMenuChecks(); } catch { }
-            var msg = (result.Errors == null || result.Errors.Count == 0)
-                ? Loc.T("Tray.BalloonTasksReloadedSuccess", result.Tasks.Count)
-                : Loc.T("Tray.BalloonTasksReloadedErrors", result.Tasks.Count, result.Errors.Count);
-            if (result.Errors != null && result.Errors.Count > 0)
+            var msg = result.Errors == 0
+                ? Loc.T("Tray.BalloonTasksReloadedSuccess", result.Tasks)
+                : Loc.T("Tray.BalloonTasksReloadedErrors", result.Tasks, result.Errors);
+            if (result.Errors > 0)
                 msg += Loc.T("Tray.BalloonTasksErrorsHint");
             if (!scheduler.IsGlobalEnabled)
                 msg += Loc.T("Tray.BalloonTasksDisabledHint");
@@ -327,7 +327,8 @@ namespace CarroDesk
                 return;
             }
 
-            var win = new VerifyPinWindow(Controller, Loc.T("Tray.ExitPrompt"))
+            var pinService = Services?.GetService<IPinService>();
+            var win = new VerifyPinWindow(pinService, Loc.T("Tray.ExitPrompt"))
             {
                 WindowStartupLocation = WindowStartupLocation.CenterScreen
             };

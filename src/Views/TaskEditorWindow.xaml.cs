@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using CarroDesk.Core;
 using CarroDesk.Models;
 using CarroDesk.Services.Localization;
 using CarroDesk.Services.Tasks;
@@ -779,11 +780,12 @@ namespace CarroDesk.Views
             if (!SaveTasksInternal()) return;
             try
             {
+                var scheduler = CarroDesk.App.Services?.GetService<ITaskSchedulerService>();
                 var app = Application.Current as CarroDesk.App;
-                if (app != null && CarroDesk.App.TaskScheduler != null)
+                if (app != null && scheduler != null)
                 {
-                    var res = CarroDesk.App.TaskScheduler.Reload();
-                    string msg = res.Errors.Count == 0 ? Loc.T("Tasks.ReloadSuccess", res.Tasks.Count) : Loc.T("Tasks.ReloadWithErrors", res.Errors.Count);
+                    var res = scheduler.Reload();
+                    string msg = res.Errors == 0 ? Loc.T("Tasks.ReloadSuccess", res.Tasks) : Loc.T("Tasks.ReloadWithErrors", res.Errors);
                     MessageBox.Show(msg, Loc.T("Tray.ReloadTasks", "重载任务"), MessageBoxButton.OK, MessageBoxImage.Information);
                     try { app.Dispatcher.Invoke(new Action(() => app.RefreshTaskMenu())); } catch { }
                 }

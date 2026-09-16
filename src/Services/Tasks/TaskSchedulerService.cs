@@ -10,7 +10,7 @@ using CarroDesk.Services.Tasks.Triggers;
 
 namespace CarroDesk.Services.Tasks
 {
-    public class TaskSchedulerService : IDisposable
+    public class TaskSchedulerService : IDisposable, ITaskSchedulerService
     {
         private readonly object _lock = new object();
         private List<TaskDefinition> _tasks = new List<TaskDefinition>();
@@ -108,6 +108,16 @@ namespace CarroDesk.Services.Tasks
             try { SystemEvents.PowerModeChanged -= OnPowerModeChanged; } catch { }
             StopTriggers();
             TaskLogger.Info("system", "TaskScheduler stopped");
+        }
+
+        TaskReloadResult ITaskSchedulerService.Reload()
+        {
+            var r = Reload();
+            return new TaskReloadResult
+            {
+                Tasks = r?.Tasks != null ? r.Tasks.Count : 0,
+                Errors = r?.Errors != null ? r.Errors.Count : 0
+            };
         }
 
         public TaskLoadResult Reload()

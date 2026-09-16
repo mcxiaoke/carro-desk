@@ -6,7 +6,7 @@ using CarroDesk.Views;
 
 namespace CarroDesk.Services
 {
-    public class LockController : IDisposable
+    public class LockController : IDisposable, ILockService, ILockAppearance
     {
         private readonly ConfigService _config;
         private readonly PinService _pinService;
@@ -43,7 +43,7 @@ namespace CarroDesk.Services
                     _lockWindows.Clear();
                     foreach (Screen screen in Screen.AllScreens)
                     {
-                        var win = new LockWindow(this, screen, screen.Primary);
+                        var win = new LockWindow(this, this, screen, screen.Primary);
                         _lockWindows.Add(win);
                         win.Show();
                         win.ActivateIfNeeded();
@@ -54,6 +54,10 @@ namespace CarroDesk.Services
         }
 
         public bool IsLocked { get { return _locked; } }
+
+        // ILockAppearance：只读活引用，锁定窗口每次读取当前生效值
+        public bool ShowClock { get { return _config.Current != null && _config.Current.ShowClock; } }
+        public double OverlayOpacity { get { return _config.Current != null ? _config.Current.OverlayOpacity : 0.88; } }
 
         public TimeSpan GetBlockRemaining()
         {
@@ -76,7 +80,7 @@ namespace CarroDesk.Services
 
             foreach (Screen screen in Screen.AllScreens)
             {
-                var win = new LockWindow(this, screen, screen.Primary);
+                var win = new LockWindow(this, this, screen, screen.Primary);
                 _lockWindows.Add(win);
                 win.Show();
                 win.ActivateIfNeeded();

@@ -13,10 +13,12 @@ namespace CarroDesk.Views
     {
         private AppSettings _editing;
         private bool _isInitializing = false;
+        private readonly IPinService _pinService;
 
-        public ConfigEditorWindow()
+        public ConfigEditorWindow(IPinService pinService)
         {
             InitializeComponent();
+            _pinService = pinService;
             Loaded += OnLoaded;
         }
 
@@ -357,32 +359,12 @@ namespace CarroDesk.Views
 
         private void ApplyRuntime(AppSettings s)
         {
+            // 规范 M9：Config 编辑器不越权直驱模块/Controller。
+            // 仅在持久化后向 Host 发一次重载通知，由各模块 OnConfigReloaded 自行应用。
             try
             {
-                // language
-                I18nService.Instance.SetLanguage(s.Language);
-
-                // pin -> controller
-                try { if (App.Controller != null) App.Controller.ApplyPinFromConfig(); } catch { }
-                // Idle threshold
-                try { App.ScreenLockMod?.SetIdleMinutes(s.IdleMinutes); } catch { }
-                // AutoStart
-                AutoStartService.Sync(s.AutoStart);
-                // Tasks global switch
-                if (App.TaskScheduler != null)
-                {
-                    App.TaskScheduler.SetGlobalEnabled(s.TasksEnabled);
-                }
-                // Process exclusion cache
-                try { ProcessExclusionService.InvalidateCache(); } catch { }
-                // Update tray text/menu if available
                 var app = Application.Current as App;
-                if (app != null)
-                {
-                    try { app.Dispatcher.Invoke(new Action(() => app.RefreshMenuChecks())); } catch { }
-                    try { app.Dispatcher.Invoke(new Action(() => app.UpdateTrayText())); } catch { }
-                    try { app.Dispatcher.Invoke(new Action(() => App.TrayMenu?.RequestTrayRefresh())); } catch { }
-                }
+                app?.Dispatcher.Invoke(new Action(() => app.ReloadConfig()));
             }
             catch { }
         }
@@ -392,7 +374,7 @@ namespace CarroDesk.Views
             // verify old pin first if exists
             if (_editing.HasPin())
             {
-                var verify = new VerifyPinWindow(App.Controller, Loc.T("Config.VerifyOldPinPrompt"));
+                var verify = new VerifyPinWindow(_pinService, Loc.T("Config.VerifyOldPinPrompt"));
                 verify.WindowStartupLocation = WindowStartupLocation.CenterOwner;
                 verify.Owner = this;
                 if (verify.ShowDialog() != true)

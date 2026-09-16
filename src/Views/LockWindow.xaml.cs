@@ -42,7 +42,8 @@ namespace CarroDesk.Views
         [DllImport("user32.dll")]
         private static extern IntPtr GetForegroundWindow();
 
-        private readonly LockController _controller;
+        private readonly ILockService _lockService;
+        private readonly ILockAppearance _appearance;
         private readonly bool _primary;
         private readonly System.Drawing.Rectangle _bounds;
         private readonly DispatcherTimer _keepAliveTimer;
@@ -52,10 +53,11 @@ namespace CarroDesk.Views
         private DateTime _lastActivateAttempt = DateTime.MinValue;
         private bool _isClosing;
 
-        public LockWindow(LockController controller, System.Windows.Forms.Screen screen, bool primary)
+        public LockWindow(ILockService lockService, ILockAppearance appearance, System.Windows.Forms.Screen screen, bool primary)
         {
             InitializeComponent();
-            _controller = controller;
+            _lockService = lockService;
+            _appearance = appearance;
             _primary = primary;
             _bounds = screen.Bounds;
 
@@ -69,7 +71,7 @@ namespace CarroDesk.Views
             CoverPanel.Visibility = primary ? Visibility.Collapsed : Visibility.Visible;
             Cursor = primary ? System.Windows.Input.Cursors.Arrow : System.Windows.Input.Cursors.None;
 
-            bool showClock = App.Config != null && App.Config.Current != null ? App.Config.Current.ShowClock : true;
+            bool showClock = _appearance != null && _appearance.ShowClock;
             LargeClockText.Visibility = showClock ? Visibility.Visible : Visibility.Collapsed;
             DateText.Visibility = showClock ? Visibility.Visible : Visibility.Collapsed;
             CoverLargeClockText.Visibility = showClock ? Visibility.Visible : Visibility.Collapsed;
@@ -147,7 +149,7 @@ namespace CarroDesk.Views
             SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 
             // 平滑淡入动效
-            double targetOpacity = App.Config.Current.OverlayOpacity;
+            double targetOpacity = _appearance != null ? _appearance.OverlayOpacity : 0.88;
             var fadeIn = new DoubleAnimation(0, targetOpacity, TimeSpan.FromMilliseconds(200));
             RootBorder.BeginAnimation(UIElement.OpacityProperty, fadeIn);
 
@@ -206,7 +208,7 @@ namespace CarroDesk.Views
 
         private void UpdateClock()
         {
-            if (!App.Config.Current.ShowClock) return;
+            if (_appearance == null || !_appearance.ShowClock) return;
             var now = DateTime.Now;
             string timeStr = now.ToString("HH:mm:ss");
             string datePattern = Loc.T("Lock.DateFormat");
@@ -247,7 +249,7 @@ namespace CarroDesk.Views
 
         private void UpdatePenaltyState()
         {
-            var blocked = App.Controller.GetBlockRemaining();
+            var blocked = _lockService != null ? _lockService.GetBlockRemaining() : TimeSpan.Zero;
             bool blockedNow = blocked > TimeSpan.Zero;
             if (blockedNow)
             {
@@ -317,8 +319,10 @@ namespace CarroDesk.Views
 
         private void TryUnlock()
         {
-            string error;
-            var result = _controller.TryUnlock(PinBox.Password, out error);
+            string error = null;
+            var result = _lockService != null
+                ? _lockService.TryUnlock(PinBox.Password, out error)
+                : new Func<PinAttemptResult>(() => { error = Loc.T("Lock.IncorrectPin"); return PinAttemptResult.Wrong; })();
             if (result == PinAttemptResult.Success) return;
             MessageText.Text = error;
             ShakeCard();
