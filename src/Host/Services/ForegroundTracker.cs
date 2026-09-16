@@ -2,10 +2,11 @@ using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
+using CarroDesk.Core;
 
 namespace CarroDesk.Host.Services
 {
-    public class ForegroundTracker : IDisposable
+    public class ForegroundTracker : IForegroundTracker
     {
         private const uint EVENT_SYSTEM_FOREGROUND = 0x0003;
         private const uint WINEVENT_OUTOFCONTEXT = 0;

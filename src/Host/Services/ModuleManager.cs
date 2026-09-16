@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Windows.Threading;
 using CarroDesk.Core;
 using CarroDesk.Core.Models;
 
@@ -10,7 +11,15 @@ namespace CarroDesk.Host.Services
     {
         private readonly List<IModule> _modules = new List<IModule>();
         private readonly object _lock = new object();
-        private IServiceProvider _services;
+        private ServiceContainer _services;
+
+        /// <summary>供 App 注入的托盘重刷回调（App 自行做 150ms 防抖）。</summary>
+        public Action RequestTrayRefresh { get; set; }
+
+        /// <summary>供 App 注入的通知回调（通知节流由 App 负责）。</summary>
+        public Action<string, string> ShowNotification { get; set; }
+
+        public Dispatcher Dispatcher { get; set; }
 
         public IReadOnlyList<IModule> Modules
         {
@@ -36,19 +45,21 @@ namespace CarroDesk.Host.Services
             }
         }
 
-        public void InitializeAll(IServiceProvider services)
+        public void InitializeAll(ServiceContainer services)
         {
             _services = services ?? throw new ArgumentNullException(nameof(services));
             var logger = services.GetService<ILoggerService>();
 
-            foreach (var module in Modules)
+            foreach (var module in Modules.Where(m => m.DefaultEnabled))
             {
+                var context = new ModuleContext(module.Id, services, Dispatcher, RequestTrayRefresh, ShowNotification);
                 try
                 {
-                    module.Initialize(services);
+                    module.Initialize(context);
                 }
                 catch (Exception ex)
                 {
+                    // ModuleBase.Initialize 已把 Status 置为 Faulted 并重抛，此处只记日志
                     logger?.LogError(module.Id, $"初始化模块 '{module.Name}' 失败", ex);
                 }
             }
@@ -56,15 +67,17 @@ namespace CarroDesk.Host.Services
 
         public void StartAll()
         {
-            var logger = _services?.GetService<ILoggerService>();
+            var logger = GetLogger();
             foreach (var module in Modules)
             {
+                if (module.Status == ModuleStatus.Faulted) continue; // 初始化失败者禁止启动
                 try
                 {
                     module.Start();
                 }
                 catch (Exception ex)
                 {
+                    // ModuleBase.Start 内部已把 Status 置为 Faulted，此处只记日志
                     logger?.LogError(module.Id, $"启动模块 '{module.Name}' 失败", ex);
                 }
             }
@@ -72,10 +85,8 @@ namespace CarroDesk.Host.Services
 
         public void StopAll()
         {
-            var logger = _services?.GetService<ILoggerService>();
-            // 倒序停止
-            var list = Modules.Reverse().ToList();
-            foreach (var module in list)
+            var logger = GetLogger();
+            foreach (var module in Modules.Reverse().ToList())
             {
                 try
                 {
@@ -90,17 +101,21 @@ namespace CarroDesk.Host.Services
 
         public void ReloadAll()
         {
-            var logger = _services?.GetService<ILoggerService>();
+            var logger = GetLogger();
             foreach (var module in Modules)
             {
-                try
-                {
-                    module.OnConfigReloaded();
-                }
-                catch (Exception ex)
-                {
-                    logger?.LogError(module.Id, $"重载模块 '{module.Name}' 配置失败", ex);
-                }
+                if (module.Status == ModuleStatus.Faulted) continue;
+                SafeInvoker.Run(module.Id, () => module.OnConfigReloaded(), (id, ex) => logger?.LogError(id, "重载模块配置失败", ex));
+            }
+        }
+
+        public void OnLanguageChangedAll()
+        {
+            var logger = GetLogger();
+            foreach (var module in Modules)
+            {
+                if (module.Status == ModuleStatus.Faulted) continue;
+                SafeInvoker.Run(module.Id, () => module.OnLanguageChanged(), (id, ex) => logger?.LogError(id, "模块语言切换回调失败", ex));
             }
         }
 
@@ -124,22 +139,34 @@ namespace CarroDesk.Host.Services
         public IEnumerable<TrayMenuItem> GetAllTrayMenuItems()
         {
             var items = new List<TrayMenuItem>();
+            var logger = GetLogger();
             foreach (var module in Modules)
             {
-                try
+                foreach (var item in GetItemsGuarded(module, logger))
                 {
-                    var moduleItems = module.GetTrayMenuItems();
-                    if (moduleItems != null)
-                    {
-                        items.AddRange(moduleItems);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _services?.GetService<ILoggerService>()?.LogError(module.Id, "获取托盘菜单项失败", ex);
+                    items.Add(item);
                 }
             }
             return items;
+        }
+
+        private IEnumerable<TrayMenuItem> GetItemsGuarded(IModule module, ILoggerService logger)
+        {
+            try
+            {
+                var moduleItems = module.GetTrayMenuItems();
+                return moduleItems ?? Enumerable.Empty<TrayMenuItem>();
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(module.Id, "获取托盘菜单项失败", ex);
+                return Enumerable.Empty<TrayMenuItem>();
+            }
+        }
+
+        private ILoggerService GetLogger()
+        {
+            return _services?.GetService<ILoggerService>();
         }
 
         public void Dispose()
@@ -152,6 +179,46 @@ namespace CarroDesk.Host.Services
                     try { module.Dispose(); } catch { }
                 }
                 _modules.Clear();
+            }
+        }
+
+        private sealed class ModuleContext : IModuleContext
+        {
+            private readonly ServiceContainer _container;
+            private readonly Dispatcher _dispatcher;
+            private readonly Action _requestTrayRefresh;
+            private readonly Action<string, string> _showNotification;
+
+            public ModuleContext(
+                string moduleId,
+                ServiceContainer container,
+                Dispatcher dispatcher,
+                Action requestTrayRefresh,
+                Action<string, string> showNotification)
+            {
+                ModuleId = moduleId;
+                _container = container;
+                _dispatcher = dispatcher;
+                _requestTrayRefresh = requestTrayRefresh;
+                _showNotification = showNotification;
+            }
+
+            public string ModuleId { get; }
+            public Dispatcher Dispatcher => _dispatcher;
+
+            public T GetService<T>() where T : class
+            {
+                return _container?.GetService<T>();
+            }
+
+            public void RequestTrayRefresh()
+            {
+                _requestTrayRefresh?.Invoke();
+            }
+
+            public void ShowNotification(string message, string title = "CarroDesk")
+            {
+                _showNotification?.Invoke(message, title);
             }
         }
     }

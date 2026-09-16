@@ -21,7 +21,7 @@ namespace ScreenLock.Services.Tasks.Triggers
             string hotkey = Task.Trigger.Hotkey ?? "";
             if (string.IsNullOrWhiteSpace(hotkey)) return;
             string error;
-            _hotkeyId = HotkeyService.Instance.Register(hotkey, OnHotkey, out error);
+            _hotkeyId = HotkeyService.Instance.Register("TaskScheduler", hotkey, OnHotkey, out error);
             if (_hotkeyId == 0)
             {
                 TaskLogger.Warn(Task.Name, "hotkey register failed [" + hotkey + "]: " + error);
@@ -42,7 +42,7 @@ namespace ScreenLock.Services.Tasks.Triggers
         {
             if (_hotkeyId != 0)
             {
-                try { HotkeyService.Instance.Unregister(_hotkeyId); } catch { }
+                try { HotkeyService.Instance.Unregister("TaskScheduler", _hotkeyId); } catch { }
                 _hotkeyId = 0;
             }
         }

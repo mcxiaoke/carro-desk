@@ -43,7 +43,7 @@ namespace CarroDesk.Modules.TaskScheduler
             }
             catch (Exception ex)
             {
-                Services?.GetService<ILoggerService>()?.LogError(Id, "启动任务调度器失败", ex);
+                Context?.GetService<ILoggerService>()?.LogError(Id, "启动任务调度器失败", ex);
             }
         }
 
@@ -55,7 +55,7 @@ namespace CarroDesk.Modules.TaskScheduler
             }
             catch (Exception ex)
             {
-                Services?.GetService<ILoggerService>()?.LogError(Id, "停止任务调度器失败", ex);
+                Context?.GetService<ILoggerService>()?.LogError(Id, "停止任务调度器失败", ex);
             }
         }
 
@@ -68,7 +68,7 @@ namespace CarroDesk.Modules.TaskScheduler
             }
             catch (Exception ex)
             {
-                Services?.GetService<ILoggerService>()?.LogError(Id, "重载任务调度器失败", ex);
+                Context?.GetService<ILoggerService>()?.LogError(Id, "重载任务调度器失败", ex);
             }
         }
 
@@ -78,7 +78,7 @@ namespace CarroDesk.Modules.TaskScheduler
             if (Config != null)
             {
                 Config.GlobalEnabled = enabled;
-                var configMgr = Services?.GetService<IConfigManager>();
+                var configMgr = Context?.GetService<IConfigManager>();
                 configMgr?.SaveModuleConfig(Id, Config);
             }
         }

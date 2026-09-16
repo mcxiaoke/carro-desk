@@ -67,6 +67,10 @@ namespace ScreenLock.Services
 
         public AppSettings Current { get; private set; }
 
+        // 模块专属配置（JSON 字符串槽），随 config.json 一起落盘，避免模块配置仅存内存
+        public string AudioSwitchJson { get; set; } = "";
+        public string AppAutoMuteJson { get; set; } = "";
+
         public void LoadOrCreate()
         {
             if (!Directory.Exists(DirPath)) Directory.CreateDirectory(DirPath);
@@ -176,6 +180,9 @@ namespace ScreenLock.Services
                     {
                         s.ExcludeProcesses = new List<string>();
                     }
+
+                    this.AudioSwitchJson = obj.HasKey("AudioSwitch") ? obj["AudioSwitch"].Value : "";
+                    this.AppAutoMuteJson = obj.HasKey("AppAutoMute") ? obj["AppAutoMute"].Value : "";
                 }
                 else
                 {
@@ -238,6 +245,10 @@ namespace ScreenLock.Services
             sb.AppendLine("  \"Language\": \"" + Escape(Current.Language ?? "auto") + "\",");
             sb.Append("  \"ExcludeProcesses\": ");
             sb.Append(SerializeStringArray(Current.ExcludeProcesses));
+            sb.AppendLine();
+            sb.Append("  \"AudioSwitch\": \"").Append(Escape(this.AudioSwitchJson ?? "")).Append("\"");
+            sb.AppendLine(",");
+            sb.Append("  \"AppAutoMute\": \"").Append(Escape(this.AppAutoMuteJson ?? "")).Append("\"");
             sb.AppendLine();
             sb.AppendLine("}");
             File.WriteAllText(FilePath, sb.ToString(), Encoding.UTF8);

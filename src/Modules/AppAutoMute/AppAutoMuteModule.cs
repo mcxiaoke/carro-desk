@@ -4,9 +4,7 @@ using System.Linq;
 using System.Windows.Threading;
 using CarroDesk.Core;
 using CarroDesk.Core.Models;
-using CarroDesk.Host.Services;
 using CarroDesk.Modules.AppAutoMute.Models;
-using ScreenLock.Services.Tasks;
 
 namespace CarroDesk.Modules.AppAutoMute
 {
@@ -18,8 +16,9 @@ namespace CarroDesk.Modules.AppAutoMute
         public override string Name => "应用前后台智能静音";
         public override string Description => "当目标应用位于后台时自动静音，切回前台时自动恢复发声";
 
-        private readonly AudioService _audioService;
-        private readonly ForegroundTracker _foregroundTracker;
+        private IAudioService _audioService;
+        private IForegroundTracker _foregroundTracker;
+        private IHotkeyService _hotkeys;
 
         private readonly DispatcherTimer _muteTimer;
         private readonly DispatcherTimer _unmuteTimer;
@@ -31,11 +30,9 @@ namespace CarroDesk.Modules.AppAutoMute
 
         public Action<string> NotificationCallback { get; set; }
 
-        public AppAutoMuteModule(AudioService audioService, ForegroundTracker foregroundTracker)
+        public AppAutoMuteModule()
         {
             Instance = this;
-            _audioService = audioService ?? throw new ArgumentNullException(nameof(audioService));
-            _foregroundTracker = foregroundTracker ?? throw new ArgumentNullException(nameof(foregroundTracker));
 
             _muteTimer = new DispatcherTimer();
             _muteTimer.Tick += OnMuteTimerTick;
@@ -46,6 +43,10 @@ namespace CarroDesk.Modules.AppAutoMute
 
         protected override void OnStart()
         {
+            _audioService = Context.GetService<IAudioService>();
+            _foregroundTracker = Context.GetService<IForegroundTracker>();
+            _hotkeys = Context.GetService<IHotkeyService>();
+
             RegisterHotkey();
             _foregroundTracker.ForegroundChanged += OnForegroundChanged;
             _foregroundTracker.UpdateCurrent();
@@ -58,6 +59,7 @@ namespace CarroDesk.Modules.AppAutoMute
             _muteTimer.Stop();
             _unmuteTimer.Stop();
             UnregisterHotkey();
+            _hotkeys?.UnregisterAll(Id);
 
             // 核心安全保护：停用时强制全量解除目标应用静音
             UnmuteAllTargets();
@@ -83,7 +85,7 @@ namespace CarroDesk.Modules.AppAutoMute
 
             try
             {
-                _hotkeyId = HotkeyService.Instance.Register(Config.Hotkey, () =>
+                _hotkeyId = _hotkeys.Register(Id, Config.Hotkey, () =>
                 {
                     ToggleEnabled();
                 }, out _);
@@ -97,7 +99,7 @@ namespace CarroDesk.Modules.AppAutoMute
             {
                 try
                 {
-                    HotkeyService.Instance.Unregister(_hotkeyId);
+                    _hotkeys?.Unregister(Id, _hotkeyId);
                     _hotkeyId = 0;
                 }
                 catch { }
@@ -114,7 +116,7 @@ namespace CarroDesk.Modules.AppAutoMute
                 _trayItem.IsChecked = Config.Enabled;
             }
 
-            var configMgr = Services?.GetService<IConfigManager>();
+            var configMgr = Context?.GetService<IConfigManager>();
             configMgr?.SaveModuleConfig(Id, Config);
 
             string msg = Config.Enabled ? "应用自动静音已启用" : "应用自动静音已禁用 (已恢复所有声音)";

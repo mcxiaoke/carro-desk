@@ -10,7 +10,7 @@ using ScreenLock.Services.Localization;
 
 namespace CarroDesk.Modules.ScreenLock
 {
-    public class ScreenLockModule : ModuleBase<ScreenLockConfig>
+    public class ScreenLockModule : ModuleBase<ScreenLockConfig>, IExitGuard
     {
         public static ScreenLockModule Instance { get; private set; }
 
@@ -39,7 +39,7 @@ namespace CarroDesk.Modules.ScreenLock
 
         protected override void OnStart()
         {
-            var configMgr = Services.GetService<IConfigManager>();
+            var configMgr = Context.GetService<IConfigManager>();
             var config = Config ?? new ScreenLockConfig();
 
             Idle.Threshold = TimeSpan.FromMinutes(config.IdleMinutes);
@@ -142,12 +142,18 @@ namespace CarroDesk.Modules.ScreenLock
             Controller?.Unlock();
         }
 
+        public bool RequestBlockExit()
+        {
+            // 已设置 PIN 时阻止退出并让 Host 弹挑战；未设 PIN 则放行
+            return Config != null && !string.IsNullOrEmpty(Config.PinHash) && !string.IsNullOrEmpty(Config.PinSalt);
+        }
+
         public void SetIdleMinutes(int mins)
         {
             if (Config != null)
             {
                 Config.IdleMinutes = mins;
-                var configMgr = Services?.GetService<IConfigManager>();
+                var configMgr = Context?.GetService<IConfigManager>();
                 configMgr?.SaveModuleConfig(Id, Config);
             }
             if (Idle != null)

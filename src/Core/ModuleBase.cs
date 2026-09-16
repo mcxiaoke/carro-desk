@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using CarroDesk.Core.Models;
-using CarroDesk.Host.Services;
 
 namespace CarroDesk.Core
 {
@@ -11,30 +9,50 @@ namespace CarroDesk.Core
         public abstract string Id { get; }
         public abstract string Name { get; }
         public virtual string Description => string.Empty;
+        public virtual string Version => "1.0.0";
+        public virtual int Order => 0;
         public virtual bool DefaultEnabled => true;
-        public bool IsRunning { get; private set; }
 
-        protected IServiceProvider Services { get; private set; }
+        public bool IsRunning { get; private set; }
+        public ModuleStatus Status { get; protected set; } = ModuleStatus.Created;
+
+        protected IModuleContext Context { get; private set; }
         public TConfig Config { get; private set; }
 
-        public virtual void Initialize(IServiceProvider services)
+        public virtual void Initialize(IModuleContext context)
         {
-            Services = services ?? throw new ArgumentNullException(nameof(services));
-            var configMgr = services.GetService<IConfigManager>();
-            Config = configMgr != null ? configMgr.GetModuleConfig<TConfig>(Id) : new TConfig();
+            Context = context ?? throw new ArgumentNullException(nameof(context));
+            try
+            {
+                var configMgr = Context.GetService<IConfigManager>();
+                Config = configMgr != null ? configMgr.GetModuleConfig<TConfig>(Id) : new TConfig();
+                Status = ModuleStatus.Initialized;
+            }
+            catch
+            {
+                Status = ModuleStatus.Faulted;
+                throw;
+            }
         }
 
         public void Start()
         {
+            if (Status == ModuleStatus.Faulted)
+            {
+                // 初始化失败的模块禁止启动
+                return;
+            }
             if (IsRunning) return;
             try
             {
                 OnStart();
                 IsRunning = true;
+                Status = ModuleStatus.Running;
             }
             catch (Exception ex)
             {
-                Services?.GetService<ILoggerService>()?.LogError(Id, "启动模块时发生异常", ex);
+                Status = ModuleStatus.Faulted;
+                Context?.GetService<ILoggerService>()?.LogError(Id, "启动模块时发生异常", ex);
             }
         }
 
@@ -47,26 +65,31 @@ namespace CarroDesk.Core
             }
             catch (Exception ex)
             {
-                Services?.GetService<ILoggerService>()?.LogError(Id, "停止模块时发生异常", ex);
+                Context?.GetService<ILoggerService>()?.LogError(Id, "停止模块时发生异常", ex);
             }
             finally
             {
                 IsRunning = false;
+                Status = ModuleStatus.Stopped;
             }
         }
 
         public virtual void OnConfigReloaded()
         {
-            var configMgr = Services?.GetService<IConfigManager>();
+            var configMgr = Context?.GetService<IConfigManager>();
             if (configMgr != null)
             {
                 Config = configMgr.GetModuleConfig<TConfig>(Id);
             }
         }
 
+        public virtual void OnLanguageChanged()
+        {
+        }
+
         public virtual IEnumerable<TrayMenuItem> GetTrayMenuItems()
         {
-            return Enumerable.Empty<TrayMenuItem>();
+            return System.Linq.Enumerable.Empty<TrayMenuItem>();
         }
 
         protected abstract void OnStart();

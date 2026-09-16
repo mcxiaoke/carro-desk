@@ -79,6 +79,7 @@ namespace ScreenLock
             I18nService.Instance.LanguageChanged += () =>
             {
                 UpdateTrayText();
+                Modules?.OnLanguageChangedAll();
                 _trayMenu?.RefreshAll();
             };
             Services.AddSingleton(I18nService.Instance);
@@ -110,11 +111,25 @@ namespace ScreenLock
             // 4. 构建并注册核心业务模块与基础设施
             var audioService = new AudioService();
             Services.AddSingleton(audioService);
+            Services.AddSingleton<IAudioService>(audioService);
 
             var foregroundTracker = new ForegroundTracker();
             Services.AddSingleton(foregroundTracker);
+            Services.AddSingleton<IForegroundTracker>(foregroundTracker);
 
-            Modules = new ModuleManager();
+            Services.AddSingleton<IHotkeyService>(HotkeyService.Instance);
+            Services.AddSingleton<INotificationService>(new DelegatedNotificationService((msg, title) => ShowBalloon(msg)));
+            Services.AddSingleton<IIdleService>(new SystemIdleService());
+
+            Modules = new ModuleManager
+            {
+                Dispatcher = Dispatcher,
+                RequestTrayRefresh = () => Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    try { _trayMenu?.RefreshAll(); } catch { }
+                })),
+                ShowNotification = (msg, title) => ShowBalloon(msg)
+            };
             Services.AddSingleton(Modules);
 
             var screenLockModule = new ScreenLockModule(rawConfig)
@@ -126,13 +141,13 @@ namespace ScreenLock
             var taskSchedulerModule = new TaskSchedulerModule(screenLockModule.Idle);
             Modules.RegisterModule(taskSchedulerModule);
 
-            var audioSwitchModule = new AudioSwitchModule(audioService)
+            var audioSwitchModule = new AudioSwitchModule()
             {
                 NotificationCallback = ShowBalloon
             };
             Modules.RegisterModule(audioSwitchModule);
 
-            var appAutoMuteModule = new AppAutoMuteModule(audioService, foregroundTracker)
+            var appAutoMuteModule = new AppAutoMuteModule()
             {
                 NotificationCallback = ShowBalloon
             };
@@ -302,6 +317,24 @@ namespace ScreenLock
 
         internal void PromptExit()
         {
+            // 退出守卫协商（规范 §3.5）：任一守卫要求阻止时，展示 Host 持有的挑战 UI
+            bool blocked = false;
+            foreach (var module in Modules.Modules)
+            {
+                var guard = module as IExitGuard;
+                if (guard == null) continue;
+                bool b = false;
+                bool ok = SafeInvoker.RunTimeout(module.Id, TimeSpan.FromSeconds(3),
+                    () => b = guard.RequestBlockExit(), (id, ex) => LogError(ex));
+                if (ok && b) { blocked = true; break; }
+            }
+
+            if (!blocked)
+            {
+                ExitApp();
+                return;
+            }
+
             var win = new VerifyPinWindow(Controller, Loc.T("Tray.ExitPrompt"))
             {
                 WindowStartupLocation = WindowStartupLocation.CenterScreen

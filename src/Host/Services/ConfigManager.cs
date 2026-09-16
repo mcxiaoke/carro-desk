@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using CarroDesk.Core;
 using ScreenLock.Models;
 using ScreenLock.Services;
+using SimpleJSON;
 
 namespace CarroDesk.Host.Services
 {
@@ -72,22 +74,109 @@ namespace CarroDesk.Host.Services
             {
                 if (typeof(T) == typeof(Modules.AudioSwitch.Models.AudioSwitchConfig))
                 {
-                    return (_audioSwitchConfig ?? (_audioSwitchConfig = new Modules.AudioSwitch.Models.AudioSwitchConfig())) as T;
+                    _audioSwitchConfig = string.IsNullOrWhiteSpace(_underlying.AudioSwitchJson)
+                        ? new Modules.AudioSwitch.Models.AudioSwitchConfig()
+                        : DeserializeAudioSwitch(_underlying.AudioSwitchJson);
+                    return _audioSwitchConfig as T;
                 }
             }
             else if (string.Equals(moduleId, "AppAutoMute", StringComparison.OrdinalIgnoreCase))
             {
                 if (typeof(T) == typeof(Modules.AppAutoMute.Models.AppAutoMuteConfig))
                 {
-                    return (_appAutoMuteConfig ?? (_appAutoMuteConfig = new Modules.AppAutoMute.Models.AppAutoMuteConfig())) as T;
+                    _appAutoMuteConfig = string.IsNullOrWhiteSpace(_underlying.AppAutoMuteJson)
+                        ? new Modules.AppAutoMute.Models.AppAutoMuteConfig()
+                        : DeserializeAppAutoMute(_underlying.AppAutoMuteJson);
+                    return _appAutoMuteConfig as T;
                 }
             }
 
             return new T();
         }
 
-        private static Modules.AudioSwitch.Models.AudioSwitchConfig _audioSwitchConfig;
-        private static Modules.AppAutoMute.Models.AppAutoMuteConfig _appAutoMuteConfig;
+        private Modules.AudioSwitch.Models.AudioSwitchConfig _audioSwitchConfig;
+        private Modules.AppAutoMute.Models.AppAutoMuteConfig _appAutoMuteConfig;
+
+        private static string SerializeAudioSwitch(Modules.AudioSwitch.Models.AudioSwitchConfig c)
+        {
+            var o = new JSONObject();
+            o["Enabled"] = c.Enabled;
+            o["Hotkey"] = c.Hotkey ?? "";
+            o["SpeakerPattern"] = c.SpeakerPattern ?? "";
+            o["HeadphonePattern"] = c.HeadphonePattern ?? "";
+            o["PlayNotificationSound"] = c.PlayNotificationSound;
+            return o.ToString();
+        }
+
+        private static Modules.AudioSwitch.Models.AudioSwitchConfig DeserializeAudioSwitch(string json)
+        {
+            var c = new Modules.AudioSwitch.Models.AudioSwitchConfig();
+            try
+            {
+                var node = JSONNode.Parse(json);
+                if (node != null && node.IsObject)
+                {
+                    var o = node.AsObject;
+                    if (o.HasKey("Enabled")) c.Enabled = o["Enabled"].AsBool;
+                    if (o.HasKey("Hotkey")) c.Hotkey = o["Hotkey"].Value;
+                    if (o.HasKey("SpeakerPattern")) c.SpeakerPattern = o["SpeakerPattern"].Value;
+                    if (o.HasKey("HeadphonePattern")) c.HeadphonePattern = o["HeadphonePattern"].Value;
+                    if (o.HasKey("PlayNotificationSound")) c.PlayNotificationSound = o["PlayNotificationSound"].AsBool;
+                }
+            }
+            catch { }
+            return c;
+        }
+
+        private static string SerializeAppAutoMute(Modules.AppAutoMute.Models.AppAutoMuteConfig c)
+        {
+            var o = new JSONObject();
+            o["Enabled"] = c.Enabled;
+            o["Hotkey"] = c.Hotkey ?? "";
+            o["MuteDelayMs"] = c.MuteDelayMs;
+            o["UnmuteDelayMs"] = c.UnmuteDelayMs;
+            o["Mode"] = c.Mode ?? "";
+            var arr = new JSONArray();
+            if (c.TargetApps != null)
+            {
+                foreach (var t in c.TargetApps)
+                {
+                    if (t != null) arr.Add(t);
+                }
+            }
+            o["TargetApps"] = arr;
+            return o.ToString();
+        }
+
+        private static Modules.AppAutoMute.Models.AppAutoMuteConfig DeserializeAppAutoMute(string json)
+        {
+            var c = new Modules.AppAutoMute.Models.AppAutoMuteConfig();
+            try
+            {
+                var node = JSONNode.Parse(json);
+                if (node != null && node.IsObject)
+                {
+                    var o = node.AsObject;
+                    if (o.HasKey("Enabled")) c.Enabled = o["Enabled"].AsBool;
+                    if (o.HasKey("Hotkey")) c.Hotkey = o["Hotkey"].Value;
+                    if (o.HasKey("MuteDelayMs")) c.MuteDelayMs = o["MuteDelayMs"].AsInt;
+                    if (o.HasKey("UnmuteDelayMs")) c.UnmuteDelayMs = o["UnmuteDelayMs"].AsInt;
+                    if (o.HasKey("Mode")) c.Mode = o["Mode"].Value;
+                    if (o.HasKey("TargetApps") && o["TargetApps"].IsArray)
+                    {
+                        var list = new List<string>();
+                        foreach (JSONNode item in o["TargetApps"].AsArray.Children)
+                        {
+                            var v = item.Value;
+                            if (!string.IsNullOrEmpty(v)) list.Add(v);
+                        }
+                        c.TargetApps = list;
+                    }
+                }
+            }
+            catch { }
+            return c;
+        }
 
         public void SaveModuleConfig<T>(string moduleId, T config) where T : class
         {
@@ -118,6 +207,8 @@ namespace CarroDesk.Host.Services
                 if (config is Modules.AudioSwitch.Models.AudioSwitchConfig asc)
                 {
                     _audioSwitchConfig = asc;
+                    _underlying.AudioSwitchJson = SerializeAudioSwitch(asc);
+                    _underlying.Save();
                 }
             }
             else if (string.Equals(moduleId, "AppAutoMute", StringComparison.OrdinalIgnoreCase))
@@ -125,6 +216,8 @@ namespace CarroDesk.Host.Services
                 if (config is Modules.AppAutoMute.Models.AppAutoMuteConfig aam)
                 {
                     _appAutoMuteConfig = aam;
+                    _underlying.AppAutoMuteJson = SerializeAppAutoMute(aam);
+                    _underlying.Save();
                 }
             }
         }

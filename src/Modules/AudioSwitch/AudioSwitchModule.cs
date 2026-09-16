@@ -3,9 +3,7 @@ using System.Collections.Generic;
 using System.Media;
 using CarroDesk.Core;
 using CarroDesk.Core.Models;
-using CarroDesk.Host.Services;
 using CarroDesk.Modules.AudioSwitch.Models;
-using ScreenLock.Services.Tasks;
 
 namespace CarroDesk.Modules.AudioSwitch
 {
@@ -17,20 +15,22 @@ namespace CarroDesk.Modules.AudioSwitch
         public override string Name => "音频输出设备切换";
         public override string Description => "快速在扬声器与耳机之间一键切换默认音频输出端点";
 
-        private readonly AudioService _audioService;
+        private IAudioService _audioService;
+        private IHotkeyService _hotkeys;
         private TrayMenuItem _trayItem;
 
         public AudioDeviceItem CurrentDefaultDevice { get; private set; }
         public Action<string> NotificationCallback { get; set; }
 
-        public AudioSwitchModule(AudioService audioService)
+        public AudioSwitchModule()
         {
             Instance = this;
-            _audioService = audioService ?? throw new ArgumentNullException(nameof(audioService));
         }
 
         protected override void OnStart()
         {
+            _audioService = Context.GetService<IAudioService>();
+            _hotkeys = Context.GetService<IHotkeyService>();
             UpdateCurrentDevice();
             RegisterHotkey();
         }
@@ -38,6 +38,7 @@ namespace CarroDesk.Modules.AudioSwitch
         protected override void OnStop()
         {
             UnregisterHotkey();
+            _hotkeys?.UnregisterAll(Id);
         }
 
         public override void OnConfigReloaded()
@@ -57,7 +58,7 @@ namespace CarroDesk.Modules.AudioSwitch
 
             try
             {
-                _hotkeyId = HotkeyService.Instance.Register(Config.Hotkey, () =>
+                _hotkeyId = _hotkeys.Register(Id, Config.Hotkey, () =>
                 {
                     ToggleAudioDevice();
                 }, out _);
@@ -71,7 +72,7 @@ namespace CarroDesk.Modules.AudioSwitch
             {
                 try
                 {
-                    HotkeyService.Instance.Unregister(_hotkeyId);
+                    _hotkeys?.Unregister(Id, _hotkeyId);
                     _hotkeyId = 0;
                 }
                 catch { }

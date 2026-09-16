@@ -4,21 +4,17 @@ using System.Diagnostics;
 using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using System.Security;
+using CarroDesk.Core;
 using CarroDesk.Core.Audio;
+using CarroDesk.Core.Models;
 
 namespace CarroDesk.Host.Services
 {
-    public class AudioDeviceItem
-    {
-        public string Id { get; set; }
-        public string Name { get; set; }
-
-        public override string ToString() => Name;
-    }
-
-    public class AudioService : IDisposable
+    public class AudioService : IAudioService
     {
         private IMMDeviceEnumerator _deviceEnumerator;
+
+        public event Action DevicesChanged;
 
         public AudioService()
         {
@@ -27,6 +23,11 @@ namespace CarroDesk.Host.Services
                 _deviceEnumerator = (IMMDeviceEnumerator)new MMDeviceEnumeratorComObject();
             }
             catch { }
+        }
+
+        public void RaiseDevicesChanged()
+        {
+            DevicesChanged?.Invoke();
         }
 
         public List<AudioDeviceItem> GetPlaybackDevices()
