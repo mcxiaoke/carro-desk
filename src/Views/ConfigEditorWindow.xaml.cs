@@ -5,12 +5,14 @@ using System.Windows;
 using System.Windows.Controls;
 using ScreenLock.Models;
 using ScreenLock.Services;
+using ScreenLock.Services.Localization;
 
 namespace ScreenLock.Views
 {
     public partial class ConfigEditorWindow : Window
     {
         private AppSettings _editing;
+        private bool _isInitializing = false;
 
         public ConfigEditorWindow()
         {
@@ -27,11 +29,26 @@ namespace ScreenLock.Views
         {
             try
             {
+                _isInitializing = true;
                 var cur = App.Config.Current;
                 _editing = cur.Clone();
 
                 PathText.Text = ConfigService.FilePath;
-                ModeText.Text = ConfigService.IsPortableMode ? "便携模式（exe 目录\\app_data）" : "漫游模式（%AppData%\\ScreenLock）";
+                RefreshDynamicTexts();
+
+                // Language
+                string curLang = _editing.Language ?? "auto";
+                for (int i = 0; i < LanguageBox.Items.Count; i++)
+                {
+                    if (LanguageBox.Items[i] is ComboBoxItem item && item.Tag != null)
+                    {
+                        if (string.Equals(item.Tag.ToString(), curLang, StringComparison.OrdinalIgnoreCase))
+                        {
+                            LanguageBox.SelectedIndex = i;
+                            break;
+                        }
+                    }
+                }
 
                 // IdleMinutes -> ComboBox (editable)
                 string idleStr = _editing.IdleMinutes.ToString();
@@ -42,7 +59,6 @@ namespace ScreenLock.Views
                     if (item != null)
                     {
                         string txt = item.Content.ToString();
-                        // "0 - 禁用" or "5"
                         string num = txt.Split(new[] { ' ', '-' }, StringSplitOptions.RemoveEmptyEntries)[0];
                         if (num == idleStr) { IdleBox.SelectedIndex = i; found = true; break; }
                     }
@@ -52,9 +68,8 @@ namespace ScreenLock.Views
 
                 ShowClockBox.IsChecked = _editing.ShowClock;
                 OpacitySlider.Value = _editing.OverlayOpacity;
-                int initPct = (int)Math.Round(_editing.OverlayOpacity * 100);
-                string initDesc = initPct >= 95 ? "全遮挡" : (initPct >= 80 ? "微透" : "半透");
-                OpacityText.Text = string.Format("{0}% ({1})", initPct, initDesc);
+                UpdateOpacityText(_editing.OverlayOpacity);
+
                 AutoStartBox.IsChecked = _editing.AutoStart;
                 UnlockOnResumeBox.IsChecked = _editing.UnlockOnResume;
                 TasksEnabledBox.IsChecked = _editing.TasksEnabled;
@@ -63,12 +78,37 @@ namespace ScreenLock.Views
                 var list = _editing.ExcludeProcesses != null ? new List<string>(_editing.ExcludeProcesses) : new List<string>();
                 ExcludeList.ItemsSource = list;
 
-                PinStatusText.Text = _editing.HasPin() ? "已设置（" + MaskHash(_editing.PinHash) + "）" : "未设置";
                 ValidateText.Text = "";
             }
             catch (Exception ex)
             {
-                MessageBox.Show("加载配置失败: " + ex.Message, "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(Loc.T("Config.LoadFailed", ex.Message), Loc.T("Common.Error"), MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                _isInitializing = false;
+            }
+        }
+
+        private void RefreshDynamicTexts()
+        {
+            ModeText.Text = ConfigService.IsPortableMode ? Loc.T("Config.PortableMode") : Loc.T("Config.StandardMode");
+            if (_editing != null)
+            {
+                PinStatusText.Text = _editing.HasPin() ? Loc.T("Config.PinConfigured") + " (" + MaskHash(_editing.PinHash) + ")" : Loc.T("Config.PinNotConfigured");
+            }
+        }
+
+        private void LanguageBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_isInitializing) return;
+            if (LanguageBox.SelectedItem is ComboBoxItem item && item.Tag != null)
+            {
+                string lang = item.Tag.ToString();
+                _editing.Language = lang;
+                I18nService.Instance.SetLanguage(lang);
+                RefreshDynamicTexts();
+                UpdateOpacityText(OpacitySlider.Value);
             }
         }
 
@@ -122,7 +162,7 @@ namespace ScreenLock.Views
 
                 if (menu.Items.Count == 0)
                 {
-                    menu.Items.Add(new MenuItem { Header = "暂无检测到的前台窗口进程", IsEnabled = false });
+                    menu.Items.Add(new MenuItem { Header = Loc.T("Tray.NoRecentTasks"), IsEnabled = false });
                 }
 
                 if (btn != null)
@@ -134,7 +174,7 @@ namespace ScreenLock.Views
             }
             catch (Exception ex)
             {
-                MessageBox.Show("获取运行进程失败: " + ex.Message, "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(Loc.T("Config.GetProcessesFailed", ex.Message), Loc.T("Common.Prompt"), MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 
@@ -175,32 +215,34 @@ namespace ScreenLock.Views
 
         private void OnResetDefaultsClick(object sender, RoutedEventArgs e)
         {
-            if (MessageBox.Show("确定要将除 PIN 以外的配置恢复为默认值吗？", "恢复默认值", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            if (MessageBox.Show(Loc.T("Config.ResetDefaultsConfirm"), Loc.T("Config.ResetDefaultsTitle"), MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
                 return;
 
             var def = new AppSettings();
             IdleBox.Text = def.IdleMinutes.ToString();
             ShowClockBox.IsChecked = def.ShowClock;
             OpacitySlider.Value = def.OverlayOpacity;
-            int defPct = (int)Math.Round(def.OverlayOpacity * 100);
-            string defDesc = defPct >= 95 ? "全遮挡" : (defPct >= 80 ? "微透" : "半透");
-            OpacityText.Text = string.Format("{0}% ({1})", defPct, defDesc);
+            UpdateOpacityText(def.OverlayOpacity);
             AutoStartBox.IsChecked = def.AutoStart;
             UnlockOnResumeBox.IsChecked = def.UnlockOnResume;
             TasksEnabledBox.IsChecked = def.TasksEnabled;
             ExcludeList.ItemsSource = null;
             ExcludeList.ItemsSource = new List<string>();
-            ValidateText.Text = "已恢复默认值（请点击保存生效）";
+            ValidateText.Text = Loc.T("Config.ResetDefaultsTooltip");
+        }
+
+        private void UpdateOpacityText(double opacity)
+        {
+            if (OpacityText != null)
+            {
+                int pct = (int)Math.Round(opacity * 100);
+                OpacityText.Text = string.Format("{0}%", pct);
+            }
         }
 
         private void OpacitySlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
-            if (OpacityText != null)
-            {
-                int pct = (int)Math.Round(e.NewValue * 100);
-                string desc = pct >= 95 ? "全遮挡" : (pct >= 80 ? "微透" : "半透");
-                OpacityText.Text = string.Format("{0}% ({1})", pct, desc);
-            }
+            UpdateOpacityText(e.NewValue);
         }
 
         private void OnOpenConfigDirClick(object sender, RoutedEventArgs e)
@@ -222,9 +264,7 @@ namespace ScreenLock.Views
         private AppSettings BuildCurrent()
         {
             var s = new AppSettings();
-            // IdleMinutes
             string idleRaw = IdleBox.Text.Trim();
-            // handle "0 - 禁用" selected
             if (idleRaw.Contains("-")) idleRaw = idleRaw.Split('-')[0].Trim();
             int idle;
             if (!int.TryParse(idleRaw, out idle)) idle = _editing.IdleMinutes;
@@ -234,6 +274,7 @@ namespace ScreenLock.Views
             s.AutoStart = AutoStartBox.IsChecked == true;
             s.UnlockOnResume = UnlockOnResumeBox.IsChecked == true;
             s.TasksEnabled = TasksEnabledBox.IsChecked == true;
+            s.Language = _editing.Language ?? "auto";
             var excl = ExcludeList.ItemsSource as List<string>;
             s.ExcludeProcesses = excl != null ? new List<string>(excl) : new List<string>();
             // keep pin
@@ -244,7 +285,7 @@ namespace ScreenLock.Views
 
         private string Validate(AppSettings s)
         {
-            if (s.IdleMinutes < 0 || s.IdleMinutes > 24 * 60) return "空闲分钟需在 0-1440 之间";
+            if (s.IdleMinutes < 0 || s.IdleMinutes > 24 * 60) return Loc.T("Config.ErrorIdleRange");
             if (s.OverlayOpacity < 0.3 || s.OverlayOpacity > 1.0) return "透明度需在 0.3-1.0 之间";
             foreach (var p in s.ExcludeProcesses)
             {
@@ -260,26 +301,26 @@ namespace ScreenLock.Views
             string err = Validate(cur);
             if (err != null)
             {
-                ValidateText.Text = "校验失败: " + err;
-                MessageBox.Show(err, "校验失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                ValidateText.Text = Loc.T("Config.ValidationFailed") + ": " + err;
+                MessageBox.Show(err, Loc.T("Config.ValidationFailed"), MessageBoxButton.OK, MessageBoxImage.Warning);
             }
             else
             {
-                ValidateText.Text = "校验通过";
-                MessageBox.Show("校验通过", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                ValidateText.Text = Loc.T("Config.ValidationPassed");
+                MessageBox.Show(Loc.T("Config.ValidationPassed"), Loc.T("Common.Prompt"), MessageBoxButton.OK, MessageBoxImage.Information);
             }
         }
 
         private void OnSaveClick(object sender, RoutedEventArgs e)
         {
             if (!DoSave(false)) return;
-            MessageBox.Show("已保存到 " + ConfigService.FilePath, "保存成功", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show(Loc.T("Config.SaveSuccess", ConfigService.FilePath), Loc.T("Common.Success"), MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
         private void OnSaveApplyClick(object sender, RoutedEventArgs e)
         {
             if (!DoSave(true)) return;
-            MessageBox.Show("已保存并应用", "成功", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show(Loc.T("Config.SaveSuccessApplied"), Loc.T("Common.Success"), MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
         private bool DoSave(bool apply)
@@ -288,8 +329,8 @@ namespace ScreenLock.Views
             string err = Validate(cur);
             if (err != null)
             {
-                ValidateText.Text = "校验失败: " + err;
-                MessageBox.Show(err, "校验失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                ValidateText.Text = Loc.T("Config.ValidationFailed") + ": " + err;
+                MessageBox.Show(err, Loc.T("Config.ValidationFailed"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
             }
             try
@@ -299,7 +340,7 @@ namespace ScreenLock.Views
                 // also update editing copy (for pin)
                 _editing = App.Config.Current.Clone();
                 App.Config.Save();
-                ValidateText.Text = "已保存";
+                ValidateText.Text = Loc.T("Common.Success");
 
                 if (apply)
                 {
@@ -309,7 +350,7 @@ namespace ScreenLock.Views
             }
             catch (Exception ex)
             {
-                MessageBox.Show("保存失败: " + ex.Message, "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(Loc.T("Config.SaveFailed", ex.Message), Loc.T("Common.Error"), MessageBoxButton.OK, MessageBoxImage.Error);
                 return false;
             }
         }
@@ -318,6 +359,9 @@ namespace ScreenLock.Views
         {
             try
             {
+                // language
+                I18nService.Instance.SetLanguage(s.Language);
+
                 // pin -> controller
                 try { if (App.Controller != null) App.Controller.ApplyPinFromConfig(); } catch { }
                 // Idle threshold
@@ -352,14 +396,13 @@ namespace ScreenLock.Views
             // verify old pin first if exists
             if (_editing.HasPin())
             {
-                var verify = new VerifyPinWindow(App.Controller, "修改 PIN 需先验证原 PIN");
+                var verify = new VerifyPinWindow(App.Controller, Loc.T("Config.VerifyOldPinPrompt"));
                 verify.WindowStartupLocation = WindowStartupLocation.CenterOwner;
                 verify.Owner = this;
                 if (verify.ShowDialog() != true)
                     return;
             }
-            var first = new FirstRunWindow();
-            first.Title = "设置新 PIN";
+            var first = new FirstRunWindow { IsChangeMode = true };
             first.WindowStartupLocation = WindowStartupLocation.CenterOwner;
             first.Owner = this;
             if (first.ShowDialog() == true)
@@ -371,9 +414,9 @@ namespace ScreenLock.Views
                 string hashStr = PinService.ComputeHash(salt, newPin);
                 _editing.PinSalt = saltStr;
                 _editing.PinHash = hashStr;
-                PinStatusText.Text = "已设置（" + MaskHash(_editing.PinHash) + "）*未保存";
-                ValidateText.Text = "PIN 已修改，请保存";
-                MessageBox.Show("新 PIN 已生成，点 保存 后生效", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                PinStatusText.Text = Loc.T("Config.PinConfigured") + " (" + MaskHash(_editing.PinHash) + ") *" + Loc.T("Config.PinModifiedHint");
+                ValidateText.Text = Loc.T("Config.PinModifiedHint");
+                MessageBox.Show(Loc.T("Config.NewPinGenerated"), Loc.T("Common.Prompt"), MessageBoxButton.OK, MessageBoxImage.Information);
             }
         }
 

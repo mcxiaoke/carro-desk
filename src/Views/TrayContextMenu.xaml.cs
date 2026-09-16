@@ -8,6 +8,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using ScreenLock.Models;
 using ScreenLock.Services;
+using ScreenLock.Services.Localization;
 
 namespace ScreenLock.Views
 {
@@ -52,28 +53,28 @@ namespace ScreenLock.Views
 
                 if (controller != null && controller.IsLocked)
                 {
-                    SetStatus("当前屏幕已锁定", "已锁定",
+                    SetStatus(Loc.T("Tray.StatusLockedDetail"), Loc.T("Tray.Locked"),
                         new SolidColorBrush(Color.FromRgb(0xF5, 0x9E, 0x0B)),
                         new SolidColorBrush(Color.FromRgb(0xFE, 0xF3, 0xC7)),
                         new SolidColorBrush(Color.FromRgb(0xD9, 0x77, 0x06)));
                 }
                 else if (app != null && app.IsPaused)
                 {
-                    SetStatus(string.Format("已暂停锁定至 {0:HH:mm}", app.PauseUntil), "已暂停",
+                    SetStatus(Loc.T("Tray.StatusPausedDetail", app.PauseUntil), Loc.T("Tray.Paused"),
                         new SolidColorBrush(Color.FromRgb(0xE1, 0x98, 0x05)),
                         new SolidColorBrush(Color.FromRgb(0xFF, 0xFB, 0xEB)),
                         new SolidColorBrush(Color.FromRgb(0xB4, 0x53, 0x09)));
                 }
                 else if (config == null || config.IdleMinutes <= 0)
                 {
-                    SetStatus("空闲锁定已禁用", "已禁用",
+                    SetStatus(Loc.T("Tray.StatusDisabledDetail"), Loc.T("Tray.Disabled"),
                         new SolidColorBrush(Color.FromRgb(0x94, 0xA3, 0xB8)),
                         new SolidColorBrush(Color.FromRgb(0xF1, 0xF5, 0xF9)),
                         new SolidColorBrush(Color.FromRgb(0x64, 0x74, 0x8B)));
                 }
                 else
                 {
-                    SetStatus(string.Format("空闲 {0} 分钟后锁定", config.IdleMinutes), "运行中",
+                    SetStatus(Loc.T("Tray.StatusIdleDetail", config.IdleMinutes), Loc.T("Tray.Running"),
                         new SolidColorBrush(Color.FromRgb(0x10, 0xB9, 0x81)),
                         new SolidColorBrush(Color.FromRgb(0xEC, 0xFD, 0xF5)),
                         new SolidColorBrush(Color.FromRgb(0x05, 0x96, 0x69)));
@@ -96,6 +97,10 @@ namespace ScreenLock.Views
                             if (item is MenuItem mi && mi.Tag != null && int.TryParse(mi.Tag.ToString(), out int mins))
                             {
                                 mi.IsChecked = (mins == config.IdleMinutes);
+                                if (mins > 0)
+                                {
+                                    mi.Header = Loc.T("Tray.IdleMinutesFormat", mins);
+                                }
                             }
                         }
                     }
@@ -109,9 +114,30 @@ namespace ScreenLock.Views
                     {
                         TasksEnabledItem.IsChecked = App.TaskScheduler != null && App.TaskScheduler.IsGlobalEnabled;
                     }
+
+                    string currentLang = config.Language ?? "auto";
+                    if (LangAutoItem != null) LangAutoItem.IsChecked = string.Equals(currentLang, "auto", StringComparison.OrdinalIgnoreCase);
+                    if (LangZhItem != null) LangZhItem.IsChecked = string.Equals(currentLang, "zh-CN", StringComparison.OrdinalIgnoreCase);
+                    if (LangEnItem != null) LangEnItem.IsChecked = string.Equals(currentLang, "en-US", StringComparison.OrdinalIgnoreCase);
                 }
             }
             catch { }
+        }
+
+        private void OnLanguageSelectClick(object sender, RoutedEventArgs e)
+        {
+            if (sender is MenuItem mi && mi.Tag != null)
+            {
+                string lang = mi.Tag.ToString();
+                if (App.Config != null && App.Config.Current != null)
+                {
+                    App.Config.Current.Language = lang;
+                    App.Config.Save();
+                }
+                I18nService.Instance.SetLanguage(lang);
+                RefreshAll();
+                App.CurrentApp?.UpdateTrayText();
+            }
         }
 
         public void RefreshTaskSubmenu()
@@ -126,7 +152,7 @@ namespace ScreenLock.Views
 
                     if (manuals == null || manuals.Count == 0)
                     {
-                        ManualMenu.Items.Add(new MenuItem { Header = "暂无手动任务", IsEnabled = false });
+                        ManualMenu.Items.Add(new MenuItem { Header = Loc.T("Tray.NoManualTasks"), IsEnabled = false });
                     }
                     else
                     {
@@ -143,7 +169,7 @@ namespace ScreenLock.Views
                                 if (App.TaskScheduler != null)
                                 {
                                     bool ok = App.TaskScheduler.RunManual(name);
-                                    App.ShowBalloonPublic(ok ? "已触发任务: " + name : "任务未找到或已禁用: " + name);
+                                    App.ShowBalloonPublic(ok ? Loc.T("Tray.TaskTriggered", name) : Loc.T("Tray.TaskTriggerFailed", name));
                                 }
                             };
                             ManualMenu.Items.Add(item);
@@ -159,7 +185,7 @@ namespace ScreenLock.Views
 
                     if (recents == null || recents.Count == 0)
                     {
-                        RecentMenu.Items.Add(new MenuItem { Header = "暂无记录", IsEnabled = false });
+                        RecentMenu.Items.Add(new MenuItem { Header = Loc.T("Tray.NoRecentTasks"), IsEnabled = false });
                     }
                     else
                     {

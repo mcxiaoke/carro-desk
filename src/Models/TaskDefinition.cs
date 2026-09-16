@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using ScreenLock.Services.Localization;
 
 namespace ScreenLock.Models
 {
@@ -93,19 +94,19 @@ namespace ScreenLock.Models
         {
             get
             {
-                if (Trigger == null) return "未知";
+                if (Trigger == null) return Loc.T("Tasks.BadgeUnknown", "未知");
                 switch (Trigger.Type)
                 {
-                    case TaskTriggerType.Startup: return "启动";
-                    case TaskTriggerType.Interval: return "间隔";
-                    case TaskTriggerType.Daily: return "定时";
-                    case TaskTriggerType.Cron: return "Cron";
-                    case TaskTriggerType.SessionLock: return "锁屏";
-                    case TaskTriggerType.SessionUnlock: return "解锁";
-                    case TaskTriggerType.Idle: return "空闲";
-                    case TaskTriggerType.Manual: return "手动";
-                    case TaskTriggerType.Hotkey: return "热键";
-                    case TaskTriggerType.Watch: return "监听";
+                    case TaskTriggerType.Startup: return Loc.T("Tasks.BadgeStartup", "启动");
+                    case TaskTriggerType.Interval: return Loc.T("Tasks.BadgeInterval", "间隔");
+                    case TaskTriggerType.Daily: return Loc.T("Tasks.BadgeDaily", "定时");
+                    case TaskTriggerType.Cron: return Loc.T("Tasks.BadgeCron", "Cron");
+                    case TaskTriggerType.SessionLock: return Loc.T("Tasks.BadgeSessionLock", "锁屏");
+                    case TaskTriggerType.SessionUnlock: return Loc.T("Tasks.BadgeSessionUnlock", "解锁");
+                    case TaskTriggerType.Idle: return Loc.T("Tasks.BadgeIdle", "空闲");
+                    case TaskTriggerType.Manual: return Loc.T("Tasks.BadgeManual", "手动");
+                    case TaskTriggerType.Hotkey: return Loc.T("Tasks.BadgeHotkey", "热键");
+                    case TaskTriggerType.Watch: return Loc.T("Tasks.BadgeWatch", "监听");
                     default: return Trigger.Type.ToString();
                 }
             }

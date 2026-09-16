@@ -1,7 +1,8 @@
 <Window x:Class="ScreenLock.Views.TaskEditorWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="任务编辑器 - ScreenLock" Height="640" Width="920"
+        xmlns:loc="clr-namespace:ScreenLock.Services.Localization"
+        Title="{loc:Loc Tasks.Title, Default='任务编辑器 - ScreenLock'}" Height="640" Width="920"
         WindowStartupLocation="CenterScreen" ResizeMode="CanResize"
         Background="#FFF6F7F9">
     <Window.Resources>
@@ -138,7 +139,7 @@
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
-                    <TextBlock Text="任务列表" FontWeight="Bold" FontSize="13" Foreground="#FF333333" Margin="2,0,0,8"/>
+                    <TextBlock Text="{loc:Loc Tasks.ListTitle, Default='任务列表'}" FontWeight="Bold" FontSize="13" Foreground="#FF333333" Margin="2,0,0,8"/>
                     
                     <Grid Grid.Row="1">
                         <ListBox x:Name="TaskList" BorderBrush="#FFE8E8E8" SelectionChanged="TaskList_SelectionChanged">
@@ -156,15 +157,15 @@
                         </ListBox>
                         <!-- 空任务列表占位提示 -->
                         <StackPanel x:Name="EmptyTasksHint" VerticalAlignment="Center" HorizontalAlignment="Center" Visibility="Collapsed" IsHitTestVisible="False">
-                            <TextBlock Text="暂无任务" FontSize="13" FontWeight="SemiBold" HorizontalAlignment="Center" Foreground="#FF6C757D" Margin="0,0,0,4"/>
-                            <TextBlock Text="点击下方【新增】创建任务" FontSize="11" HorizontalAlignment="Center" Foreground="#FF9AA2AA"/>
+                            <TextBlock Text="{loc:Loc Tasks.EmptyTitle, Default='暂无任务'}" FontSize="13" FontWeight="SemiBold" HorizontalAlignment="Center" Foreground="#FF6C757D" Margin="0,0,0,4"/>
+                            <TextBlock Text="{loc:Loc Tasks.EmptyHint, Default='点击下方【新增】创建任务'}" FontSize="11" HorizontalAlignment="Center" Foreground="#FF9AA2AA"/>
                         </StackPanel>
                     </Grid>
 
                     <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,0">
-                        <Button Content="新增" Width="64" Height="28" Margin="3,0" FontWeight="SemiBold" Click="OnAddClick"/>
-                        <Button Content="复制" Width="64" Height="28" Margin="3,0" Click="OnDuplicateClick"/>
-                        <Button Content="删除" Width="64" Height="28" Margin="3,0" Click="OnDeleteClick"/>
+                        <Button Content="{loc:Loc Tasks.AddBtn, Default='新增'}" MinWidth="64" Height="28" Margin="3,0" Padding="8,2" FontWeight="SemiBold" Click="OnAddClick"/>
+                        <Button Content="{loc:Loc Tasks.DuplicateBtn, Default='复制'}" MinWidth="64" Height="28" Margin="3,0" Padding="8,2" Click="OnDuplicateClick"/>
+                        <Button Content="{loc:Loc Tasks.DeleteBtn, Default='删除'}" MinWidth="64" Height="28" Margin="3,0" Padding="8,2" Click="OnDeleteClick"/>
                     </StackPanel>
                 </Grid>
             </Border>
@@ -175,104 +176,104 @@
                     <StackPanel Margin="16,14,14,14">
 
                         <!-- 基础信息 -->
-                        <TextBlock Text="基础信息" FontWeight="Bold" Foreground="#FF333333" Margin="0,0,0,8"/>
+                        <TextBlock Text="{loc:Loc Tasks.BasicInfo, Default='基础信息'}" FontWeight="Bold" Foreground="#FF333333" Margin="0,0,0,8"/>
                         <Grid>
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="80"/><ColumnDefinition Width="*"/><ColumnDefinition Width="70"/></Grid.ColumnDefinitions>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="85"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto" MinWidth="75"/></Grid.ColumnDefinitions>
                             <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                            <TextBlock Text="名称 *" VerticalAlignment="Center" Foreground="#FF444444"/>
+                            <TextBlock Text="{loc:Loc Tasks.NameLabel, Default='名称 *'}" VerticalAlignment="Center" Foreground="#FF444444"/>
                             <TextBox x:Name="NameBox" Grid.Column="1" Height="26" Margin="0,3" Padding="5,2"/>
-                            <CheckBox x:Name="EnabledBox" Grid.Column="2" Content="启用" VerticalAlignment="Center" Margin="10,0,0,0" IsChecked="True"/>
-                            <TextBlock Text="说明" Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Foreground="#FF777777" Margin="0,4,0,0"/>
-                            <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Text="名称仅限字母数字与 _-，生成日志保存在 logs/task-{name}.log" Foreground="#FF888888" FontSize="11" Margin="0,4,0,0"/>
+                            <CheckBox x:Name="EnabledBox" Grid.Column="2" Content="{loc:Loc Tasks.EnabledLabel, Default='启用'}" VerticalAlignment="Center" Margin="10,0,0,0" IsChecked="True"/>
+                            <TextBlock Text="{loc:Loc Tasks.NotesLabel, Default='说明'}" Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Foreground="#FF777777" Margin="0,4,0,0"/>
+                            <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Text="{loc:Loc Tasks.NameDesc, Default='名称仅限字母数字与 _-，生成日志保存在 logs/task-{name}.log'}" Foreground="#FF888888" FontSize="11" Margin="0,4,0,0"/>
                             <TextBlock x:Name="ValidateText" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Foreground="#FFD93025" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0"/>
                         </Grid>
 
                         <Separator Margin="0,12,0,12"/>
 
                         <!-- 触发器 (Trigger) -->
-                        <TextBlock Text="触发方式 (Trigger)" FontWeight="Bold" Foreground="#FF333333" Margin="0,0,0,8"/>
+                        <TextBlock Text="{loc:Loc Tasks.TriggerTitle, Default='触发方式 (Trigger)'}" FontWeight="Bold" Foreground="#FF333333" Margin="0,0,0,8"/>
                         <Grid>
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="80"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                            <TextBlock Text="触发类型 *" VerticalAlignment="Center" Foreground="#FF444444"/>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="85"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="{loc:Loc Tasks.TriggerTypeLabel, Default='触发类型 *'}" VerticalAlignment="Center" Foreground="#FF444444"/>
                             <ComboBox x:Name="TriggerTypeBox" Grid.Column="1" Height="26" Margin="0,3" SelectionChanged="TriggerTypeBox_SelectionChanged">
-                                <ComboBoxItem Content="startup - 系统启动/程序运行后延迟" Tag="startup"/>
-                                <ComboBoxItem Content="interval - 循环间隔（如每隔 1 小时）" Tag="interval"/>
-                                <ComboBoxItem Content="daily - 每天固定时间点执行" Tag="daily"/>
-                                <ComboBoxItem Content="cron - Cron 表达式调度" Tag="cron"/>
-                                <ComboBoxItem Content="sessionLock - 屏幕锁定时" Tag="sessionLock"/>
-                                <ComboBoxItem Content="sessionUnlock - 屏幕解锁时" Tag="sessionUnlock"/>
-                                <ComboBoxItem Content="idle - 用户空闲后触发" Tag="idle"/>
-                                <ComboBoxItem Content="manual - 手动任务（托盘菜单触发）" Tag="manual"/>
-                                <ComboBoxItem Content="hotkey - 全局自定义热键" Tag="hotkey"/>
-                                <ComboBoxItem Content="watch - 文件夹文件变动监听" Tag="watch"/>
+                                <ComboBoxItem Content="{loc:Loc Tasks.TriggerStartup, Default='startup - 系统启动/程序运行后延迟'}" Tag="startup"/>
+                                <ComboBoxItem Content="{loc:Loc Tasks.TriggerInterval, Default='interval - 循环间隔（如每隔 1 小时）'}" Tag="interval"/>
+                                <ComboBoxItem Content="{loc:Loc Tasks.TriggerDaily, Default='daily - 每天固定时间点执行'}" Tag="daily"/>
+                                <ComboBoxItem Content="{loc:Loc Tasks.TriggerCron, Default='cron - Cron 表达式调度'}" Tag="cron"/>
+                                <ComboBoxItem Content="{loc:Loc Tasks.TriggerSessionLock, Default='sessionLock - 屏幕锁定时'}" Tag="sessionLock"/>
+                                <ComboBoxItem Content="{loc:Loc Tasks.TriggerSessionUnlock, Default='sessionUnlock - 屏幕解锁时'}" Tag="sessionUnlock"/>
+                                <ComboBoxItem Content="{loc:Loc Tasks.TriggerIdle, Default='idle - 用户空闲后触发'}" Tag="idle"/>
+                                <ComboBoxItem Content="{loc:Loc Tasks.TriggerManual, Default='manual - 手动任务（托盘菜单触发）'}" Tag="manual"/>
+                                <ComboBoxItem Content="{loc:Loc Tasks.TriggerHotkey, Default='hotkey - 全局自定义热键'}" Tag="hotkey"/>
+                                <ComboBoxItem Content="{loc:Loc Tasks.TriggerWatch, Default='watch - 文件夹文件变动监听'}" Tag="watch"/>
                             </ComboBox>
                         </Grid>
 
-                        <!-- 动态触发参数面板：统一 80px 标签列，与主表单严格垂直对齐 -->
+                        <!-- 动态触发参数面板：统一 85px 标签列，与主表单严格垂直对齐 -->
                         <StackPanel x:Name="PanelStartup" Margin="0,4,0,0" Visibility="Collapsed">
-                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="80"/><ColumnDefinition Width="100"/><ColumnDefinition Width="40"/></Grid.ColumnDefinitions>
-                                <TextBlock Text="延迟秒数" VerticalAlignment="Center" Foreground="#FF555555"/><TextBox x:Name="DelayBox" Grid.Column="1" Height="24" Margin="0,3" Text="5" Padding="4,1"/><TextBlock Grid.Column="2" Text="秒" VerticalAlignment="Center" Margin="6,0,0,0" Foreground="#FF666666"/>
+                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="85"/><ColumnDefinition Width="100"/><ColumnDefinition Width="40"/></Grid.ColumnDefinitions>
+                                <TextBlock Text="{loc:Loc Tasks.DelaySec, Default='延迟秒数'}" VerticalAlignment="Center" Foreground="#FF555555"/><TextBox x:Name="DelayBox" Grid.Column="1" Height="24" Margin="0,3" Text="5" Padding="4,1"/><TextBlock Grid.Column="2" Text="{loc:Loc Common.Seconds, Default='秒'}" VerticalAlignment="Center" Margin="6,0,0,0" Foreground="#FF666666"/>
                             </Grid>
                         </StackPanel>
                         <StackPanel x:Name="PanelInterval" Margin="0,4,0,0" Visibility="Collapsed">
-                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="80"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                <TextBlock Text="执行间隔" VerticalAlignment="Center" Foreground="#FF555555"/><TextBox x:Name="EveryBox" Grid.Column="1" Height="24" Margin="0,3" Padding="4,1" ToolTip="支持 3600 或 1h30m / 30s"/>
+                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="85"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                <TextBlock Text="{loc:Loc Tasks.Interval, Default='执行间隔'}" VerticalAlignment="Center" Foreground="#FF555555"/><TextBox x:Name="EveryBox" Grid.Column="1" Height="24" Margin="0,3" Padding="4,1" ToolTip="支持 3600 或 1h30m / 30s"/>
                             </Grid>
-                            <TextBlock Text="支持秒数或时间格式，如 60、3600、1h30m、45s" Foreground="#FF888888" FontSize="11" Margin="80,1,0,0"/>
+                            <TextBlock Text="{loc:Loc Tasks.IntervalDesc, Default='支持秒数或时间格式，如 60、3600、1h30m、45s'}" Foreground="#FF888888" FontSize="11" Margin="85,1,0,0"/>
                         </StackPanel>
                         <StackPanel x:Name="PanelDaily" Margin="0,4,0,0" Visibility="Collapsed">
-                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="80"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                <TextBlock Text="每天时间" VerticalAlignment="Center" Foreground="#FF555555"/><TextBox x:Name="AtBox" Grid.Column="1" Height="24" Margin="0,3" Padding="4,1" ToolTip="如 02:30 或 14:00:00"/>
+                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="85"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                <TextBlock Text="{loc:Loc Tasks.DailyTime, Default='每天时间'}" VerticalAlignment="Center" Foreground="#FF555555"/><TextBox x:Name="AtBox" Grid.Column="1" Height="24" Margin="0,3" Padding="4,1" ToolTip="如 02:30 或 14:00:00"/>
                             </Grid>
-                            <TextBlock Text="格式为 HH:mm 或 HH:mm:ss，如 09:30 或 22:00:00" Foreground="#FF888888" FontSize="11" Margin="80,1,0,0"/>
+                            <TextBlock Text="{loc:Loc Tasks.DailyDesc, Default='格式为 HH:mm 或 HH:mm:ss，如 09:30 或 22:00:00'}" Foreground="#FF888888" FontSize="11" Margin="85,1,0,0"/>
                         </StackPanel>
                         <StackPanel x:Name="PanelCron" Margin="0,4,0,0" Visibility="Collapsed">
-                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="80"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                <TextBlock Text="Cron 格式" VerticalAlignment="Center" Foreground="#FF555555"/><TextBox x:Name="CronBox" Grid.Column="1" Height="24" Margin="0,3" Padding="4,1" ToolTip="5段式：分 时 日 月 周，如 0 9 * * 1" TextChanged="CronBox_TextChanged"/>
+                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="85"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                <TextBlock Text="{loc:Loc Tasks.CronFormat, Default='Cron 格式'}" VerticalAlignment="Center" Foreground="#FF555555"/><TextBox x:Name="CronBox" Grid.Column="1" Height="24" Margin="0,3" Padding="4,1" ToolTip="5段式：分 时 日 月 周，如 0 9 * * 1" TextChanged="CronBox_TextChanged"/>
                             </Grid>
-                            <TextBlock x:Name="CronHintText" Text="提示：0 9 * * 1 = 每周一 09:00" Foreground="#FF1A73E8" FontSize="11" Margin="80,3,0,0"/>
+                            <TextBlock x:Name="CronHintText" Text="提示：0 9 * * 1 = 每周一 09:00" Foreground="#FF1A73E8" FontSize="11" Margin="85,3,0,0"/>
                         </StackPanel>
                         <StackPanel x:Name="PanelIdle" Margin="0,4,0,0" Visibility="Collapsed">
-                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="80"/><ColumnDefinition Width="100"/><ColumnDefinition Width="40"/></Grid.ColumnDefinitions>
-                                <TextBlock Text="空闲时长" VerticalAlignment="Center" Foreground="#FF555555"/><TextBox x:Name="IdleBox" Grid.Column="1" Height="24" Margin="0,3" Text="10" Padding="4,1"/><TextBlock Grid.Column="2" Text="分钟" VerticalAlignment="Center" Margin="6,0,0,0" Foreground="#FF666666"/>
+                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="85"/><ColumnDefinition Width="100"/><ColumnDefinition Width="40"/></Grid.ColumnDefinitions>
+                                <TextBlock Text="{loc:Loc Tasks.IdleDuration, Default='空闲时长'}" VerticalAlignment="Center" Foreground="#FF555555"/><TextBox x:Name="IdleBox" Grid.Column="1" Height="24" Margin="0,3" Text="10" Padding="4,1"/><TextBlock Grid.Column="2" Text="{loc:Loc Common.Minutes, Default='分钟'}" VerticalAlignment="Center" Margin="6,0,0,0" Foreground="#FF666666"/>
                             </Grid>
                         </StackPanel>
                         <StackPanel x:Name="PanelHotkey" Margin="0,4,0,0" Visibility="Collapsed">
-                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="80"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                <TextBlock Text="全局热键" VerticalAlignment="Center" Foreground="#FF555555"/><TextBox x:Name="HotkeyBox" Grid.Column="1" Height="24" Margin="0,3" Padding="4,1" ToolTip="如 Ctrl+Alt+Q"/>
+                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="85"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                <TextBlock Text="{loc:Loc Tasks.GlobalHotkey, Default='全局热键'}" VerticalAlignment="Center" Foreground="#FF555555"/><TextBox x:Name="HotkeyBox" Grid.Column="1" Height="24" Margin="0,3" Padding="4,1" ToolTip="如 Ctrl+Alt+Q"/>
                             </Grid>
-                            <TextBlock Text="格式如 Ctrl+Alt+Shift+Win+Q，单字母需带修饰键，支持 F1-F24" Foreground="#FF888888" FontSize="11" Margin="80,1,0,0"/>
+                            <TextBlock Text="{loc:Loc Tasks.HotkeyDesc, Default='格式如 Ctrl+Alt+Shift+Win+Q，单字母需带修饰键，支持 F1-F24'}" Foreground="#FF888888" FontSize="11" Margin="85,1,0,0"/>
                         </StackPanel>
                         <StackPanel x:Name="PanelWatch" Margin="0,4,0,0" Visibility="Collapsed">
                             <Grid>
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="80"/><ColumnDefinition Width="*"/><ColumnDefinition Width="54"/></Grid.ColumnDefinitions>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="85"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto" MinWidth="54"/></Grid.ColumnDefinitions>
                                 <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                                <TextBlock Text="监听路径" VerticalAlignment="Center" Foreground="#FF555555"/><TextBox x:Name="WatchPathBox" Grid.Column="1" Height="24" Margin="0,3" Padding="4,1"/><Button Content="浏览" Grid.Column="2" Height="24" Margin="4,3,0,3" Click="OnWatchBrowseClick"/>
-                                <TextBlock Text="文件过滤" Grid.Row="1" VerticalAlignment="Center" Foreground="#FF555555"/><TextBox x:Name="WatchFilterBox" Grid.Row="1" Grid.Column="1" Height="24" Margin="0,3" Text="*.*" Padding="4,1"/>
-                                <TextBlock Text="触发事件" Grid.Row="2" VerticalAlignment="Center" Foreground="#FF555555"/>
+                                <TextBlock Text="{loc:Loc Tasks.WatchPath, Default='监听路径'}" VerticalAlignment="Center" Foreground="#FF555555"/><TextBox x:Name="WatchPathBox" Grid.Column="1" Height="24" Margin="0,3" Padding="4,1"/><Button Content="{loc:Loc Common.Browse, Default='浏览'}" Grid.Column="2" Height="24" Margin="4,3,0,3" Padding="6,1" Click="OnWatchBrowseClick"/>
+                                <TextBlock Text="{loc:Loc Tasks.WatchFilter, Default='文件过滤'}" Grid.Row="1" VerticalAlignment="Center" Foreground="#FF555555"/><TextBox x:Name="WatchFilterBox" Grid.Row="1" Grid.Column="1" Height="24" Margin="0,3" Text="*.*" Padding="4,1"/>
+                                <TextBlock Text="{loc:Loc Tasks.WatchEvent, Default='触发事件'}" Grid.Row="2" VerticalAlignment="Center" Foreground="#FF555555"/>
                                 <ComboBox x:Name="WatchEventBox" Grid.Row="2" Grid.Column="1" Height="24" Margin="0,3" SelectedIndex="0">
-                                    <ComboBoxItem Content="created - 新建文件" Tag="created"/>
-                                    <ComboBoxItem Content="changed - 内容修改" Tag="changed"/>
-                                    <ComboBoxItem Content="deleted - 文件删除" Tag="deleted"/>
-                                    <ComboBoxItem Content="renamed - 文件重命名" Tag="renamed"/>
-                                    <ComboBoxItem Content="all - 所有变动" Tag="all"/>
+                                    <ComboBoxItem Content="{loc:Loc Tasks.WatchEventCreated, Default='created - 新建文件'}" Tag="created"/>
+                                    <ComboBoxItem Content="{loc:Loc Tasks.WatchEventChanged, Default='changed - 内容修改'}" Tag="changed"/>
+                                    <ComboBoxItem Content="{loc:Loc Tasks.WatchEventDeleted, Default='deleted - 文件删除'}" Tag="deleted"/>
+                                    <ComboBoxItem Content="{loc:Loc Tasks.WatchEventRenamed, Default='renamed - 文件重命名'}" Tag="renamed"/>
+                                    <ComboBoxItem Content="{loc:Loc Tasks.WatchEventAll, Default='all - 所有变动'}" Tag="all"/>
                                 </ComboBox>
                             </Grid>
                         </StackPanel>
-                        <StackPanel x:Name="PanelManual" Margin="80,4,0,0" Visibility="Collapsed">
-                            <TextBlock Text="手动任务在托盘菜单【任务 → 手动运行】中展示，点击直接执行" Foreground="#FF888888" FontSize="11" Margin="0,2,0,0"/>
+                        <StackPanel x:Name="PanelManual" Margin="85,4,0,0" Visibility="Collapsed">
+                            <TextBlock Text="{loc:Loc Tasks.ManualDesc, Default='手动任务在托盘菜单【任务 → 手动运行】中展示，点击直接执行'}" Foreground="#FF888888" FontSize="11" Margin="0,2,0,0"/>
                         </StackPanel>
 
                         <Separator Margin="0,12,0,12"/>
 
                         <!-- 执行 (Action) -->
-                        <TextBlock Text="执行配置 (Action)" FontWeight="Bold" Foreground="#FF333333" Margin="0,0,0,8"/>
+                        <TextBlock Text="{loc:Loc Tasks.ActionConfig, Default='执行配置 (Action)'}" FontWeight="Bold" Foreground="#FF333333" Margin="0,0,0,8"/>
                         <Grid>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="80"/>
+                                <ColumnDefinition Width="85"/>
                                 <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="54"/>
-                                <ColumnDefinition Width="130"/>
+                                <ColumnDefinition Width="Auto" MinWidth="54"/>
+                                <ColumnDefinition Width="Auto" MinWidth="130"/>
                             </Grid.ColumnDefinitions>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
@@ -283,76 +284,76 @@
                             </Grid.RowDefinitions>
 
                             <!-- 文件 -->
-                            <TextBlock Text="文件 *" VerticalAlignment="Center" Foreground="#FF444444"/>
+                            <TextBlock Text="{loc:Loc Tasks.FileLabel, Default='文件 *'}" VerticalAlignment="Center" Foreground="#FF444444"/>
                             <TextBox x:Name="FileBox" Grid.Column="1" Height="26" Margin="0,3" Padding="5,2"/>
-                            <Button Content="浏览" Grid.Column="2" Height="26" Margin="4,3,0,3" Click="OnBrowseFileClick"/>
-                            <ComboBox x:Name="ScriptQuickBox" Grid.Column="3" Height="26" Margin="4,3,0,3" ToolTip="快速选择 scripts/ 目录中的脚本" SelectionChanged="ScriptQuickBox_SelectionChanged">
-                                <ComboBoxItem Content="scripts/ 快速选择" IsEnabled="False"/>
+                            <Button Content="{loc:Loc Common.Browse, Default='浏览'}" Grid.Column="2" Height="26" Margin="4,3,0,3" Padding="6,1" Click="OnBrowseFileClick"/>
+                            <ComboBox x:Name="ScriptQuickBox" Grid.Column="3" Height="26" Margin="4,3,0,3" ToolTip="{loc:Loc Tasks.ScriptQuickTooltip, Default='快速选择 scripts/ 目录中的脚本'}" SelectionChanged="ScriptQuickBox_SelectionChanged">
+                                <ComboBoxItem Content="{loc:Loc Tasks.ActionScriptQuick, Default='scripts/ 快速选择'}" IsEnabled="False"/>
                             </ComboBox>
 
                             <!-- 参数 -->
-                            <TextBlock Text="启动参数" Grid.Row="1" VerticalAlignment="Center" Foreground="#FF444444"/>
-                            <TextBox x:Name="ArgsBox" Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Height="26" Margin="0,3" Padding="5,2" ToolTip="支持 {{date}} {{time}} {{timestamp}} 等模板变量"/>
-                            <ComboBox x:Name="TemplateQuickBox" Grid.Row="1" Grid.Column="3" Height="26" Margin="4,3,0,3" ToolTip="插入常用模板变量" SelectionChanged="TemplateQuickBox_SelectionChanged">
-                                <ComboBoxItem Content="插入模板..." IsEnabled="False" IsSelected="True"/>
+                            <TextBlock Text="{loc:Loc Tasks.ArgsLabel, Default='启动参数'}" Grid.Row="1" VerticalAlignment="Center" Foreground="#FF444444"/>
+                            <TextBox x:Name="ArgsBox" Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Height="26" Margin="0,3" Padding="5,2" ToolTip="{loc:Loc Tasks.ArgsTooltip, Default='支持 {{date}} {{time}} {{timestamp}} 等模板变量'}"/>
+                            <ComboBox x:Name="TemplateQuickBox" Grid.Row="1" Grid.Column="3" Height="26" Margin="4,3,0,3" ToolTip="{loc:Loc Tasks.TemplateQuickTooltip, Default='插入常用模板变量'}" SelectionChanged="TemplateQuickBox_SelectionChanged">
+                                <ComboBoxItem Content="{loc:Loc Tasks.InsertTemplate, Default='插入模板...'}" IsEnabled="False" IsSelected="True"/>
                             </ComboBox>
 
                             <!-- 参数提示 -->
-                            <TextBlock Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" Text="支持模板：{{date}} 当前日期 · {{time}} 时间 · {{timestamp}} 紧凑戳 · {{task}} 任务名" Foreground="#FF888888" FontSize="11" Margin="0,1,0,6"/>
+                            <TextBlock Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" Text="{loc:Loc Tasks.TemplateDesc, Default='支持模板：{{date}} 当前日期 · {{time}} 时间 · {{timestamp}} 紧凑戳 · {{task}} 任务名'}" Foreground="#FF888888" FontSize="11" Margin="0,1,0,6"/>
 
                             <!-- 工作目录 -->
-                            <TextBlock Text="工作目录" Grid.Row="3" VerticalAlignment="Center" Foreground="#FF444444"/>
+                            <TextBlock Text="{loc:Loc Tasks.WorkDirLabel, Default='工作目录'}" Grid.Row="3" VerticalAlignment="Center" Foreground="#FF444444"/>
                             <TextBox x:Name="WorkDirBox" Grid.Row="3" Grid.Column="1" Height="26" Margin="0,3" Padding="5,2"/>
-                            <Button Content="浏览" Grid.Row="3" Grid.Column="2" Height="26" Margin="4,3,0,3" Click="OnBrowseDirClick"/>
+                            <Button Content="{loc:Loc Common.Browse, Default='浏览'}" Grid.Row="3" Grid.Column="2" Height="26" Margin="4,3,0,3" Padding="6,1" Click="OnBrowseDirClick"/>
 
                             <!-- 工作目录提示 -->
-                            <TextBlock Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="3" Text="裸文件名如 hello.js 自动在 scripts/ 中查找；留空则取文件所在目录" Foreground="#FF888888" FontSize="11" Margin="0,2,0,0"/>
+                            <TextBlock Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="3" Text="{loc:Loc Tasks.WorkDirDesc, Default='裸文件名如 hello.js 自动在 scripts/ 中查找；留空则取文件所在目录'}" Foreground="#FF888888" FontSize="11" Margin="0,2,0,0"/>
                         </Grid>
 
                         <Separator Margin="0,12,0,12"/>
 
                         <!-- 选项 (Options) -->
-                        <TextBlock Text="运行选项 (Options)" FontWeight="Bold" Foreground="#FF333333" Margin="0,0,0,8"/>
+                        <TextBlock Text="{loc:Loc Tasks.OptionsTitle, Default='运行选项 (Options)'}" FontWeight="Bold" Foreground="#FF333333" Margin="0,0,0,8"/>
                         <WrapPanel>
-                            <CheckBox x:Name="HiddenBox" Content="隐藏窗口（脚本默认）" IsChecked="True" Margin="0,4,16,4"/>
-                            <CheckBox x:Name="AllowConcurrentBox" Content="允许并发" Margin="0,4,16,4"/>
-                            <CheckBox x:Name="NotifyBox" Content="失败时通知" IsChecked="True" Margin="0,4,16,4"/>
+                            <CheckBox x:Name="HiddenBox" Content="{loc:Loc Tasks.HiddenWindow, Default='隐藏窗口（脚本默认）'}" IsChecked="True" Margin="0,4,16,4"/>
+                            <CheckBox x:Name="AllowConcurrentBox" Content="{loc:Loc Tasks.AllowConcurrent, Default='允许并发'}" Margin="0,4,16,4"/>
+                            <CheckBox x:Name="NotifyBox" Content="{loc:Loc Tasks.NotifyOnFailure, Default='失败时通知'}" IsChecked="True" Margin="0,4,16,4"/>
                         </WrapPanel>
                         <Grid Margin="0,4,0,0">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="80"/>
+                                <ColumnDefinition Width="85"/>
                                 <ColumnDefinition Width="70"/>
-                                <ColumnDefinition Width="30"/>
+                                <ColumnDefinition Width="Auto" MinWidth="25"/>
                                 <ColumnDefinition Width="20"/>
-                                <ColumnDefinition Width="80"/>
+                                <ColumnDefinition Width="85"/>
                                 <ColumnDefinition Width="70"/>
-                                <ColumnDefinition Width="30"/>
+                                <ColumnDefinition Width="Auto" MinWidth="25"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="超时限制" VerticalAlignment="Center" Foreground="#FF444444"/>
+                            <TextBlock Text="{loc:Loc Tasks.TimeoutLimit, Default='超时限制'}" VerticalAlignment="Center" Foreground="#FF444444"/>
                             <TextBox x:Name="TimeoutBox" Grid.Column="1" Height="24" Margin="0,3" Text="0" Padding="4,1" TextAlignment="Center"/>
-                            <TextBlock Grid.Column="2" Text="秒" VerticalAlignment="Center" Margin="4,0,0,0" Foreground="#FF666666"/>
+                            <TextBlock Grid.Column="2" Text="{loc:Loc Common.Seconds, Default='秒'}" VerticalAlignment="Center" Margin="4,0,0,0" Foreground="#FF666666"/>
 
-                            <TextBlock Text="失败重试" Grid.Column="4" VerticalAlignment="Center" Foreground="#FF444444"/>
+                            <TextBlock Text="{loc:Loc Tasks.RetryTimes, Default='失败重试'}" Grid.Column="4" VerticalAlignment="Center" Foreground="#FF444444"/>
                             <TextBox x:Name="RetryBox" Grid.Column="5" Height="24" Margin="0,3" Text="0" Padding="4,1" TextAlignment="Center"/>
-                            <TextBlock Grid.Column="6" Text="次" VerticalAlignment="Center" Margin="4,0,0,0" Foreground="#FF666666"/>
+                            <TextBlock Grid.Column="6" Text="{loc:Loc Common.Times, Default='次'}" VerticalAlignment="Center" Margin="4,0,0,0" Foreground="#FF666666"/>
                         </Grid>
-                        <TextBlock Text="超时设为 0 表示不限制运行耗时；重试次数设为 0 表示失败后不自动重跑" Foreground="#FF888888" FontSize="11" Margin="80,2,0,0"/>
+                        <TextBlock Text="{loc:Loc Tasks.TimeoutRetryDesc, Default='超时设为 0 表示不限制运行耗时；重试次数设为 0 表示失败后不自动重跑'}" Foreground="#FF888888" FontSize="11" Margin="85,2,0,0"/>
 
                         <Separator Margin="0,12,0,12"/>
 
                         <!-- 条件 (When) -->
-                        <TextBlock Text="执行条件 (When) 可选" FontWeight="Bold" Foreground="#FF333333" Margin="0,0,0,8"/>
+                        <TextBlock Text="{loc:Loc Tasks.WhenTitle, Default='执行条件 (When) 可选'}" FontWeight="Bold" Foreground="#FF333333" Margin="0,0,0,8"/>
                         <WrapPanel>
-                            <CheckBox x:Name="OnlyIdleBox" Content="仅空闲时" Margin="0,4,16,4"/>
-                            <CheckBox x:Name="AcPowerBox" Content="仅交流供电" Margin="0,4,16,4"/>
-                            <CheckBox x:Name="NetworkBox" Content="仅有网络" Margin="0,4,16,4"/>
+                            <CheckBox x:Name="OnlyIdleBox" Content="{loc:Loc Tasks.OnlyIdle, Default='仅空闲时'}" Margin="0,4,16,4"/>
+                            <CheckBox x:Name="AcPowerBox" Content="{loc:Loc Tasks.AcPower, Default='仅交流供电'}" Margin="0,4,16,4"/>
+                            <CheckBox x:Name="NetworkBox" Content="{loc:Loc Tasks.Network, Default='仅有网络'}" Margin="0,4,16,4"/>
                         </WrapPanel>
                         <Grid Margin="0,4,0,0">
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="80"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="85"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                             <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                            <TextBlock Text="需存在文件" VerticalAlignment="Center" Foreground="#FF444444"/><TextBox x:Name="FileExistsBox" Grid.Column="1" Height="24" Margin="0,3" Padding="4,1"/>
-                            <TextBlock Text="需不存在" Grid.Row="1" VerticalAlignment="Center" Foreground="#FF444444"/><TextBox x:Name="FileNotExistsBox" Grid.Row="1" Grid.Column="1" Height="24" Margin="0,3" Padding="4,1"/>
+                            <TextBlock Text="{loc:Loc Tasks.FileExists, Default='需存在文件'}" VerticalAlignment="Center" Foreground="#FF444444"/><TextBox x:Name="FileExistsBox" Grid.Column="1" Height="24" Margin="0,3" Padding="4,1"/>
+                            <TextBlock Text="{loc:Loc Tasks.FileNotExists, Default='需不存在'}" Grid.Row="1" VerticalAlignment="Center" Foreground="#FF444444"/><TextBox x:Name="FileNotExistsBox" Grid.Row="1" Grid.Column="1" Height="24" Margin="0,3" Padding="4,1"/>
                         </Grid>
                     </StackPanel>
                 </ScrollViewer>
@@ -362,12 +363,12 @@
         <!-- 底部固定底栏：贴底统一风格 -->
         <Border Grid.Row="1" Background="#FFF9F9F9" BorderBrush="#FFE2E5E8" BorderThickness="0,1,0,0" Padding="16,10">
             <DockPanel LastChildFill="False">
-                <Button Content="测试运行 (Test)" DockPanel.Dock="Left" Height="30" Padding="14,0" Click="OnTestRunClick" ToolTip="直接试跑当前任务配置并查看返回状态和日志"/>
+                <Button Content="{loc:Loc Tasks.TestRun, Default='测试运行 (Test)'}" DockPanel.Dock="Left" Height="30" Padding="14,0" Click="OnTestRunClick" ToolTip="{loc:Loc Tasks.TestRunTooltip, Default='直接试跑当前任务配置并查看返回状态和日志'}"/>
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
-                    <Button Content="校验" Height="30" Width="68" Margin="0,0,8,0" Click="OnValidateClick"/>
-                    <Button Content="保存并生效" Style="{StaticResource PrimaryBtn}" Height="30" Padding="16,0" Margin="0,0,8,0" Click="OnSaveReloadClick"/>
-                    <Button Content="仅保存" Height="30" Width="68" Margin="0,0,8,0" Click="OnSaveClick"/>
-                    <Button Content="关闭" Height="30" Width="68" Click="OnCloseClick"/>
+                    <Button Content="{loc:Loc Tasks.Validate, Default='校验'}" Height="30" MinWidth="68" Padding="12,0" Margin="0,0,8,0" Click="OnValidateClick"/>
+                    <Button Content="{loc:Loc Tasks.SaveAndReload, Default='保存并生效'}" Style="{StaticResource PrimaryBtn}" Height="30" Padding="16,0" Margin="0,0,8,0" Click="OnSaveReloadClick"/>
+                    <Button Content="{loc:Loc Tasks.SaveOnly, Default='仅保存'}" Height="30" MinWidth="68" Padding="12,0" Margin="0,0,8,0" Click="OnSaveClick"/>
+                    <Button Content="{loc:Loc Common.Close, Default='关闭'}" Height="30" MinWidth="68" Padding="12,0" Click="OnCloseClick"/>
                 </StackPanel>
             </DockPanel>
         </Border>

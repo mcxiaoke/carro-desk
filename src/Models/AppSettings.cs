@@ -13,6 +13,7 @@ namespace ScreenLock.Models
         public string PinHash { get; set; } = "";
         public bool TasksEnabled { get; set; } = true;
         public bool UnlockOnResume { get; set; } = true;
+        public string Language { get; set; } = "auto";
         public List<string> ExcludeProcesses { get; set; } = new List<string>();
 
         public bool HasPin()
@@ -37,6 +38,7 @@ namespace ScreenLock.Models
             target.PinHash = PinHash;
             target.TasksEnabled = TasksEnabled;
             target.UnlockOnResume = UnlockOnResume;
+            target.Language = Language;
             target.ExcludeProcesses = ExcludeProcesses != null ? new List<string>(ExcludeProcesses) : new List<string>();
         }
 
@@ -46,6 +48,7 @@ namespace ScreenLock.Models
             if (loaded == null) return def;
             if (loaded.IdleMinutes < 0 || loaded.IdleMinutes > 24 * 60) loaded.IdleMinutes = def.IdleMinutes;
             if (loaded.OverlayOpacity < 0.3 || loaded.OverlayOpacity > 1.0) loaded.OverlayOpacity = def.OverlayOpacity;
+            if (string.IsNullOrEmpty(loaded.Language)) loaded.Language = def.Language;
             return loaded;
         }
     }

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Windows.Forms;
+using ScreenLock.Services.Localization;
 using ScreenLock.Views;
 
 namespace ScreenLock.Services
@@ -107,14 +108,14 @@ namespace ScreenLock.Services
             }
             if (result == PinAttemptResult.Blocked)
             {
-                error = string.Format("尝试次数过多，请等待 {0:mm\\:ss} 后重试", remaining);
+                error = Loc.T("Lock.PenaltyWait", remaining);
                 return PinAttemptResult.Blocked;
             }
-            error = "PIN 错误";
+            error = Loc.T("Lock.IncorrectPin");
             if (_pinGuard.RemainingBlock() > TimeSpan.Zero)
             {
                 var left = _pinGuard.RemainingBlock();
-                error += string.Format("，已锁定 {0:mm\\:ss}", left);
+                error += Loc.T("Lock.PinLockedWithTime", left);
             }
             return PinAttemptResult.Wrong;
         }

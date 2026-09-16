@@ -5,6 +5,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using ScreenLock.Models;
+using ScreenLock.Services.Localization;
 using ScreenLock.Services.Tasks;
 
 namespace ScreenLock.Views
@@ -18,6 +19,24 @@ namespace ScreenLock.Views
         {
             InitializeComponent();
             Loaded += OnLoaded;
+            I18nService.Instance.LanguageChanged += OnLanguageChanged;
+            Closed += OnClosed;
+        }
+
+        private void OnLanguageChanged()
+        {
+            Dispatcher.Invoke(() =>
+            {
+                RefreshList();
+                RefreshScriptQuick();
+                InitTemplateQuick();
+                UpdateCronHint();
+            });
+        }
+
+        private void OnClosed(object sender, EventArgs e)
+        {
+            I18nService.Instance.LanguageChanged -= OnLanguageChanged;
         }
 
         private void OnLoaded(object sender, RoutedEventArgs e)
@@ -36,13 +55,13 @@ namespace ScreenLock.Views
                 _tasks = res.Tasks ?? new List<TaskDefinition>();
                 if (_tasks.Count == 0 && res.Errors.Count > 0)
                 {
-                    MessageBox.Show("加载 tasks.json 有错误:\n" + string.Join("\n", res.Errors), "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show(Loc.T("Tasks.LoadErrors", string.Join("\n", res.Errors)), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
                 RefreshList();
             }
             catch (Exception ex)
             {
-                MessageBox.Show("加载失败: " + ex.Message);
+                MessageBox.Show(Loc.T("Tasks.LoadFailed", ex.Message), Loc.T("Common.Error", "错误"), MessageBoxButton.OK, MessageBoxImage.Error);
                 _tasks = new List<TaskDefinition>();
                 RefreshList();
             }
@@ -65,7 +84,7 @@ namespace ScreenLock.Views
             {
                 _isUpdating = true;
                 ScriptQuickBox.Items.Clear();
-                var hdr = new ComboBoxItem { Content = "scripts/ 快速选择", IsEnabled = false };
+                var hdr = new ComboBoxItem { Content = Loc.T("Tasks.ActionScriptQuick", "scripts/ 快速选择"), IsEnabled = false };
                 ScriptQuickBox.Items.Add(hdr);
                 var dir = Services.ConfigService.ScriptsDirPath;
                 if (Directory.Exists(dir))
@@ -125,7 +144,7 @@ namespace ScreenLock.Views
             try
             {
                 TemplateQuickBox.Items.Clear();
-                TemplateQuickBox.Items.Add(new ComboBoxItem { Content = "插入模板...", IsEnabled = false, IsSelected = true });
+                TemplateQuickBox.Items.Add(new ComboBoxItem { Content = Loc.T("Tasks.InsertTemplate", "插入模板..."), IsEnabled = false, IsSelected = true });
                 TemplateQuickBox.Items.Add(new ComboBoxItem { Content = "{{date}} - 日期 (yyyy-MM-dd)", Tag = "{{date}}" });
                 TemplateQuickBox.Items.Add(new ComboBoxItem { Content = "{{time}} - 时间 (HH-mm-ss)", Tag = "{{time}}" });
                 TemplateQuickBox.Items.Add(new ComboBoxItem { Content = "{{datetime}} - 日期时间", Tag = "{{datetime}}" });
@@ -363,7 +382,7 @@ namespace ScreenLock.Views
         {
             var cur = TaskList.SelectedItem as TaskDefinition;
             if (cur == null) return;
-            if (MessageBox.Show("删除任务 \"" + cur.Name + "\" ?", "确认", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+            if (MessageBox.Show(Loc.T("Tasks.DeleteConfirm", cur.Name), Loc.T("Common.Confirm", "确认"), MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
             _tasks.Remove(cur);
             RefreshList();
         }
@@ -402,7 +421,7 @@ namespace ScreenLock.Views
             try
             {
                 var dlg = new System.Windows.Forms.FolderBrowserDialog();
-                dlg.Description = "选择工作目录";
+                dlg.Description = Loc.T("Tasks.SelectWorkDir", "选择工作目录");
                 string scripts = Services.ConfigService.ScriptsDirPath;
                 if (Directory.Exists(scripts)) dlg.SelectedPath = scripts;
                 if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK)
@@ -418,7 +437,7 @@ namespace ScreenLock.Views
             try
             {
                 var dlg = new System.Windows.Forms.FolderBrowserDialog();
-                dlg.Description = "选择监听目录";
+                dlg.Description = Loc.T("Tasks.SelectWatchDir", "选择监听目录");
                 if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK) WatchPathBox.Text = dlg.SelectedPath;
             }
             catch { }
@@ -496,13 +515,13 @@ namespace ScreenLock.Views
 
             if (string.IsNullOrWhiteSpace(built.Name))
             {
-                error = "请输入任务名称";
+                error = Loc.T("Tasks.ValNameRequired", "请输入任务名称");
                 controlToFocus = NameBox;
                 return false;
             }
             if (built.Name.Length > 64)
             {
-                error = "任务名称过长 (最多 64 个字符)";
+                error = Loc.T("Tasks.ValNameTooLong", "任务名称过长 (最多 64 个字符)");
                 controlToFocus = NameBox;
                 return false;
             }
@@ -511,7 +530,7 @@ namespace ScreenLock.Views
                 bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
                 if (!ok)
                 {
-                    error = "任务名称包含非法字符 '" + c + "'，仅允许英文字母、数字、下划线和连字符";
+                    error = Loc.T("Tasks.ValNameInvalidChar", c);
                     controlToFocus = NameBox;
                     return false;
                 }
@@ -521,21 +540,21 @@ namespace ScreenLock.Views
             bool duplicate = _tasks.Any(t => t != cur && string.Equals(t.Name, built.Name, StringComparison.OrdinalIgnoreCase));
             if (duplicate)
             {
-                error = "任务名称 \"" + built.Name + "\" 已存在，请更换名称";
+                error = Loc.T("Tasks.ValNameDuplicate", built.Name);
                 controlToFocus = NameBox;
                 return false;
             }
 
             if (built.Trigger == null)
             {
-                error = "请选择触发器类型";
+                error = Loc.T("Tasks.ValTriggerRequired", "请选择触发器类型");
                 controlToFocus = TriggerTypeBox;
                 return false;
             }
 
             if (string.IsNullOrWhiteSpace(built.Action.File))
             {
-                error = "请指定要执行的脚本或程序文件 (Action.File)";
+                error = Loc.T("Tasks.ValFileRequired", "请指定要执行的脚本或程序文件 (Action.File)");
                 controlToFocus = FileBox;
                 return false;
             }
@@ -547,7 +566,7 @@ namespace ScreenLock.Views
                     sec = TaskDefinition.ParseDuration(built.Trigger.Every);
                 if (sec <= 0)
                 {
-                    error = "定时间隔必须大于 0 秒 (例如 30s, 5m, 1h)";
+                    error = Loc.T("Tasks.ValIntervalInvalid", "定时间隔必须大于 0 秒 (例如 30s, 5m, 1h)");
                     controlToFocus = EveryBox;
                     return false;
                 }
@@ -556,14 +575,14 @@ namespace ScreenLock.Views
             {
                 if (string.IsNullOrWhiteSpace(built.Trigger.At))
                 {
-                    error = "每天定时必须指定时间 (格式 HH:mm，如 09:00)";
+                    error = Loc.T("Tasks.ValDailyRequired", "每天定时必须指定时间 (格式 HH:mm，如 09:00)");
                     controlToFocus = AtBox;
                     return false;
                 }
                 TimeSpan t;
                 if (!TaskDefinition.TryParseTime(built.Trigger.At, out t))
                 {
-                    error = "每天定时时间格式无效: " + built.Trigger.At + " (请使用 HH:mm，如 09:30)";
+                    error = Loc.T("Tasks.ValDailyInvalid", built.Trigger.At);
                     controlToFocus = AtBox;
                     return false;
                 }
@@ -572,14 +591,14 @@ namespace ScreenLock.Views
             {
                 if (string.IsNullOrWhiteSpace(built.Trigger.Expr))
                 {
-                    error = "Cron 表达式不能为空 (如 0 9 * * 1)";
+                    error = Loc.T("Tasks.ValCronRequired", "Cron 表达式不能为空 (如 0 9 * * 1)");
                     controlToFocus = CronBox;
                     return false;
                 }
                 string cronErr;
                 if (!CronHelper.Validate(built.Trigger.Expr, out cronErr))
                 {
-                    error = "Cron 表达式无效: " + cronErr;
+                    error = Loc.T("Tasks.ValCronInvalid", cronErr);
                     controlToFocus = CronBox;
                     return false;
                 }
@@ -588,7 +607,7 @@ namespace ScreenLock.Views
             {
                 if (built.Trigger.AfterMinutes <= 0)
                 {
-                    error = "系统空闲等待时间必须大于 0 分钟";
+                    error = Loc.T("Tasks.ValIdleInvalid", "系统空闲等待时间必须大于 0 分钟");
                     controlToFocus = IdleBox;
                     return false;
                 }
@@ -597,14 +616,14 @@ namespace ScreenLock.Views
             {
                 if (string.IsNullOrWhiteSpace(built.Trigger.Hotkey))
                 {
-                    error = "热键不能为空 (例如 Ctrl+Alt+Q)";
+                    error = Loc.T("Tasks.ValHotkeyRequired", "热键不能为空 (例如 Ctrl+Alt+Q)");
                     controlToFocus = HotkeyBox;
                     return false;
                 }
                 string hkErr;
                 if (!HotkeyHelper.Validate(built.Trigger.Hotkey, out hkErr))
                 {
-                    error = "热键格式无效: " + hkErr;
+                    error = Loc.T("Tasks.ValHotkeyInvalid", hkErr);
                     controlToFocus = HotkeyBox;
                     return false;
                 }
@@ -613,7 +632,7 @@ namespace ScreenLock.Views
             {
                 if (string.IsNullOrWhiteSpace(built.Trigger.WatchPath))
                 {
-                    error = "文件监听目录不能为空";
+                    error = Loc.T("Tasks.ValWatchPathRequired", "文件监听目录不能为空");
                     controlToFocus = WatchPathBox;
                     return false;
                 }
@@ -621,13 +640,13 @@ namespace ScreenLock.Views
 
             if (built.Options != null && built.Options.TimeoutSec < 0)
             {
-                error = "超时时间不能为负数";
+                error = Loc.T("Tasks.ValTimeoutNegative", "超时时间不能为负数");
                 controlToFocus = TimeoutBox;
                 return false;
             }
             if (built.Options != null && built.Options.Retry < 0)
             {
-                error = "重试次数不能为负数";
+                error = Loc.T("Tasks.ValRetryNegative", "重试次数不能为负数");
                 controlToFocus = RetryBox;
                 return false;
             }
@@ -656,14 +675,14 @@ namespace ScreenLock.Views
             Control focusCtrl;
             if (!ValidateForm(built, cur, out err, out focusCtrl))
             {
-                ValidateText.Text = "校验失败: " + err;
+                ValidateText.Text = Loc.T("Tasks.ValFailPrefix", "校验失败: ") + err;
                 FocusInput(focusCtrl);
-                MessageBox.Show(err, "校验失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(err, Loc.T("Config.ValidationFailed", "校验失败"), MessageBoxButton.OK, MessageBoxImage.Warning);
             }
             else
             {
-                ValidateText.Text = "✓ 校验通过";
-                MessageBox.Show("当前任务配置合法有效！", "校验通过", MessageBoxButton.OK, MessageBoxImage.Information);
+                ValidateText.Text = "✓ " + Loc.T("Config.ValidationPassed", "校验通过");
+                MessageBox.Show(Loc.T("Tasks.ValPassedMsg", "当前任务配置合法有效！"), Loc.T("Config.ValidationPassed", "校验通过"), MessageBoxButton.OK, MessageBoxImage.Information);
             }
         }
 
@@ -675,7 +694,7 @@ namespace ScreenLock.Views
             // 如果当前无任何任务且表单完全为空，无需保存
             if (cur == null && _tasks.Count == 0 && string.IsNullOrWhiteSpace(built.Name) && string.IsNullOrWhiteSpace(built.Action.File))
             {
-                MessageBox.Show("当前没有需要保存的任务。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(Loc.T("Tasks.NoTasksNeedSave", "当前没有需要保存的任务。"), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return false;
             }
 
@@ -684,9 +703,9 @@ namespace ScreenLock.Views
             Control focusCtrl;
             if (!ValidateForm(built, cur, out err, out focusCtrl))
             {
-                ValidateText.Text = "校验失败: " + err;
+                ValidateText.Text = Loc.T("Tasks.ValFailPrefix", "校验失败: ") + err;
                 FocusInput(focusCtrl);
-                MessageBox.Show("当前任务表单存在错误，无法保存:\n" + err, "校验失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(Loc.T("Tasks.CurrentTaskError", err), Loc.T("Config.ValidationFailed", "校验失败"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
             }
 
@@ -703,7 +722,7 @@ namespace ScreenLock.Views
             }
             if (errors.Count > 0)
             {
-                MessageBox.Show("其他任务存在错误，无法保存:\n" + string.Join("\n", errors), "校验失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(Loc.T("Tasks.OtherTasksError", string.Join("\n", errors)), Loc.T("Config.ValidationFailed", "校验失败"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
             }
 
@@ -728,7 +747,7 @@ namespace ScreenLock.Views
             try
             {
                 TaskConfigService.Save(_tasks);
-                ValidateText.Text = "✓ 已保存 (" + DateTime.Now.ToString("HH:mm:ss") + ")";
+                ValidateText.Text = "✓ " + Loc.T("Tasks.SavedAt", DateTime.Now.ToString("HH:mm:ss"));
 
                 // 刷新左侧列表展示（徽标、状态圆点、名称）并保持当前选中项
                 _isUpdating = true;
@@ -742,7 +761,7 @@ namespace ScreenLock.Views
             }
             catch (Exception ex)
             {
-                MessageBox.Show("保存失败: " + ex.Message, "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(Loc.T("Tasks.SaveFailed", ex.Message), Loc.T("Common.Error", "错误"), MessageBoxButton.OK, MessageBoxImage.Error);
                 return false;
             }
         }
@@ -751,7 +770,7 @@ namespace ScreenLock.Views
         {
             if (SaveTasksInternal())
             {
-                MessageBox.Show("已保存到 " + Services.ConfigService.TaskFilePath, "保存成功", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(Loc.T("Tasks.SaveSuccess", Services.ConfigService.TaskFilePath), Loc.T("Common.Success", "保存成功"), MessageBoxButton.OK, MessageBoxImage.Information);
             }
         }
 
@@ -764,14 +783,14 @@ namespace ScreenLock.Views
                 if (app != null && ScreenLock.App.TaskScheduler != null)
                 {
                     var res = ScreenLock.App.TaskScheduler.Reload();
-                    string msg = res.Errors.Count == 0 ? "已重载 " + res.Tasks.Count + " 个任务" : "重载完成 " + res.Errors.Count + " 个错误";
-                    MessageBox.Show(msg, "重载", MessageBoxButton.OK, MessageBoxImage.Information);
+                    string msg = res.Errors.Count == 0 ? Loc.T("Tasks.ReloadSuccess", res.Tasks.Count) : Loc.T("Tasks.ReloadWithErrors", res.Errors.Count);
+                    MessageBox.Show(msg, Loc.T("Tray.ReloadTasks", "重载任务"), MessageBoxButton.OK, MessageBoxImage.Information);
                     try { app.Dispatcher.Invoke(new Action(() => app.RefreshTaskMenu())); } catch { }
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show("重载失败: " + ex.Message, "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(Loc.T("Tasks.ReloadFailed", ex.Message), Loc.T("Common.Error", "错误"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -789,21 +808,21 @@ namespace ScreenLock.Views
             string expr = CronBox.Text.Trim();
             if (string.IsNullOrEmpty(expr))
             {
-                CronHintText.Text = "分 时 日 月 周 (5个字段)，如 0 9 * * 1";
+                CronHintText.Text = Loc.T("Tasks.CronHintDefault", "分 时 日 月 周 (5个字段)，如 0 9 * * 1");
                 CronHintText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x88, 0x88, 0x88));
                 return;
             }
             string err;
             if (!CronHelper.Validate(expr, out err))
             {
-                CronHintText.Text = "格式错误: " + err;
+                CronHintText.Text = Loc.T("Tasks.CronFormatError", err);
                 CronHintText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xD9, 0x30, 0x25));
             }
             else
             {
                 string desc = CronHelper.ExplainCron(expr);
                 var next = CronHelper.GetNextOccurrence(expr, DateTime.Now);
-                string nextStr = next.HasValue ? string.Format(" · 下次: {0:yyyy-MM-dd HH:mm}", next.Value) : "";
+                string nextStr = next.HasValue ? Loc.T("Tasks.CronHintNext", next.Value) : "";
                 CronHintText.Text = "✓ " + desc + nextStr;
                 CronHintText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x05, 0x96, 0x69));
             }
@@ -833,12 +852,12 @@ namespace ScreenLock.Views
             Control focusCtrl;
             if (!ValidateForm(cur, selected, out err, out focusCtrl))
             {
-                ValidateText.Text = "校验失败: " + err;
+                ValidateText.Text = Loc.T("Tasks.ValFailPrefix", "校验失败: ") + err;
                 FocusInput(focusCtrl);
-                MessageBox.Show("任务配置有误，无法测试运行:\n" + err, "校验失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(Loc.T("Tasks.TestError", err), Loc.T("Config.ValidationFailed", "校验失败"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
-            ValidateText.Text = "正在运行测试...";
+            ValidateText.Text = Loc.T("Tasks.TestRunning", "正在运行测试...");
             var btn = sender as Button;
             if (btn != null) btn.IsEnabled = false;
 
@@ -847,14 +866,14 @@ namespace ScreenLock.Views
                 var sw = System.Diagnostics.Stopwatch.StartNew();
                 int exitCode = await TaskRunner.RunAsync(cur, "manual-test").ConfigureAwait(true);
                 sw.Stop();
-                string status = exitCode == 0 ? "成功" : "失败 (退出码 " + exitCode + ")";
-                ValidateText.Text = string.Format("测试完成 [{0}] 耗时 {1:0.0}s", status, sw.Elapsed.TotalSeconds);
-                MessageBox.Show(string.Format("测试运行完成: {0}\n耗时: {1:0.0} 秒\n详细日志请查看:\nlogs/task-{2}.log", status, sw.Elapsed.TotalSeconds, cur.Name), "测试结果", MessageBoxButton.OK, exitCode == 0 ? MessageBoxImage.Information : MessageBoxImage.Warning);
+                string status = exitCode == 0 ? Loc.T("Common.Success", "成功") : Loc.T("Tasks.FailedExitCode", exitCode);
+                ValidateText.Text = Loc.T("Tasks.TestCompletedSummary", status, sw.Elapsed.TotalSeconds);
+                MessageBox.Show(Loc.T("Tasks.TestResult", status, sw.Elapsed.TotalSeconds, cur.Name), Loc.T("Tasks.TestResultTitle", "测试结果"), MessageBoxButton.OK, exitCode == 0 ? MessageBoxImage.Information : MessageBoxImage.Warning);
             }
             catch (Exception ex)
             {
-                ValidateText.Text = "测试异常: " + ex.Message;
-                MessageBox.Show("测试运行异常:\n" + ex.Message, "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                ValidateText.Text = Loc.T("Tasks.TestException", ex.Message);
+                MessageBox.Show(Loc.T("Tasks.TestException", ex.Message), Loc.T("Common.Error", "错误"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
             finally
             {

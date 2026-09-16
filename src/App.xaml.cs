@@ -7,6 +7,7 @@ using System.Windows.Forms;
 using Hardcodet.Wpf.TaskbarNotification;
 using Microsoft.Win32;
 using ScreenLock.Services;
+using ScreenLock.Services.Localization;
 using ScreenLock.Services.Tasks;
 using ScreenLock.Views;
 
@@ -51,6 +52,13 @@ namespace ScreenLock
 
             Config = new ConfigService();
             Config.LoadOrCreate();
+
+            I18nService.Instance.Init(Config.Current.Language);
+            I18nService.Instance.LanguageChanged += () =>
+            {
+                UpdateTrayText();
+                _trayMenu?.RefreshAll();
+            };
 
             Controller = new LockController(Config);
 
@@ -133,7 +141,7 @@ namespace ScreenLock
         private void OnIdleWarning()
         {
             if (_tbIcon == null) return;
-            ShowBalloon(string.Format("空闲 {0} 分钟后自动锁定，动一下鼠标可取消", Config.Current.IdleMinutes));
+            ShowBalloon(Loc.T("Tray.BalloonIdleWarn", Config.Current.IdleMinutes));
         }
 
         private void OnSessionSwitch(object sender, SessionSwitchEventArgs e)
@@ -169,6 +177,7 @@ namespace ScreenLock
         {
             var ok = Config.Reload();
             var c = Config.Current;
+            I18nService.Instance.SetLanguage(c.Language);
             Idle.Threshold = TimeSpan.FromMinutes(c.IdleMinutes);
             Idle.Reset();
             Controller.ApplyPinFromConfig();
@@ -180,8 +189,8 @@ namespace ScreenLock
             if (_tbIcon != null)
             {
                 string balloonMsg = ok
-                    ? string.Format("配置已重新加载：空闲 {0} 分钟后锁定", c.IdleMinutes)
-                    : "配置加载失败，已保留上次有效配置";
+                    ? Loc.T("Tray.BalloonConfigReloaded", c.IdleMinutes)
+                    : Loc.T("Tray.BalloonConfigFailed");
                 _tbIcon.ShowBalloonTip("ScreenLock", balloonMsg, BalloonIcon.Info);
             }
         }
@@ -190,19 +199,19 @@ namespace ScreenLock
         {
             if (TaskScheduler == null)
             {
-                ShowBalloon("任务调度器未初始化");
+                ShowBalloon(Loc.T("Tray.BalloonTasksNotInit"));
                 return;
             }
             var result = TaskScheduler.Reload();
             try { RefreshTaskMenu(); } catch { }
             try { RefreshMenuChecks(); } catch { }
             var msg = result.Errors.Count == 0
-                ? string.Format("任务已重载：{0} 个生效", result.Tasks.Count)
-                : string.Format("任务重载完成：{0} 个生效，{1} 个错误", result.Tasks.Count, result.Errors.Count);
+                ? Loc.T("Tray.BalloonTasksReloadedSuccess", result.Tasks.Count)
+                : Loc.T("Tray.BalloonTasksReloadedErrors", result.Tasks.Count, result.Errors.Count);
             if (result.Errors.Count > 0)
-                msg += "，详见 logs/tasks.log";
+                msg += Loc.T("Tray.BalloonTasksErrorsHint");
             if (TaskScheduler != null && !TaskScheduler.IsGlobalEnabled)
-                msg += "（总开关已禁用）";
+                msg += Loc.T("Tray.BalloonTasksDisabledHint");
             ShowBalloon(msg);
         }
 
@@ -261,7 +270,7 @@ namespace ScreenLock
             Idle.Reset();
             UpdateTrayText();
             _trayMenu?.RefreshStatus();
-            ShowBalloon(string.Format("已暂停自动锁定，{0:HH:mm} 后恢复", _pauseUntil));
+            ShowBalloon(Loc.T("Tray.BalloonPause", _pauseUntil));
         }
 
         internal void ResumeIdle()
@@ -310,11 +319,11 @@ namespace ScreenLock
             {
                 string text;
                 if (DateTime.Now < _pauseUntil)
-                    text = string.Format("ScreenLock - 自动锁定已暂停至 {0:HH:mm}", _pauseUntil);
+                    text = Loc.T("Tray.TooltipPaused", _pauseUntil);
                 else if (Config.Current.IdleMinutes <= 0)
-                    text = "ScreenLock - 空闲锁定已禁用";
+                    text = Loc.T("Tray.TooltipDisabled");
                 else
-                    text = string.Format("ScreenLock - 空闲 {0} 分钟锁定", Config.Current.IdleMinutes);
+                    text = Loc.T("Tray.TooltipIdle", Config.Current.IdleMinutes);
                 _tbIcon.ToolTipText = text;
             }
             catch { }
@@ -322,7 +331,7 @@ namespace ScreenLock
 
         internal void PromptExit()
         {
-            var win = new VerifyPinWindow(Controller, "退出 ScreenLock 需要验证 PIN")
+            var win = new VerifyPinWindow(Controller, Loc.T("Tray.ExitPrompt"))
             {
                 WindowStartupLocation = WindowStartupLocation.CenterScreen
             };

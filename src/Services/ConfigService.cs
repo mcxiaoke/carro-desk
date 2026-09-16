@@ -139,6 +139,7 @@ namespace ScreenLock.Services
                     else s.TasksEnabled = true;
                     if (obj.HasKey("UnlockOnResume")) s.UnlockOnResume = obj["UnlockOnResume"].AsBool;
                     else s.UnlockOnResume = true;
+                    if (obj.HasKey("Language")) s.Language = obj["Language"].Value;
 
                     // ExcludeProcesses: support array ["a.exe","b.exe"] or comma-string "a.exe, b.exe"
                     if (obj.HasKey("ExcludeProcesses"))
@@ -214,6 +215,7 @@ namespace ScreenLock.Services
                 s.UnlockOnResume = map["UnlockOnResume"] == "true";
             else
                 s.UnlockOnResume = true;
+            if (map.ContainsKey("Language")) s.Language = map["Language"];
             var excl = ExtractStringArray(json, "ExcludeProcesses");
             if (excl != null) s.ExcludeProcesses = excl;
             else s.ExcludeProcesses = new List<string>();
@@ -233,6 +235,7 @@ namespace ScreenLock.Services
             sb.AppendLine("  \"PinHash\": \"" + Escape(Current.PinHash ?? "") + "\",");
             sb.AppendLine("  \"TasksEnabled\": " + (Current.TasksEnabled ? "true" : "false") + ",");
             sb.AppendLine("  \"UnlockOnResume\": " + (Current.UnlockOnResume ? "true" : "false") + ",");
+            sb.AppendLine("  \"Language\": \"" + Escape(Current.Language ?? "auto") + "\",");
             sb.Append("  \"ExcludeProcesses\": ");
             sb.Append(SerializeStringArray(Current.ExcludeProcesses));
             sb.AppendLine();

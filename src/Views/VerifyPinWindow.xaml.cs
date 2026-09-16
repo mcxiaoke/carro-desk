@@ -2,6 +2,7 @@ using System;
 using System.Windows;
 using System.Windows.Media.Animation;
 using ScreenLock.Services;
+using ScreenLock.Services.Localization;
 
 namespace ScreenLock.Views
 {
@@ -37,7 +38,7 @@ namespace ScreenLock.Views
         {
             if (string.IsNullOrEmpty(PinBox.Password))
             {
-                MessageText.Text = "请输入 PIN 码。";
+                MessageText.Text = Loc.T("Lock.InputPinHint");
                 ShakeCard();
                 PinBox.Focus();
                 return;
@@ -49,7 +50,7 @@ namespace ScreenLock.Views
                 Close();
                 return;
             }
-            MessageText.Text = "PIN 码不正确，请重新输入。";
+            MessageText.Text = Loc.T("VerifyPin.IncorrectPin");
             ShakeCard();
             PinBox.Clear();
             PinBox.Focus();

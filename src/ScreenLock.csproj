@@ -19,6 +19,10 @@
     <Resource Include="Assets\Icon.png" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\Locales\*.json" />
+  </ItemGroup>
+
   <!-- 样例配置：构建时自动复制到输出目录，不走代码生成 -->
   <ItemGroup>
     <None Include="Samples\config.sample.json" Link="config.sample.json">

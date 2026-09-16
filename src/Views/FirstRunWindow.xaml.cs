@@ -1,12 +1,14 @@
 using System;
 using System.Windows;
 using System.Windows.Media.Animation;
+using ScreenLock.Services.Localization;
 
 namespace ScreenLock.Views
 {
     public partial class FirstRunWindow : Window
     {
         public string NewPin { get; private set; }
+        public bool IsChangeMode { get; set; }
 
         public FirstRunWindow()
         {
@@ -15,10 +17,10 @@ namespace ScreenLock.Views
             {
                 PinBox1.Focus();
                 UpdateKeyLockStatus();
-                // If title was modified to "设置新 PIN", sync heading text
-                if (Title == "设置新 PIN")
+                if (IsChangeMode)
                 {
-                    HeadingText.Text = "修改解锁 PIN";
+                    Title = Loc.T("FirstRun.TitleChangePin");
+                    HeadingText.Text = Loc.T("FirstRun.HeadingChangePin");
                 }
             };
 
@@ -58,14 +60,14 @@ namespace ScreenLock.Views
             var pin2 = PinBox2.Password;
             if (string.IsNullOrEmpty(pin1) || pin1.Length < 4)
             {
-                MessageText.Text = "PIN 至少需要 4 位。";
+                MessageText.Text = Loc.T("FirstRun.ErrorMinLength");
                 ShakeCard();
                 PinBox1.Focus();
                 return;
             }
             if (pin1 != pin2)
             {
-                MessageText.Text = "两次输入不一致，请重新输入。";
+                MessageText.Text = Loc.T("FirstRun.ErrorMismatch");
                 ShakeCard();
                 PinBox2.Clear();
                 PinBox2.Focus();

@@ -7,6 +7,7 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using ScreenLock.Services;
+using ScreenLock.Services.Localization;
 
 namespace ScreenLock.Views
 {
@@ -208,7 +209,8 @@ namespace ScreenLock.Views
             if (!App.Config.Current.ShowClock) return;
             var now = DateTime.Now;
             string timeStr = now.ToString("HH:mm:ss");
-            string dateStr = now.ToString("yyyy年M月d日 ") + GetChineseDayOfWeek(now.DayOfWeek);
+            string datePattern = Loc.T("Lock.DateFormat");
+            string dateStr = now.ToString(datePattern, I18nService.Instance.CurrentCulture);
 
             if (_primary)
             {
@@ -222,21 +224,6 @@ namespace ScreenLock.Views
             }
         }
 
-        private static string GetChineseDayOfWeek(DayOfWeek dow)
-        {
-            switch (dow)
-            {
-                case DayOfWeek.Sunday: return "星期日";
-                case DayOfWeek.Monday: return "星期一";
-                case DayOfWeek.Tuesday: return "星期二";
-                case DayOfWeek.Wednesday: return "星期三";
-                case DayOfWeek.Thursday: return "星期四";
-                case DayOfWeek.Friday: return "星期五";
-                case DayOfWeek.Saturday: return "星期六";
-                default: return "";
-            }
-        }
-
         private void UpdateKeyLockStatus()
         {
             if (!_primary || KeyHintText == null) return;
@@ -244,12 +231,12 @@ namespace ScreenLock.Views
             bool num = Console.NumberLock;
             if (caps)
             {
-                KeyHintText.Text = "⚠️ 大写锁定 (Caps Lock) 已开启";
+                KeyHintText.Text = Loc.T("Lock.CapsLockWarning");
                 KeyHintText.Visibility = Visibility.Visible;
             }
             else if (!num)
             {
-                KeyHintText.Text = "ℹ️ 小键盘 (Num Lock) 已关闭";
+                KeyHintText.Text = Loc.T("Lock.NumLockWarning");
                 KeyHintText.Visibility = Visibility.Visible;
             }
             else
@@ -266,7 +253,7 @@ namespace ScreenLock.Views
             {
                 PinBox.IsEnabled = false;
                 UnlockButton.IsEnabled = false;
-                MessageText.Text = string.Format("尝试次数过多，{0:mm\\:ss} 后可重试", blocked);
+                MessageText.Text = Loc.T("Lock.PenaltyWait", blocked);
             }
             else if (PinBox.IsEnabled == false)
             {
