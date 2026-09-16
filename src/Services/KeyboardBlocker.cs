@@ -22,7 +22,7 @@ namespace ScreenLock.Services
         private const int VK_LWIN = 0x5B;
         private const int VK_RWIN = 0x5C;
         private const int VK_APPS = 0x5D;
-        private const int VK_F4 = 0x70;
+        private const int VK_F4 = 0x73;
         private const int VK_NUMPAD0 = 0x60;
         private const int VK_NUMPAD9 = 0x69;
         private const int VK_LBUTTON = 0x01;
@@ -103,7 +103,7 @@ namespace ScreenLock.Services
                 if (msg == WM_KEYDOWN || msg == WM_KEYUP || msg == WM_SYSKEYDOWN || msg == WM_SYSKEYUP)
                 {
                     var info = (KBDLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(KBDLLHOOKSTRUCT));
-                    bool altDown = (info.flags & 0x20) != 0;
+                    bool altDown = (info.flags & 0x20) != 0 || (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
                     uint vk = info.vkCode & 0xFF;
 
                     bool winDown = (GetAsyncKeyState(VK_LWIN) & 0x8000) != 0 || (GetAsyncKeyState(VK_RWIN) & 0x8000) != 0;
@@ -117,10 +117,10 @@ namespace ScreenLock.Services
                     if (winDown)
                         return (IntPtr)1;
 
-                    if (altDown && (vk == VK_TAB || vk == VK_ESCAPE || vk == VK_F4 || vk == VK_SPACE))
+                    if (altDown)
                         return (IntPtr)1;
 
-                    if (!altDown && vk == VK_ESCAPE && (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0)
+                    if (vk == VK_ESCAPE && (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0)
                         return (IntPtr)1;
                 }
             }

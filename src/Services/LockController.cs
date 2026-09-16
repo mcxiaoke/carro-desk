@@ -24,6 +24,32 @@ namespace ScreenLock.Services
             _blocker = new KeyboardBlocker();
             _pinGuard = new PinGuard(_pinService);
             ApplyPinFromConfig();
+            try { Microsoft.Win32.SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged; } catch { }
+        }
+
+        private void OnDisplaySettingsChanged(object sender, EventArgs e)
+        {
+            if (!_locked) return;
+            try
+            {
+                System.Windows.Application.Current?.Dispatcher?.BeginInvoke(new Action(() =>
+                {
+                    if (!_locked) return;
+                    foreach (var win in _lockWindows)
+                    {
+                        win.CloseSafe();
+                    }
+                    _lockWindows.Clear();
+                    foreach (Screen screen in Screen.AllScreens)
+                    {
+                        var win = new LockWindow(this, screen, screen.Primary);
+                        _lockWindows.Add(win);
+                        win.Show();
+                        win.ActivateIfNeeded();
+                    }
+                }));
+            }
+            catch { }
         }
 
         public bool IsLocked { get { return _locked; } }
@@ -127,6 +153,7 @@ namespace ScreenLock.Services
 
         public void Dispose()
         {
+            try { Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged; } catch { }
             Unlock();
             _blocker.Dispose();
         }

@@ -151,7 +151,13 @@ namespace ScreenLock
                 else if (e.Reason == SessionSwitchReason.SessionUnlock)
                 {
                     _sessionLocked = false;
+                    // 若配置开启 UnlockOnResume（默认 true），当 Windows 会话解锁时自动解除 ScreenLock 锁屏
+                    if (Config.Current.UnlockOnResume && Controller.IsLocked)
+                    {
+                        Controller.Unlock();
+                    }
                     Idle.Reset();
+                    UpdateTrayText();
                 }
                 else if (e.Reason == SessionSwitchReason.RemoteDisconnect)
                 {
@@ -283,7 +289,7 @@ namespace ScreenLock
             var lockItem = new ToolStripMenuItem("立即锁定") { Font = new System.Drawing.Font(System.Drawing.SystemFonts.DefaultFont, System.Drawing.FontStyle.Bold) };
             lockItem.Click += (s, e) => Controller.LockSafe();
 
-            var reloadItem = new ToolStripMenuItem("Reload Config");
+            var reloadItem = new ToolStripMenuItem("重载配置 (settings.json)");
             reloadItem.Click += (s, e) => ReloadConfig();
 
             var reloadTasksItem = new ToolStripMenuItem("重载任务 (tasks.json)");
@@ -487,7 +493,7 @@ namespace ScreenLock
             UpdateTrayText();
         }
 
-        private void RefreshMenuChecks()
+        internal void RefreshMenuChecks()
         {
             foreach (var item in _idleItems)
                 item.Checked = (int)item.Tag == Config.Current.IdleMinutes;
@@ -523,7 +529,7 @@ namespace ScreenLock
             }
         }
 
-        private void UpdateTrayText()
+        internal void UpdateTrayText()
         {
             if (_trayIcon == null) return;
             try

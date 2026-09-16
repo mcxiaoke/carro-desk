@@ -74,6 +74,16 @@ namespace ScreenLock.Models
         public TaskOptions Options { get; set; } = new TaskOptions();
         public TaskCondition When { get; set; } = new TaskCondition();
 
+        public string StatusIndicator
+        {
+            get { return Enabled ? "🟢" : "⚪"; }
+        }
+
+        public string TriggerBadge
+        {
+            get { return "[" + (Trigger != null ? (Trigger.RawType != "" ? Trigger.RawType : Trigger.Type.ToString().ToLowerInvariant()) : "unknown") + "]"; }
+        }
+
         public string Validate()
         {
             if (string.IsNullOrWhiteSpace(Name)) return "name required";

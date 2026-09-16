@@ -3,6 +3,8 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using ScreenLock.Services;
 
@@ -62,13 +64,15 @@ namespace ScreenLock.Views
             Height = screen.Bounds.Height;
             WindowStartupLocation = WindowStartupLocation.Manual;
 
-            RootBorder.Opacity = App.Config.Current.OverlayOpacity;
-
             InputPanel.Visibility = primary ? Visibility.Visible : Visibility.Collapsed;
             CoverPanel.Visibility = primary ? Visibility.Collapsed : Visibility.Visible;
             Cursor = primary ? System.Windows.Input.Cursors.Arrow : System.Windows.Input.Cursors.None;
-            ClockText.Visibility = App.Config.Current.ShowClock ? Visibility.Visible : Visibility.Collapsed;
-            CoverClockText.Visibility = ClockText.Visibility;
+
+            bool showClock = App.Config.Current.ShowClock;
+            LargeClockText.Visibility = showClock ? Visibility.Visible : Visibility.Collapsed;
+            DateText.Visibility = showClock ? Visibility.Visible : Visibility.Collapsed;
+            CoverLargeClockText.Visibility = showClock ? Visibility.Visible : Visibility.Collapsed;
+            CoverDateText.Visibility = showClock ? Visibility.Visible : Visibility.Collapsed;
 
             // 修复前 500ms 无条件 SetWindowPos(TOPMOST) 与网速等 TOPMOST 浮层抢 Z 序导致闪烁
             // 改为 2.5s 节流 + 仅当真正被覆盖时才置顶
@@ -142,12 +146,22 @@ namespace ScreenLock.Views
             SetWindowLong(hwnd, GWL_EXSTYLE, style | WS_EX_TOOLWINDOW);
             SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 
+            // 平滑淡入动效
+            double targetOpacity = App.Config.Current.OverlayOpacity;
+            var fadeIn = new DoubleAnimation(0, targetOpacity, TimeSpan.FromMilliseconds(200));
+            RootBorder.BeginAnimation(UIElement.OpacityProperty, fadeIn);
+
             _keepAliveTimer.Start();
             _uiTimer.Start();
 
             if (_primary)
             {
                 PinBox.Focus();
+                UpdateClock();
+                UpdateKeyLockStatus();
+            }
+            else
+            {
                 UpdateClock();
             }
         }
@@ -184,17 +198,65 @@ namespace ScreenLock.Views
 
         private void OnUiTick(object sender, EventArgs e)
         {
-            if (!_primary) return;
             UpdateClock();
+            if (!_primary) return;
             UpdatePenaltyState();
+            UpdateKeyLockStatus();
         }
 
         private void UpdateClock()
         {
             if (!App.Config.Current.ShowClock) return;
-            var now = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-            ClockText.Text = now;
-            CoverClockText.Text = now;
+            var now = DateTime.Now;
+            string timeStr = now.ToString("HH:mm:ss");
+            string dateStr = now.ToString("yyyy年M月d日 ") + GetChineseDayOfWeek(now.DayOfWeek);
+
+            if (_primary)
+            {
+                LargeClockText.Text = timeStr;
+                DateText.Text = dateStr;
+            }
+            else
+            {
+                CoverLargeClockText.Text = timeStr;
+                CoverDateText.Text = dateStr;
+            }
+        }
+
+        private static string GetChineseDayOfWeek(DayOfWeek dow)
+        {
+            switch (dow)
+            {
+                case DayOfWeek.Sunday: return "星期日";
+                case DayOfWeek.Monday: return "星期一";
+                case DayOfWeek.Tuesday: return "星期二";
+                case DayOfWeek.Wednesday: return "星期三";
+                case DayOfWeek.Thursday: return "星期四";
+                case DayOfWeek.Friday: return "星期五";
+                case DayOfWeek.Saturday: return "星期六";
+                default: return "";
+            }
+        }
+
+        private void UpdateKeyLockStatus()
+        {
+            if (!_primary || KeyHintText == null) return;
+            bool caps = Console.CapsLock;
+            bool num = Console.NumberLock;
+            if (caps)
+            {
+                KeyHintText.Text = "⚠️ 大写锁定 (Caps Lock) 已开启";
+                KeyHintText.Visibility = Visibility.Visible;
+            }
+            else if (!num)
+            {
+                KeyHintText.Text = "ℹ️ 小键盘 (Num Lock) 已关闭";
+                KeyHintText.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                KeyHintText.Visibility = Visibility.Collapsed;
+            }
         }
 
         private void UpdatePenaltyState()
@@ -273,12 +335,33 @@ namespace ScreenLock.Views
             var result = _controller.TryUnlock(PinBox.Password, out error);
             if (result == PinAttemptResult.Success) return;
             MessageText.Text = error;
+            ShakeCard();
             PinBox.Clear();
             PinBox.Focus();
         }
 
+        private void ShakeCard()
+        {
+            if (CardTransform == null) return;
+            var anim = new DoubleAnimationUsingKeyFrames();
+            anim.Duration = TimeSpan.FromMilliseconds(320);
+            anim.KeyFrames.Add(new LinearDoubleKeyFrame(0, TimeSpan.FromMilliseconds(0)));
+            anim.KeyFrames.Add(new LinearDoubleKeyFrame(-12, TimeSpan.FromMilliseconds(60)));
+            anim.KeyFrames.Add(new LinearDoubleKeyFrame(12, TimeSpan.FromMilliseconds(120)));
+            anim.KeyFrames.Add(new LinearDoubleKeyFrame(-8, TimeSpan.FromMilliseconds(180)));
+            anim.KeyFrames.Add(new LinearDoubleKeyFrame(8, TimeSpan.FromMilliseconds(240)));
+            anim.KeyFrames.Add(new LinearDoubleKeyFrame(0, TimeSpan.FromMilliseconds(320)));
+            CardTransform.BeginAnimation(TranslateTransform.XProperty, anim);
+        }
+
         private void OnClosing(object sender, System.ComponentModel.CancelEventArgs e)
         {
+            // 如果不是通过 CloseSafe 授权解锁关闭且非程序退出，则拦截外部关闭请求
+            if (!_isClosing && !App.IsShuttingDown)
+            {
+                e.Cancel = true;
+                return;
+            }
             _isClosing = true;
             _keepAliveTimer.Stop();
             _uiTimer.Stop();
@@ -290,9 +373,21 @@ namespace ScreenLock.Views
             try
             {
                 _isClosing = true;
-                Close();
+                _keepAliveTimer.Stop();
+                _uiTimer.Stop();
+                _deactivateTimer.Stop();
+
+                var fadeOut = new DoubleAnimation(RootBorder.Opacity, 0, TimeSpan.FromMilliseconds(150));
+                fadeOut.Completed += (s, e) =>
+                {
+                    try { Close(); } catch { }
+                };
+                RootBorder.BeginAnimation(UIElement.OpacityProperty, fadeOut);
             }
-            catch { }
+            catch
+            {
+                try { Close(); } catch { }
+            }
         }
     }
 }

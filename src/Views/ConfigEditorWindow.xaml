@@ -90,6 +90,8 @@
                     <StackPanel>
                         <TextBlock Text="系统集成" FontWeight="Bold" Foreground="#FF444444" Margin="0,0,0,10"/>
                         <CheckBox x:Name="AutoStartBox" Content="开机自启（写入注册表 Run）" Margin="0,2,0,0"/>
+                        <CheckBox x:Name="UnlockOnResumeBox" Content="Windows 解锁后自动解除伪锁屏（推荐）" Margin="0,8,0,0" IsChecked="True"/>
+                        <TextBlock Text="开启后，在系统锁屏界面输入密码或人脸解锁后无需重复输入 ScreenLock PIN" Foreground="#FF888888" FontSize="11" Margin="20,2,0,0" TextWrapping="Wrap"/>
                         <CheckBox x:Name="TasksEnabledBox" Content="启用任务调度（全局总开关）" Margin="0,8,0,0" IsChecked="True"/>
                         <TextBlock Text="关闭后所有定时/热键/监听任务将暂停" Foreground="#FF888888" FontSize="11" Margin="20,2,0,0"/>
                     </StackPanel>
@@ -101,10 +103,16 @@
                         <TextBlock Text="排除进程（防游戏挂机误锁）" FontWeight="Bold" Foreground="#FF444444" Margin="0,0,0,6"/>
                         <TextBlock Text="列出的进程运行时暂停空闲计时，支持 game.exe 或完整路径，大小写不敏感" Foreground="#FF888888" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8"/>
                         <Grid>
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="60"/><ColumnDefinition Width="60"/></Grid.ColumnDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="54"/>
+                                <ColumnDefinition Width="54"/>
+                            </Grid.ColumnDefinitions>
                             <TextBox x:Name="ExcludeInputBox" Height="26" Padding="4,2" ToolTip="输入进程名如 eldenring.exe 回车添加"/>
-                            <Button Content="添加" Grid.Column="1" Height="26" Margin="4,0,0,0" Click="OnExcludeAddClick"/>
-                            <Button Content="删除" Grid.Column="2" Height="26" Margin="4,0,0,0" Click="OnExcludeDeleteClick"/>
+                            <Button Content="从运行中选择..." Grid.Column="1" Height="26" Margin="4,0,0,0" Padding="8,0" Click="OnPickRunningProcessClick"/>
+                            <Button Content="添加" Grid.Column="2" Height="26" Margin="4,0,0,0" Click="OnExcludeAddClick"/>
+                            <Button Content="删除" Grid.Column="3" Height="26" Margin="4,0,0,0" Click="OnExcludeDeleteClick"/>
                         </Grid>
                         <ListBox x:Name="ExcludeList" Height="110" Margin="0,8,0,0" SelectionMode="Single"/>
                         <TextBlock Text="提示：可填 GenshinImpact.exe / eldenring / qbittorrent.exe 等，空列表表示不排除" Foreground="#FF888888" FontSize="11" Margin="0,4,0,0"/>
@@ -129,11 +137,13 @@
             </StackPanel>
         </ScrollViewer>
 
-        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
-            <Button Content="校验" Width="80" Height="32" Margin="4,0" Click="OnValidateClick"/>
-            <Button Content="保存并应用" Width="100" Height="32" Margin="4,0" Click="OnSaveApplyClick"/>
-            <Button Content="保存" Width="80" Height="32" Margin="4,0" Click="OnSaveClick"/>
-            <Button Content="关闭" Width="80" Height="32" Margin="4,0" Click="OnCloseClick"/>
-        </StackPanel>
+        <Grid Grid.Row="1" Margin="0,12,0,0">
+            <Button Content="恢复默认" HorizontalAlignment="Left" Width="80" Height="32" Click="OnResetDefaultsClick"/>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="校验" Width="70" Height="32" Margin="4,0" Click="OnValidateClick"/>
+                <Button Content="保存并应用" FontWeight="SemiBold" Width="100" Height="32" Margin="4,0" Background="#FF1F6FEB" Foreground="White" BorderThickness="0" Click="OnSaveApplyClick"/>
+                <Button Content="关闭" Width="70" Height="32" Margin="4,0" Click="OnCloseClick"/>
+            </StackPanel>
+        </Grid>
     </Grid>
 </Window>

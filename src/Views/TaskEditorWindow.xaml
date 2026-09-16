@@ -56,7 +56,17 @@
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
                 <TextBlock Text="任务列表" FontWeight="Bold" FontSize="13" Margin="0,0,0,6"/>
-                <ListBox x:Name="TaskList" Grid.Row="1" SelectionChanged="TaskList_SelectionChanged" DisplayMemberPath="Name"/>
+                <ListBox x:Name="TaskList" Grid.Row="1" SelectionChanged="TaskList_SelectionChanged">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <DockPanel Margin="2,3" LastChildFill="True">
+                                <TextBlock Text="{Binding TriggerBadge}" DockPanel.Dock="Right" Foreground="#FF888888" FontSize="11" Margin="4,0,0,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="{Binding StatusIndicator}" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                            </DockPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
                 <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,8,0,0">
                     <Button Content="新增" Width="58" Height="28" Margin="2" Click="OnAddClick"/>
                     <Button Content="复制" Width="58" Height="28" Margin="2" Click="OnDuplicateClick"/>
@@ -121,9 +131,9 @@
                     </StackPanel>
                     <StackPanel x:Name="PanelCron" Margin="90,0,0,0" Visibility="Collapsed">
                         <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="90"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                            <TextBlock Text="表达式" VerticalAlignment="Center"/><TextBox x:Name="CronBox" Grid.Column="1" Height="24" Margin="0,4" ToolTip="分 时 日 月 周，如 0 9 * * 1"/>
+                            <TextBlock Text="表达式" VerticalAlignment="Center"/><TextBox x:Name="CronBox" Grid.Column="1" Height="24" Margin="0,4" ToolTip="分 时 日 月 周，如 0 9 * * 1" TextChanged="CronBox_TextChanged"/>
                         </Grid>
-                        <TextBlock Text="示例 0 9 * * 1 = 每周一 09:00" Foreground="#FF888888" FontSize="11" Margin="92,0,0,0"/>
+                        <TextBlock x:Name="CronHintText" Text="示例 0 9 * * 1 = 每周一 09:00" Foreground="#FF1A73E8" FontSize="11" Margin="92,0,0,0"/>
                     </StackPanel>
                     <StackPanel x:Name="PanelIdle" Margin="90,0,0,0" Visibility="Collapsed">
                         <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="90"/><ColumnDefinition Width="*"/><ColumnDefinition Width="40"/></Grid.ColumnDefinitions>
@@ -159,7 +169,7 @@
 
                     <TextBlock Text="执行 (Action)" FontWeight="Bold" Foreground="#FF444444" Margin="0,0,0,8"/>
                     <Grid>
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="90"/><ColumnDefinition Width="*"/><ColumnDefinition Width="60"/><ColumnDefinition Width="90"/></Grid.ColumnDefinitions>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="90"/><ColumnDefinition Width="*"/><ColumnDefinition Width="60"/><ColumnDefinition Width="105"/></Grid.ColumnDefinitions>
                         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                         <TextBlock Text="文件 *" VerticalAlignment="Center"/>
                         <TextBox x:Name="FileBox" Grid.Column="1" Height="26" Margin="0,4" Padding="4,2"/>
@@ -168,7 +178,10 @@
                             <ComboBoxItem Content="scripts/ 快速选择" IsEnabled="False"/>
                         </ComboBox>
                         <TextBlock Text="参数" Grid.Row="1" VerticalAlignment="Center"/>
-                        <TextBox x:Name="ArgsBox" Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" Height="26" Margin="0,4" ToolTip="支持 {{date}} {{time}} {{yyyyMMdd}} 等模板"/>
+                        <TextBox x:Name="ArgsBox" Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Height="26" Margin="0,4" ToolTip="支持 {{date}} {{time}} {{yyyyMMdd}} 等模板"/>
+                        <ComboBox x:Name="TemplateQuickBox" Grid.Row="1" Grid.Column="3" Height="26" Margin="4,4,0,4" ToolTip="插入常用模板变量" SelectionChanged="TemplateQuickBox_SelectionChanged">
+                            <ComboBoxItem Content="插入模板..." IsEnabled="False" IsSelected="True"/>
+                        </ComboBox>
                         <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" Text='参数支持模板 {{date}} {{time}} {{yyyyMMdd_HHmmss}} {{task}} 等' Foreground="#FF888888" FontSize="11" Margin="0,34,0,0"/>
                         <TextBlock Text="工作目录" Grid.Row="2" VerticalAlignment="Center" Margin="0,10,0,0"/>
                         <TextBox x:Name="WorkDirBox" Grid.Row="2" Grid.Column="1" Height="26" Margin="0,10,0,4"/>
@@ -212,11 +225,14 @@
             </ScrollViewer>
         </Border>
 
-        <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
-            <Button Content="校验" Width="80" Height="32" Margin="4,0" Click="OnValidateClick"/>
-            <Button Content="保存并重载" Width="100" Height="32" Margin="4,0" Click="OnSaveReloadClick"/>
-            <Button Content="保存" Width="80" Height="32" Margin="4,0" Click="OnSaveClick"/>
-            <Button Content="关闭" Width="80" Height="32" Margin="4,0" Click="OnCloseClick"/>
-        </StackPanel>
+        <Grid Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3" Margin="0,12,0,0">
+            <Button Content="测试运行 (Test)" HorizontalAlignment="Left" Width="110" Height="32" Click="OnTestRunClick" ToolTip="直接运行当前配置的任务并查看返回结果"/>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="校验" Width="80" Height="32" Margin="4,0" Click="OnValidateClick"/>
+                <Button Content="保存并重载" Width="100" Height="32" Margin="4,0" FontWeight="SemiBold" Background="#FF1F6FEB" Foreground="White" BorderThickness="0" Click="OnSaveReloadClick"/>
+                <Button Content="保存" Width="80" Height="32" Margin="4,0" Click="OnSaveClick"/>
+                <Button Content="关闭" Width="80" Height="32" Margin="4,0" Click="OnCloseClick"/>
+            </StackPanel>
+        </Grid>
     </Grid>
 </Window>

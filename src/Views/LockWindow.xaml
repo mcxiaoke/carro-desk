@@ -9,24 +9,60 @@
         Background="Transparent"
         Focusable="False"
         Cursor="None">
-    <Border x:Name="RootBorder" Background="#FF0B0F14">
+    <Border x:Name="RootBorder" Background="#FF0B0F14" Opacity="0">
         <Grid>
+            <!-- 主显示器解锁面板 -->
             <StackPanel x:Name="InputPanel" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed">
-                <TextBlock Text="屏幕已锁定" FontSize="34" FontWeight="Bold" Foreground="#FFD8DEE9" HorizontalAlignment="Center"/>
-                <TextBlock x:Name="ClockText" FontSize="18" Foreground="#FF7C8698" HorizontalAlignment="Center" Margin="0,12,0,36"/>
-                <TextBlock Text="输入 PIN 解锁" FontSize="15" Foreground="#FF9AA5B5" HorizontalAlignment="Center" Margin="0,0,0,10"/>
-                <PasswordBox x:Name="PinBox" Width="260" Height="42" FontSize="22" MaxLength="16"
-                             HorizontalContentAlignment="Center" Background="#FF161B22" Foreground="White"
-                             BorderBrush="#FF30363D" BorderThickness="1" Padding="6,4"/>
-                <Button x:Name="UnlockButton" Content="解 锁" Width="260" Height="38" Margin="0,14,0,0"
-                        FontSize="15" Background="#FF1F6FEB" Foreground="White" BorderThickness="0"
-                        Cursor="Hand" Click="OnUnlockClick"/>
-                <TextBlock x:Name="MessageText" FontSize="13" Foreground="#FFF85149" HorizontalAlignment="Center"
-                           Margin="0,14,0,0" TextWrapping="Wrap" TextAlignment="Center"/>
+                <!-- 大时钟与日期 -->
+                <StackPanel HorizontalAlignment="Center" Margin="0,0,0,32">
+                    <TextBlock x:Name="LargeClockText" Text="12:00:00" FontSize="56" FontWeight="SemiBold"
+                               Foreground="#FFF0F3F6" HorizontalAlignment="Center" FontFamily="Segoe UI, Microsoft YaHei UI"/>
+                    <TextBlock x:Name="DateText" Text="2026年9月16日 星期三" FontSize="16" Foreground="#FF8B949E"
+                               HorizontalAlignment="Center" Margin="0,6,0,0" FontFamily="Segoe UI, Microsoft YaHei UI"/>
+                </StackPanel>
+
+                <!-- PIN 输入卡片容器（含抖动变换） -->
+                <Border x:Name="InputCard" Background="#E6161B22" CornerRadius="10" BorderBrush="#FF30363D" BorderThickness="1"
+                        Padding="32,28" Width="360">
+                    <Border.RenderTransform>
+                        <TranslateTransform x:Name="CardTransform" X="0" Y="0"/>
+                    </Border.RenderTransform>
+                    <StackPanel>
+                        <TextBlock Text="屏幕已锁定" FontSize="20" FontWeight="Bold" Foreground="#FFF0F3F6" HorizontalAlignment="Center"/>
+                        <TextBlock Text="输入 PIN 解锁" FontSize="13" Foreground="#FF8B949E" HorizontalAlignment="Center" Margin="0,4,0,18"/>
+
+                        <PasswordBox x:Name="PinBox" Height="42" FontSize="22" MaxLength="16"
+                                     HorizontalContentAlignment="Center" Background="#FF0D1117" Foreground="White"
+                                     BorderBrush="#FF30363D" BorderThickness="1" Padding="8,4"/>
+
+                        <!-- 键盘状态提示（CapsLock / NumLock） -->
+                        <TextBlock x:Name="KeyHintText" FontSize="12" Foreground="#FFE3B341" HorizontalAlignment="Center"
+                                   Margin="0,8,0,0" Visibility="Collapsed" Text="提示：大写锁定已开启"/>
+
+                        <Button x:Name="UnlockButton" Content="解 锁" Height="38" Margin="0,16,0,0"
+                                FontSize="15" FontWeight="SemiBold" Background="#FF1F6FEB" Foreground="White"
+                                BorderThickness="0" Cursor="Hand" Click="OnUnlockClick">
+                            <Button.Resources>
+                                <Style TargetType="Border">
+                                    <Setter Property="CornerRadius" Value="6"/>
+                                </Style>
+                            </Button.Resources>
+                        </Button>
+
+                        <TextBlock x:Name="MessageText" FontSize="13" Foreground="#FFF85149" HorizontalAlignment="Center"
+                                   Margin="0,12,0,0" TextWrapping="Wrap" TextAlignment="Center"/>
+                    </StackPanel>
+                </Border>
             </StackPanel>
+
+            <!-- 副显示器遮罩时钟面板 -->
             <StackPanel x:Name="CoverPanel" HorizontalAlignment="Center" VerticalAlignment="Center">
-                <TextBlock Text="已锁定" FontSize="40" FontWeight="Bold" Foreground="#FF3A4352" HorizontalAlignment="Center"/>
-                <TextBlock x:Name="CoverClockText" FontSize="20" Foreground="#FF3A4352" HorizontalAlignment="Center" Margin="0,12,0,0"/>
+                <TextBlock x:Name="CoverLargeClockText" Text="12:00:00" FontSize="64" FontWeight="SemiBold"
+                           Foreground="#FF484F58" HorizontalAlignment="Center" FontFamily="Segoe UI, Microsoft YaHei UI"/>
+                <TextBlock x:Name="CoverDateText" Text="2026年9月16日 星期三" FontSize="18" Foreground="#FF30363D"
+                           HorizontalAlignment="Center" Margin="0,8,0,0" FontFamily="Segoe UI, Microsoft YaHei UI"/>
+                <TextBlock Text="屏幕已锁定" FontSize="20" FontWeight="SemiBold" Foreground="#FF30363D"
+                           HorizontalAlignment="Center" Margin="0,24,0,0"/>
             </StackPanel>
         </Grid>
     </Border>

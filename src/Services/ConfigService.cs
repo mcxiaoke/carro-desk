@@ -140,6 +140,8 @@ namespace ScreenLock.Services
                     if (obj.HasKey("PinHash")) s.PinHash = obj["PinHash"].Value;
                     if (obj.HasKey("TasksEnabled")) s.TasksEnabled = obj["TasksEnabled"].AsBool;
                     else s.TasksEnabled = true;
+                    if (obj.HasKey("UnlockOnResume")) s.UnlockOnResume = obj["UnlockOnResume"].AsBool;
+                    else s.UnlockOnResume = true;
 
                     // ExcludeProcesses: support array ["a.exe","b.exe"] or comma-string "a.exe, b.exe"
                     if (obj.HasKey("ExcludeProcesses"))
@@ -211,6 +213,10 @@ namespace ScreenLock.Services
                 s.TasksEnabled = map["TasksEnabled"] == "true";
             else
                 s.TasksEnabled = true;
+            if (map.ContainsKey("UnlockOnResume"))
+                s.UnlockOnResume = map["UnlockOnResume"] == "true";
+            else
+                s.UnlockOnResume = true;
             var excl = ExtractStringArray(json, "ExcludeProcesses");
             if (excl != null) s.ExcludeProcesses = excl;
             else s.ExcludeProcesses = new List<string>();
@@ -229,6 +235,7 @@ namespace ScreenLock.Services
             sb.AppendLine("  \"PinSalt\": \"" + Escape(Current.PinSalt ?? "") + "\",");
             sb.AppendLine("  \"PinHash\": \"" + Escape(Current.PinHash ?? "") + "\",");
             sb.AppendLine("  \"TasksEnabled\": " + (Current.TasksEnabled ? "true" : "false") + ",");
+            sb.AppendLine("  \"UnlockOnResume\": " + (Current.UnlockOnResume ? "true" : "false") + ",");
             sb.Append("  \"ExcludeProcesses\": ");
             sb.Append(SerializeStringArray(Current.ExcludeProcesses));
             sb.AppendLine();

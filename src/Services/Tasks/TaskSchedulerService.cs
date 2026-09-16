@@ -242,25 +242,7 @@ namespace ScreenLock.Services.Tasks
                 // try show balloon via App
                 try
                 {
-                    var app = System.Windows.Application.Current as ScreenLock.App;
-                    if (app != null)
-                    {
-                        app.Dispatcher.BeginInvoke(new Action(() =>
-                        {
-                            try
-                            {
-                                // use reflection to call ShowBalloon if accessible, else fallback
-                                var m = typeof(ScreenLock.App).GetMethod("ShowBalloonPublic", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Instance);
-                                if (m != null) m.Invoke(app, new object[] { "任务失败 [" + task.Name + "] exit=" + code + "，详见 logs/task-" + task.Name + ".log" });
-                                else
-                                {
-                                    // fallback via tray
-                                    System.Windows.Forms.MessageBox.Show("任务 " + task.Name + " 失败 exit=" + code, "ScreenLock", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Warning);
-                                }
-                            }
-                            catch { }
-                        }));
-                    }
+                    ScreenLock.App.ShowBalloonPublic("任务失败 [" + task.Name + "] exit=" + code + "，详见 logs/task-" + task.Name + ".log");
                 }
                 catch { }
             }

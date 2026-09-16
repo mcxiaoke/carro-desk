@@ -85,6 +85,8 @@ namespace ScreenLock.Services
         {
             _fired = false;
             _warned = false;
+            _effectiveMs = 0;
+            _lastRaw = GetIdleMilliseconds();
         }
 
         public void Suspend()
@@ -106,7 +108,10 @@ namespace ScreenLock.Services
             if (_fired || Threshold <= TimeSpan.Zero) return;
 
             uint raw = GetIdleMilliseconds();
-            bool hasInput = raw < _lastRaw;
+            // 判定是否有新物理输入：
+            // 1) raw < _lastRaw：当前空闲比上一次小，说明发生物理操作时间变近了
+            // 2) raw < IntervalMs * 2（即 < 2000ms）：说明近期两秒内刚有键鼠输入（保底防御，避免 _lastRaw 在挂起恢复时未能触发 raw < _lastRaw）
+            bool hasInput = (raw < _lastRaw) || (raw < IntervalMs * 2);
             _lastRaw = raw;
 
             bool suspended = ShouldSuspend != null && ShouldSuspend();

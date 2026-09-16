@@ -19,6 +19,13 @@ namespace ScreenLock.Services.Tasks.Triggers
             if (!TaskDefinition.TryParseTime(task.Trigger.At, out t))
                 t = new TimeSpan(2, 0, 0);
             _at = t;
+            // 初始化检查：如果当前时刻已经晚于当天设定的 _at（例如设在 02:30，当前是 11:00），
+            // 将 _lastFiredDate 初始化为今天，避免启动或重载配置时被误触发！
+            var now = DateTime.Now;
+            if (now >= now.Date + _at)
+            {
+                _lastFiredDate = now.Date;
+            }
         }
 
         public void Start()
@@ -27,8 +34,11 @@ namespace ScreenLock.Services.Tasks.Triggers
             _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
             _timer.Tick += OnTick;
             _timer.Start();
-            // check immediately for missed run (e.g. resume from sleep)
-            OnTick(null, null);
+            // 只有当天尚未记录执行时才启动立即检查
+            if (_lastFiredDate.Date != DateTime.Today)
+            {
+                OnTick(null, null);
+            }
         }
 
         private void OnTick(object sender, EventArgs e)

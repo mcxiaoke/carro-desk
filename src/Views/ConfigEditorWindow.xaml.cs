@@ -54,6 +54,7 @@ namespace ScreenLock.Views
                 OpacitySlider.Value = _editing.OverlayOpacity;
                 OpacityText.Text = _editing.OverlayOpacity.ToString("0.00");
                 AutoStartBox.IsChecked = _editing.AutoStart;
+                UnlockOnResumeBox.IsChecked = _editing.UnlockOnResume;
                 TasksEnabledBox.IsChecked = _editing.TasksEnabled;
 
                 ExcludeList.ItemsSource = null;
@@ -82,23 +83,82 @@ namespace ScreenLock.Views
             if (e.Key == System.Windows.Input.Key.Enter) { OnExcludeAddClick(sender, null); e.Handled = true; }
         }
 
+        private void OnPickRunningProcessClick(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var btn = sender as Button;
+                var procs = System.Diagnostics.Process.GetProcesses();
+                var menu = new ContextMenu();
+                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                // 优先列出有主窗口的应用（日常前台应用与游戏）
+                var windowApps = procs.Where(p =>
+                {
+                    try { return p.MainWindowHandle != IntPtr.Zero && !string.IsNullOrWhiteSpace(p.MainWindowTitle); }
+                    catch { return false; }
+                }).OrderBy(p => p.ProcessName).ToList();
+
+                foreach (var p in windowApps)
+                {
+                    try
+                    {
+                        string name = p.ProcessName + ".exe";
+                        if (seen.Contains(name)) continue;
+                        seen.Add(name);
+
+                        string title = p.MainWindowTitle;
+                        if (title.Length > 25) title = title.Substring(0, 22) + "...";
+                        var item = new MenuItem { Header = string.Format("{0} ({1})", name, title), Tag = name };
+                        item.Click += (s, ev) =>
+                        {
+                            AddExcludeProcess(item.Tag.ToString());
+                        };
+                        menu.Items.Add(item);
+                    }
+                    catch { }
+                }
+
+                if (menu.Items.Count == 0)
+                {
+                    menu.Items.Add(new MenuItem { Header = "暂无检测到的前台窗口进程", IsEnabled = false });
+                }
+
+                if (btn != null)
+                {
+                    menu.PlacementTarget = btn;
+                    menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+                    menu.IsOpen = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("获取运行进程失败: " + ex.Message, "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        private void AddExcludeProcess(string processName)
+        {
+            if (string.IsNullOrWhiteSpace(processName)) return;
+            var list = (ExcludeList.ItemsSource as List<string>) ?? new List<string>();
+            if (!list.Any(x => string.Equals(x, processName, StringComparison.OrdinalIgnoreCase)))
+            {
+                list.Add(processName);
+                ExcludeList.ItemsSource = null;
+                ExcludeList.ItemsSource = list;
+            }
+        }
+
         private void OnExcludeAddClick(object sender, RoutedEventArgs e)
         {
             string v = ExcludeInputBox.Text.Trim();
             if (string.IsNullOrEmpty(v)) return;
             // allow comma separated
             var parts = v.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries);
-            var list = (ExcludeList.ItemsSource as List<string>) ?? new List<string>();
             foreach (var p in parts)
             {
-                string t = p.Trim();
-                if (string.IsNullOrEmpty(t)) continue;
-                // dedup case-insensitive
-                if (list.Any(x => string.Equals(x, t, StringComparison.OrdinalIgnoreCase))) continue;
-                list.Add(t);
+                AddExcludeProcess(p.Trim());
             }
-            ExcludeList.ItemsSource = null;
-            ExcludeList.ItemsSource = list;
             ExcludeInputBox.Text = "";
         }
 
@@ -110,6 +170,24 @@ namespace ScreenLock.Views
             list.Remove(sel);
             ExcludeList.ItemsSource = null;
             ExcludeList.ItemsSource = list;
+        }
+
+        private void OnResetDefaultsClick(object sender, RoutedEventArgs e)
+        {
+            if (MessageBox.Show("确定要将除 PIN 以外的配置恢复为默认值吗？", "恢复默认值", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+                return;
+
+            var def = new AppSettings();
+            IdleBox.Text = def.IdleMinutes.ToString();
+            ShowClockBox.IsChecked = def.ShowClock;
+            OpacitySlider.Value = def.OverlayOpacity;
+            OpacityText.Text = def.OverlayOpacity.ToString("0.00");
+            AutoStartBox.IsChecked = def.AutoStart;
+            UnlockOnResumeBox.IsChecked = def.UnlockOnResume;
+            TasksEnabledBox.IsChecked = def.TasksEnabled;
+            ExcludeList.ItemsSource = null;
+            ExcludeList.ItemsSource = new List<string>();
+            ValidateText.Text = "已恢复默认值（请点击保存生效）";
         }
 
         private void OpacitySlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -130,6 +208,7 @@ namespace ScreenLock.Views
             s.ShowClock = ShowClockBox.IsChecked == true;
             s.OverlayOpacity = Math.Round(OpacitySlider.Value, 2);
             s.AutoStart = AutoStartBox.IsChecked == true;
+            s.UnlockOnResume = UnlockOnResumeBox.IsChecked == true;
             s.TasksEnabled = TasksEnabledBox.IsChecked == true;
             var excl = ExcludeList.ItemsSource as List<string>;
             s.ExcludeProcesses = excl != null ? new List<string>(excl) : new List<string>();
@@ -236,8 +315,8 @@ namespace ScreenLock.Views
                 var app = Application.Current as App;
                 if (app != null)
                 {
-                    try { app.Dispatcher.Invoke(new Action(() => { try { typeof(App).GetMethod("RefreshMenuChecks", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.Invoke(app, null); } catch { } })); } catch { }
-                    try { app.Dispatcher.Invoke(new Action(() => { try { typeof(App).GetMethod("UpdateTrayText", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.Invoke(app, null); } catch { } })); } catch { }
+                    try { app.Dispatcher.Invoke(new Action(() => app.RefreshMenuChecks())); } catch { }
+                    try { app.Dispatcher.Invoke(new Action(() => app.UpdateTrayText())); } catch { }
                 }
             }
             catch { }

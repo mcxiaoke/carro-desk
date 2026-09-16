@@ -24,6 +24,7 @@ namespace ScreenLock.Views
         {
             LoadTasks();
             RefreshScriptQuick();
+            InitTemplateQuick();
             if (_tasks.Count > 0) TaskList.SelectedIndex = 0;
         }
 
@@ -112,6 +113,24 @@ namespace ScreenLock.Views
                 catch { }
             }
             ScriptQuickBox.SelectedIndex = 0;
+        }
+
+        private void InitTemplateQuick()
+        {
+            try
+            {
+                TemplateQuickBox.Items.Clear();
+                TemplateQuickBox.Items.Add(new ComboBoxItem { Content = "插入模板...", IsEnabled = false, IsSelected = true });
+                TemplateQuickBox.Items.Add(new ComboBoxItem { Content = "{{date}} - 日期 (yyyy-MM-dd)", Tag = "{{date}}" });
+                TemplateQuickBox.Items.Add(new ComboBoxItem { Content = "{{time}} - 时间 (HH-mm-ss)", Tag = "{{time}}" });
+                TemplateQuickBox.Items.Add(new ComboBoxItem { Content = "{{datetime}} - 日期时间", Tag = "{{datetime}}" });
+                TemplateQuickBox.Items.Add(new ComboBoxItem { Content = "{{timestamp}} - 紧凑时间戳", Tag = "{{timestamp}}" });
+                TemplateQuickBox.Items.Add(new ComboBoxItem { Content = "{{task}} - 任务名称", Tag = "{{task}}" });
+                TemplateQuickBox.Items.Add(new ComboBoxItem { Content = "{{scripts}} - 脚本目录", Tag = "{{scripts}}" });
+                TemplateQuickBox.Items.Add(new ComboBoxItem { Content = "{{logs}} - 日志目录", Tag = "{{logs}}" });
+                TemplateQuickBox.SelectedIndex = 0;
+            }
+            catch { }
         }
 
         private void ClearForm()
@@ -498,6 +517,94 @@ namespace ScreenLock.Views
         }
 
         private void OnCloseClick(object sender, RoutedEventArgs e) { Close(); }
+
+        private void CronBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (_isUpdating || CronHintText == null) return;
+            string expr = CronBox.Text.Trim();
+            if (string.IsNullOrEmpty(expr))
+            {
+                CronHintText.Text = "分 时 日 月 周 (5个字段)，如 0 9 * * 1";
+                CronHintText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x88, 0x88, 0x88));
+                return;
+            }
+            string err;
+            if (!CronHelper.Validate(expr, out err))
+            {
+                CronHintText.Text = "格式错误: " + err;
+                CronHintText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xD9, 0x30, 0x25));
+            }
+            else
+            {
+                CronHintText.Text = "✓ 格式有效: " + ExplainCron(expr);
+                CronHintText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x1A, 0x73, 0xE8));
+            }
+        }
+
+        private static string ExplainCron(string expr)
+        {
+            try
+            {
+                var parts = expr.Split(new char[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length != 5) return expr;
+                string m = parts[0], h = parts[1], dom = parts[2], mon = parts[3], dow = parts[4];
+                if (m == "*" && h == "*" && dom == "*" && mon == "*" && dow == "*") return "每分钟执行一次";
+                if (m.StartsWith("*/") && h == "*") return string.Format("每隔 {0} 分钟执行一次", m.Substring(2));
+                if (dom == "*" && mon == "*" && dow == "*") return string.Format("每天 {0:D2}:{1:D2} 执行", int.Parse(h), int.Parse(m));
+                if (dom == "*" && mon == "*" && dow != "*") return string.Format("每周 {0} 的 {1:D2}:{2:D2} 执行", dow, int.Parse(h), int.Parse(m));
+                return "自定义调度: " + expr;
+            }
+            catch { return "有效表达式: " + expr; }
+        }
+
+        private void TemplateQuickBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_isUpdating) return;
+            var item = TemplateQuickBox.SelectedItem as ComboBoxItem;
+            if (item == null || item.Tag == null) return;
+            string tag = item.Tag.ToString();
+            if (!string.IsNullOrEmpty(tag))
+            {
+                if (string.IsNullOrEmpty(ArgsBox.Text)) ArgsBox.Text = tag;
+                else ArgsBox.Text += " " + tag;
+                ArgsBox.Focus();
+                ArgsBox.CaretIndex = ArgsBox.Text.Length;
+            }
+            TemplateQuickBox.SelectedIndex = 0;
+        }
+
+        private async void OnTestRunClick(object sender, RoutedEventArgs e)
+        {
+            var cur = BuildCurrent();
+            string err = cur.Validate();
+            if (err != null)
+            {
+                MessageBox.Show("任务配置有误，无法测试运行:\n" + err, "校验失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            ValidateText.Text = "正在运行测试...";
+            var btn = sender as Button;
+            if (btn != null) btn.IsEnabled = false;
+
+            try
+            {
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                int exitCode = await TaskRunner.RunAsync(cur, "manual-test").ConfigureAwait(true);
+                sw.Stop();
+                string status = exitCode == 0 ? "成功" : "失败 (退出码 " + exitCode + ")";
+                ValidateText.Text = string.Format("测试完成 [{0}] 耗时 {1:0.0}s", status, sw.Elapsed.TotalSeconds);
+                MessageBox.Show(string.Format("测试运行完成: {0}\n耗时: {1:0.0} 秒\n详细日志请查看:\nlogs/task-{2}.log", status, sw.Elapsed.TotalSeconds, cur.Name), "测试结果", MessageBoxButton.OK, exitCode == 0 ? MessageBoxImage.Information : MessageBoxImage.Warning);
+            }
+            catch (Exception ex)
+            {
+                ValidateText.Text = "测试异常: " + ex.Message;
+                MessageBox.Show("测试运行异常:\n" + ex.Message, "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                if (btn != null) btn.IsEnabled = true;
+            }
+        }
 
         protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
         {

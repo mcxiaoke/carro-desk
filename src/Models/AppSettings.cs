@@ -12,6 +12,7 @@ namespace ScreenLock.Models
         public string PinSalt { get; set; } = "";
         public string PinHash { get; set; } = "";
         public bool TasksEnabled { get; set; } = true;
+        public bool UnlockOnResume { get; set; } = true;
         public List<string> ExcludeProcesses { get; set; } = new List<string>();
 
         public bool HasPin()
@@ -35,6 +36,7 @@ namespace ScreenLock.Models
             target.PinSalt = PinSalt;
             target.PinHash = PinHash;
             target.TasksEnabled = TasksEnabled;
+            target.UnlockOnResume = UnlockOnResume;
             target.ExcludeProcesses = ExcludeProcesses != null ? new List<string>(ExcludeProcesses) : new List<string>();
         }
 
