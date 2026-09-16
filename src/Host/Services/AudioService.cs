@@ -97,13 +97,16 @@ namespace CarroDesk.Host.Services
 
             try
             {
-                var policyConfig = (IPolicyConfig)new PolicyConfigClient();
+                var policyConfig = PolicyConfigFactory.CreatePolicyConfig();
+                if (policyConfig == null) return false;
+
                 try
                 {
-                    // 设置 Console 与 Multimedia 默认输出端点
+                    // 设置 Console, Multimedia 以及 Communications 默认输出端点
                     int hr1 = policyConfig.SetDefaultEndpoint(deviceId, ERole.eConsole);
                     int hr2 = policyConfig.SetDefaultEndpoint(deviceId, ERole.eMultimedia);
-                    return hr1 == 0 && hr2 == 0;
+                    int hr3 = policyConfig.SetDefaultEndpoint(deviceId, ERole.eCommunications);
+                    return hr1 == 0 || hr2 == 0;
                 }
                 finally
                 {
@@ -256,6 +259,83 @@ namespace CarroDesk.Host.Services
             }
             catch { }
             return null;
+        }
+
+        public List<string> GetActiveAudioProcesses()
+        {
+            var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (_deviceEnumerator == null) return new List<string>();
+
+            try
+            {
+                if (_deviceEnumerator.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eMultimedia, out var device) == 0 && device != null)
+                {
+                    try
+                    {
+                        var iid = typeof(IAudioSessionManager2).GUID;
+                        if (device.Activate(ref iid, 0, IntPtr.Zero, out var sessionMgrObj) == 0 && sessionMgrObj is IAudioSessionManager2 sessionManager)
+                        {
+                            try
+                            {
+                                if (sessionManager.GetSessionEnumerator(out var sessionEnum) == 0 && sessionEnum != null)
+                                {
+                                    try
+                                    {
+                                        sessionEnum.GetCount(out int count);
+                                        for (int i = 0; i < count; i++)
+                                        {
+                                            if (sessionEnum.GetSession(i, out var sessionControl) == 0 && sessionControl != null)
+                                            {
+                                                try
+                                                {
+                                                    if (sessionControl is IAudioSessionControl2 sessionControl2)
+                                                    {
+                                                        sessionControl2.GetProcessId(out uint pid);
+                                                        if (pid > 0)
+                                                        {
+                                                            try
+                                                            {
+                                                                using (var proc = Process.GetProcessById((int)pid))
+                                                                {
+                                                                    string pName = proc.ProcessName;
+                                                                    if (!string.IsNullOrEmpty(pName))
+                                                                    {
+                                                                        result.Add(pName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? pName : pName + ".exe");
+                                                                    }
+                                                                }
+                                                            }
+                                                            catch { }
+                                                        }
+                                                    }
+                                                }
+                                                finally
+                                                {
+                                                    Marshal.ReleaseComObject(sessionControl);
+                                                }
+                                            }
+                                        }
+                                    }
+                                    finally
+                                    {
+                                        Marshal.ReleaseComObject(sessionEnum);
+                                    }
+                                }
+                            }
+                            finally
+                            {
+                                Marshal.ReleaseComObject(sessionManager);
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        Marshal.ReleaseComObject(device);
+                    }
+                }
+            }
+            catch { }
+
+            return new List<string>(result);
         }
 
         public void Dispose()

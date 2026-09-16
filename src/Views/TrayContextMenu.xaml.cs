@@ -9,6 +9,7 @@ using System.Windows.Media;
 using ScreenLock.Models;
 using ScreenLock.Services;
 using ScreenLock.Services.Localization;
+using CarroDesk.Views;
 
 namespace ScreenLock.Views
 {
@@ -120,13 +121,7 @@ namespace ScreenLock.Views
                         AppAutoMuteItem.IsChecked = App.AppAutoMuteMod != null && App.AppAutoMuteMod.IsEnabledUser;
                     }
 
-                    if (AudioSwitchItem != null && App.AudioSwitchMod != null)
-                    {
-                        var dev = App.AudioSwitchMod.CurrentDefaultDevice;
-                        string devName = dev != null ? dev.Name : "默认设备";
-                        string icon = devName.IndexOf("耳机", StringComparison.OrdinalIgnoreCase) >= 0 ? "🎧" : "🔊";
-                        AudioSwitchItem.Header = $"{Loc.T("Tray.AudioSwitch", "切换输出设备")} ({icon} {devName})";
-                    }
+                    RefreshAudioSubmenu();
 
                     string currentLang = config.Language ?? "auto";
                     if (LangAutoItem != null) LangAutoItem.IsChecked = string.Equals(currentLang, "auto", StringComparison.OrdinalIgnoreCase);
@@ -328,6 +323,64 @@ namespace ScreenLock.Views
         {
             App.AppAutoMuteMod?.ToggleEnabled();
             RefreshChecks();
+        }
+
+        public void RefreshAudioSubmenu()
+        {
+            try
+            {
+                if (AudioSwitchMenu == null || App.AudioSwitchMod == null) return;
+
+                App.AudioSwitchMod.UpdateCurrentDevice();
+                var curDev = App.AudioSwitchMod.CurrentDefaultDevice;
+                string curId = curDev?.Id;
+                string curName = curDev?.Name ?? "默认设备";
+                string curIcon = curName.IndexOf("耳机", StringComparison.OrdinalIgnoreCase) >= 0 ? "🎧" : "🔊";
+
+                AudioSwitchMenu.Header = $"{Loc.T("Tray.AudioSwitch", "音频输出设备")} ({curIcon} {curName})";
+
+                // 保留前两项（快捷切换与分隔线）
+                while (AudioSwitchMenu.Items.Count > 2)
+                {
+                    AudioSwitchMenu.Items.RemoveAt(2);
+                }
+
+                var devs = App.AudioSwitchMod.GetPlaybackDevices();
+                foreach (var d in devs)
+                {
+                    string icon = d.Name.IndexOf("耳机", StringComparison.OrdinalIgnoreCase) >= 0 ? "🎧" : "🔊";
+                    var mi = new MenuItem
+                    {
+                        Header = $"{icon} {d.Name}",
+                        Tag = d.Id,
+                        IsChecked = string.Equals(d.Id, curId, StringComparison.OrdinalIgnoreCase)
+                    };
+                    mi.Click += (s, e) =>
+                    {
+                        if (s is MenuItem clicked && clicked.Tag is string devId)
+                        {
+                            App.AudioSwitchMod.SwitchToDevice(devId);
+                            RefreshChecks();
+                        }
+                    };
+                    AudioSwitchMenu.Items.Add(mi);
+                }
+            }
+            catch { }
+        }
+
+        private void OnAppAutoMuteSettingsClick(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var win = new AppAutoMuteSettingsWindow
+                {
+                    WindowStartupLocation = WindowStartupLocation.CenterScreen
+                };
+                win.ShowDialog();
+                RefreshChecks();
+            }
+            catch { }
         }
 
         private void OnExitClick(object sender, RoutedEventArgs e)

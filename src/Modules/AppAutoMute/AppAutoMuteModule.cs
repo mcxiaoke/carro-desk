@@ -165,15 +165,35 @@ namespace CarroDesk.Modules.AppAutoMute
         private void OnMuteTimerTick(object sender, EventArgs e)
         {
             _muteTimer.Stop();
-            if (!IsEnabledUser || Config == null || Config.TargetApps == null) return;
+            if (!IsEnabledUser || Config == null) return;
 
-            // 遍历所有目标应用，将当前非前台的目标应用静音
             string currentFore = _foregroundTracker.CurrentProcessName;
-            foreach (var app in Config.TargetApps)
+            bool isWhitelist = string.Equals(Config.Mode, "Whitelist", StringComparison.OrdinalIgnoreCase);
+
+            if (isWhitelist)
             {
-                if (!string.Equals(app, currentFore, StringComparison.OrdinalIgnoreCase))
+                // 白名单模式：静音除白名单应用及当前前台应用之外的所有活跃音频进程
+                var activeProcs = _audioService.GetActiveAudioProcesses();
+                var whitelist = new HashSet<string>(Config.TargetApps ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
+
+                foreach (var proc in activeProcs)
                 {
-                    _audioService.SetProcessMute(app, true);
+                    if (!whitelist.Contains(proc) && !string.Equals(proc, currentFore, StringComparison.OrdinalIgnoreCase))
+                    {
+                        _audioService.SetProcessMute(proc, true);
+                    }
+                }
+            }
+            else
+            {
+                // 黑名单模式：静音黑名单中且非当前前台的应用
+                if (Config.TargetApps == null) return;
+                foreach (var app in Config.TargetApps)
+                {
+                    if (!string.Equals(app, currentFore, StringComparison.OrdinalIgnoreCase))
+                    {
+                        _audioService.SetProcessMute(app, true);
+                    }
                 }
             }
         }
@@ -195,6 +215,12 @@ namespace CarroDesk.Modules.AppAutoMute
             if (Config != null && Config.TargetApps != null)
             {
                 _audioService.UnmuteProcesses(Config.TargetApps);
+            }
+            // 白名单模式下也解除当前所有活跃音频进程的静音
+            if (Config != null && string.Equals(Config.Mode, "Whitelist", StringComparison.OrdinalIgnoreCase))
+            {
+                var activeProcs = _audioService.GetActiveAudioProcesses();
+                _audioService.UnmuteProcesses(activeProcs);
             }
         }
 

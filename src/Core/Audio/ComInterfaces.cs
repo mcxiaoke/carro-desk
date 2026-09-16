@@ -288,10 +288,42 @@ namespace CarroDesk.Core.Audio
         int GetMute([MarshalAs(UnmanagedType.Bool)] out bool pbMute);
     }
 
+    // Windows 10 / 11 现代 PolicyConfigClient CLSID: 870AF99C-171D-4F9E-AF0D-E63DF40C2BC9
     [ComImport]
-    [Guid("870C3566-035A-4980-B88B-4F15019573D0")]
+    [Guid("870AF99C-171D-4F9E-AF0D-E63DF40C2BC9")]
     public class PolicyConfigClient
     {
+    }
+
+    public static class PolicyConfigFactory
+    {
+        private static readonly string[] Clsids = new[]
+        {
+            "870AF99C-171D-4F9E-AF0D-E63DF40C2BC9", // Windows 10/11
+            "870C3566-035A-4980-B88B-4F15019573D0", // Windows Vista / 7
+            "294F91D3-8570-4E70-AC26-9634B197362E"  // Windows 8 / 8.1
+        };
+
+        public static IPolicyConfig CreatePolicyConfig()
+        {
+            foreach (var clsid in Clsids)
+            {
+                try
+                {
+                    var type = Type.GetTypeFromCLSID(new Guid(clsid));
+                    if (type != null)
+                    {
+                        var obj = Activator.CreateInstance(type);
+                        if (obj is IPolicyConfig policy)
+                        {
+                            return policy;
+                        }
+                    }
+                }
+                catch { }
+            }
+            return null;
+        }
     }
 
     // Windows 10 / 11 兼容版本的 IPolicyConfig 接口声明

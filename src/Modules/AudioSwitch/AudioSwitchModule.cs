@@ -78,12 +78,59 @@ namespace CarroDesk.Modules.AudioSwitch
             }
         }
 
+        public List<AudioDeviceItem> GetPlaybackDevices()
+        {
+            return _audioService?.GetPlaybackDevices() ?? new List<AudioDeviceItem>();
+        }
+
+        public bool SwitchToDevice(string deviceId)
+        {
+            if (_audioService == null || string.IsNullOrEmpty(deviceId)) return false;
+
+            bool success = _audioService.SetDefaultPlaybackDevice(deviceId);
+            if (success)
+            {
+                UpdateCurrentDevice();
+
+                if (Config != null && Config.PlayNotificationSound)
+                {
+                    try { SystemSounds.Asterisk.Play(); } catch { }
+                }
+
+                string devName = CurrentDefaultDevice != null ? CurrentDefaultDevice.Name : deviceId;
+                string icon = "🔈";
+                if (Config != null)
+                {
+                    if (devName.IndexOf(Config.HeadphonePattern ?? "耳机", StringComparison.OrdinalIgnoreCase) >= 0) icon = "🎧";
+                    else if (devName.IndexOf(Config.SpeakerPattern ?? "扬声器", StringComparison.OrdinalIgnoreCase) >= 0) icon = "🔊";
+                }
+                string msg = $"已切换音频输出至: {icon} {devName}";
+                NotificationCallback?.Invoke(msg);
+                return true;
+            }
+            return false;
+        }
+
         public bool ToggleAudioDevice()
         {
             if (_audioService == null) return false;
 
             UpdateCurrentDevice();
-            string currentName = CurrentDefaultDevice != null ? CurrentDefaultDevice.Name : string.Empty;
+            var all = _audioService.GetPlaybackDevices();
+            if (all == null || all.Count == 0)
+            {
+                NotificationCallback?.Invoke("未找到可用的音频输出设备");
+                return false;
+            }
+
+            if (all.Count == 1)
+            {
+                NotificationCallback?.Invoke($"当前仅有一个音频输出设备: {all[0].Name}");
+                return false;
+            }
+
+            string currentId = CurrentDefaultDevice?.Id;
+            string currentName = CurrentDefaultDevice?.Name ?? string.Empty;
 
             string speakerPattern = Config?.SpeakerPattern ?? "扬声器";
             string headphonePattern = Config?.HeadphonePattern ?? "耳机";
@@ -92,39 +139,28 @@ namespace CarroDesk.Modules.AudioSwitch
             bool isHeadphone = currentName.IndexOf(headphonePattern, StringComparison.OrdinalIgnoreCase) >= 0;
             string targetPattern = isHeadphone ? speakerPattern : headphonePattern;
 
-            var targetDevice = _audioService.FindDeviceByPattern(targetPattern);
+            AudioDeviceItem targetDevice = null;
+            if (!string.IsNullOrEmpty(targetPattern))
+            {
+                targetDevice = _audioService.FindDeviceByPattern(targetPattern);
+                // 如果找到的目标刚好是当前设备，则不视为目标
+                if (targetDevice != null && targetDevice.Id == currentId)
+                {
+                    targetDevice = null;
+                }
+            }
+
+            // 如果按 pattern 没找到目标，则在活跃设备列表中循环切换至下一个设备 (Round-Robin)
             if (targetDevice == null)
             {
-                // 如果找不到目标，尝试反向或切换到任一其他设备
-                var all = _audioService.GetPlaybackDevices();
-                foreach (var d in all)
-                {
-                    if (CurrentDefaultDevice == null || d.Id != CurrentDefaultDevice.Id)
-                    {
-                        targetDevice = d;
-                        break;
-                    }
-                }
+                int currentIndex = all.FindIndex(d => d.Id == currentId);
+                int nextIndex = (currentIndex + 1) % all.Count;
+                targetDevice = all[nextIndex];
             }
 
             if (targetDevice != null)
             {
-                bool success = _audioService.SetDefaultPlaybackDevice(targetDevice.Id);
-                if (success)
-                {
-                    UpdateCurrentDevice();
-
-                    if (Config != null && Config.PlayNotificationSound)
-                    {
-                        try { SystemSounds.Asterisk.Play(); } catch { }
-                    }
-
-                    string icon = targetDevice.Name.IndexOf(headphonePattern, StringComparison.OrdinalIgnoreCase) >= 0 ? "🎧" : "🔊";
-                    string msg = $"已切换音频输出至: {icon} {targetDevice.Name}";
-                    NotificationCallback?.Invoke(msg);
-
-                    return true;
-                }
+                return SwitchToDevice(targetDevice.Id);
             }
 
             return false;

@@ -499,6 +499,20 @@ namespace ScreenLock.Models
                     vk = (int)c;
                     return true;
                 }
+                switch (c)
+                {
+                    case '`': case '~': vk = 0xC0; return true; // VK_OEM_3
+                    case '-': case '_': vk = 0xBD; return true; // VK_OEM_MINUS
+                    case '=': case '+': vk = 0xBB; return true; // VK_OEM_PLUS
+                    case '[': case '{': vk = 0xDB; return true; // VK_OEM_4
+                    case ']': case '}': vk = 0xDD; return true; // VK_OEM_6
+                    case '\\': case '|': vk = 0xDC; return true; // VK_OEM_5
+                    case ';': case ':': vk = 0xBA; return true; // VK_OEM_1
+                    case '\'': case '"': vk = 0xDE; return true; // VK_OEM_7
+                    case ',': case '<': vk = 0xBC; return true; // VK_OEM_COMMA
+                    case '.': case '>': vk = 0xBE; return true; // VK_OEM_PERIOD
+                    case '/': case '?': vk = 0xBF; return true; // VK_OEM_2
+                }
             }
             // try function keys
             if (k.StartsWith("F"))
@@ -513,6 +527,9 @@ namespace ScreenLock.Models
             // named keys
             switch (k)
             {
+                case "`": case "~": case "GRAVE": case "BACKQUOTE": case "TILDE": case "OEM3": vk = 0xC0; return true;
+                case "MINUS": case "DASH": vk = 0xBD; return true;
+                case "PLUS": case "EQUAL": case "EQUALS": vk = 0xBB; return true;
                 case "SPACE": vk = 0x20; return true;
                 case "ENTER": case "RETURN": vk = 0x0D; return true;
                 case "ESC": case "ESCAPE": vk = 0x1B; return true;

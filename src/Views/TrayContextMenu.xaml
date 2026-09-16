@@ -194,8 +194,13 @@
 
     <!-- 音频工具 (Audio Tools) -->
     <MenuItem x:Name="AudioMenu" Header="{loc:Loc Tray.AudioTools, Default='音频工具'}">
-        <MenuItem x:Name="AudioSwitchItem" Header="{loc:Loc Tray.AudioSwitch, Default='切换输出设备'}" InputGestureText="Ctrl+`" Click="OnAudioSwitchClick"/>
+        <MenuItem x:Name="AudioSwitchMenu" Header="{loc:Loc Tray.AudioSwitch, Default='音频输出设备'}">
+            <MenuItem x:Name="AudioSwitchFastToggleItem" Header="快捷切换 (耳机 ⇄ 扬声器)" InputGestureText="Ctrl+`" Click="OnAudioSwitchClick"/>
+            <Separator x:Name="AudioDeviceSeparator"/>
+        </MenuItem>
+        <Separator/>
         <MenuItem x:Name="AppAutoMuteItem" Header="{loc:Loc Tray.AppAutoMute, Default='应用后台自动静音'}" InputGestureText="Ctrl+Win+S" Click="OnAppAutoMuteClick"/>
+        <MenuItem x:Name="AppAutoMuteSettingsItem" Header="{loc:Loc Tray.AppAutoMuteSettings, Default='后台静音设置...'}" Click="OnAppAutoMuteSettingsClick"/>
     </MenuItem>
 
     <MenuItem Header="{loc:Loc Tray.OpenConfigDir}" Click="OnOpenConfigDirClick"/>

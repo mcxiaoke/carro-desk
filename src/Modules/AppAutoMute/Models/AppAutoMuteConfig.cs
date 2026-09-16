@@ -8,6 +8,7 @@ namespace CarroDesk.Modules.AppAutoMute.Models
         public string Hotkey { get; set; } = "Ctrl+Win+S";
         public int MuteDelayMs { get; set; } = 1000;
         public int UnmuteDelayMs { get; set; } = 500;
+        public string Mode { get; set; } = "Blacklist"; // "Blacklist" or "Whitelist"
         public List<string> TargetApps { get; set; } = new List<string> { "chrome.exe", "QQMusic.exe", "cloudmusic.exe" };
     }
 }
