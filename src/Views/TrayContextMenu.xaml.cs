@@ -13,45 +13,10 @@ namespace ScreenLock.Views
 {
     public partial class TrayContextMenu : ContextMenu
     {
-        [DllImport("user32.dll")]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool SetForegroundWindow(IntPtr hWnd);
-
-        private Window _dummyWindow;
-
         public TrayContextMenu()
         {
             InitializeComponent();
-        }
-
-        private void EnsureDummyWindow()
-        {
-            if (_dummyWindow == null)
-            {
-                _dummyWindow = new Window
-                {
-                    Width = 0,
-                    Height = 0,
-                    WindowStyle = WindowStyle.None,
-                    ShowInTaskbar = false,
-                    ShowActivated = false,
-                    Background = Brushes.Transparent,
-                    AllowsTransparency = true
-                };
-                var helper = new WindowInteropHelper(_dummyWindow);
-                helper.EnsureHandle();
-            }
-        }
-
-        public void ShowAtCursor()
-        {
-            RefreshAll();
-            EnsureDummyWindow();
-            var helper = new WindowInteropHelper(_dummyWindow);
-            SetForegroundWindow(helper.Handle);
-
-            Placement = PlacementMode.MousePoint;
-            IsOpen = true;
+            Opened += (s, e) => RefreshAll();
         }
 
         public void RefreshAll()

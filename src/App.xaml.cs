@@ -4,6 +4,7 @@ using System.IO;
 using System.Threading;
 using System.Windows;
 using System.Windows.Forms;
+using Hardcodet.Wpf.TaskbarNotification;
 using Microsoft.Win32;
 using ScreenLock.Services;
 using ScreenLock.Services.Tasks;
@@ -22,7 +23,7 @@ namespace ScreenLock
         public static bool IsShuttingDown { get; private set; }
 
         private static Mutex _mutex;
-        private static NotifyIcon _trayIcon;
+        private static TaskbarIcon _tbIcon;
 
         private static TrayContextMenu _trayMenu;
 
@@ -131,7 +132,7 @@ namespace ScreenLock
 
         private void OnIdleWarning()
         {
-            if (_trayIcon == null) return;
+            if (_tbIcon == null) return;
             ShowBalloon(string.Format("空闲 {0} 分钟后自动锁定，动一下鼠标可取消", Config.Current.IdleMinutes));
         }
 
@@ -176,13 +177,12 @@ namespace ScreenLock
             RefreshMenuChecks();
             UpdateTrayText();
             _trayMenu?.RefreshStatus();
-            if (_trayIcon != null)
+            if (_tbIcon != null)
             {
-                _trayIcon.BalloonTipTitle = "ScreenLock";
-                _trayIcon.BalloonTipText = ok
+                string balloonMsg = ok
                     ? string.Format("配置已重新加载：空闲 {0} 分钟后锁定", c.IdleMinutes)
                     : "配置加载失败，已保留上次有效配置";
-                _trayIcon.ShowBalloonTip(2000);
+                _tbIcon.ShowBalloonTip("ScreenLock", balloonMsg, BalloonIcon.Info);
             }
         }
 
@@ -233,30 +233,13 @@ namespace ScreenLock
         {
             _trayMenu = new TrayContextMenu();
 
-            _trayIcon = new NotifyIcon
+            _tbIcon = new TaskbarIcon
             {
                 Icon = LoadAppIcon(),
-                Text = "ScreenLock",
-                Visible = true
+                ToolTipText = "ScreenLock",
+                ContextMenu = _trayMenu
             };
-            _trayIcon.MouseUp += (s, e) =>
-            {
-                if (e.Button == MouseButtons.Right)
-                {
-                    if (_trayMenu != null)
-                    {
-                        if (_trayMenu.IsOpen)
-                        {
-                            _trayMenu.IsOpen = false;
-                        }
-                        else
-                        {
-                            _trayMenu.ShowAtCursor();
-                        }
-                    }
-                }
-            };
-            _trayIcon.DoubleClick += (s, e) => Controller.LockSafe();
+            _tbIcon.TrayMouseDoubleClick += (s, e) => Controller.LockSafe();
 
             RefreshMenuChecks();
         }
@@ -296,12 +279,10 @@ namespace ScreenLock
 
         internal void ShowBalloon(string text)
         {
-            if (_trayIcon == null) return;
+            if (_tbIcon == null) return;
             try
             {
-                _trayIcon.BalloonTipTitle = "ScreenLock";
-                _trayIcon.BalloonTipText = text;
-                _trayIcon.ShowBalloonTip(3000);
+                _tbIcon.ShowBalloonTip("ScreenLock", text, BalloonIcon.Info);
             }
             catch { }
         }
@@ -324,7 +305,7 @@ namespace ScreenLock
 
         internal void UpdateTrayText()
         {
-            if (_trayIcon == null) return;
+            if (_tbIcon == null) return;
             try
             {
                 string text;
@@ -334,7 +315,7 @@ namespace ScreenLock
                     text = "ScreenLock - 空闲锁定已禁用";
                 else
                     text = string.Format("ScreenLock - 空闲 {0} 分钟锁定", Config.Current.IdleMinutes);
-                _trayIcon.Text = text;
+                _tbIcon.ToolTipText = text;
             }
             catch { }
         }
@@ -389,12 +370,9 @@ namespace ScreenLock
             try { if (Idle != null) Idle.Dispose(); } catch { }
             try
             {
-                if (_trayMenu != null)
-                    _trayMenu.IsOpen = false;
-                if (_trayIcon != null)
+                if (_tbIcon != null)
                 {
-                    _trayIcon.Visible = false;
-                    _trayIcon.Dispose();
+                    _tbIcon.Dispose();
                 }
             }
             catch { }
