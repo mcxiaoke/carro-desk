@@ -84,6 +84,36 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <!-- 主操作强调按钮样式（修复悬停白底白字缺陷） -->
+        <Style x:Key="PrimaryBtn" TargetType="{x:Type Button}">
+            <Setter Property="Background" Value="#FF1A73E8"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="16,4"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Button}">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" RecognizesAccessKey="True"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#FF1558B0"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#FF0D3C7A"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="border" Property="Opacity" Value="0.45"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
     <Grid>
@@ -115,7 +145,9 @@
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
                                     <DockPanel Margin="2,3" LastChildFill="True">
-                                        <TextBlock Text="{Binding TriggerBadge}" DockPanel.Dock="Right" Foreground="#FF888888" FontSize="11" Margin="4,0,0,0" VerticalAlignment="Center"/>
+                                        <Border DockPanel.Dock="Right" Background="{Binding TriggerBadgeBg}" CornerRadius="3" Padding="5,1" Margin="6,0,0,0" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding TriggerBadgeText}" Foreground="{Binding TriggerBadgeFg}" FontSize="10" FontWeight="SemiBold"/>
+                                        </Border>
                                         <Ellipse Width="8" Height="8" Fill="{Binding StatusColor}" Margin="0,0,8,0" VerticalAlignment="Center"/>
                                         <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                                     </DockPanel>
@@ -176,42 +208,42 @@
                             </ComboBox>
                         </Grid>
 
-                        <!-- 动态触发参数面板 -->
-                        <StackPanel x:Name="PanelStartup" Margin="80,4,0,0" Visibility="Collapsed">
+                        <!-- 动态触发参数面板：统一 80px 标签列，与主表单严格垂直对齐 -->
+                        <StackPanel x:Name="PanelStartup" Margin="0,4,0,0" Visibility="Collapsed">
                             <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="80"/><ColumnDefinition Width="100"/><ColumnDefinition Width="40"/></Grid.ColumnDefinitions>
                                 <TextBlock Text="延迟秒数" VerticalAlignment="Center" Foreground="#FF555555"/><TextBox x:Name="DelayBox" Grid.Column="1" Height="24" Margin="0,3" Text="5" Padding="4,1"/><TextBlock Grid.Column="2" Text="秒" VerticalAlignment="Center" Margin="6,0,0,0" Foreground="#FF666666"/>
                             </Grid>
                         </StackPanel>
-                        <StackPanel x:Name="PanelInterval" Margin="80,4,0,0" Visibility="Collapsed">
+                        <StackPanel x:Name="PanelInterval" Margin="0,4,0,0" Visibility="Collapsed">
                             <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="80"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                                 <TextBlock Text="执行间隔" VerticalAlignment="Center" Foreground="#FF555555"/><TextBox x:Name="EveryBox" Grid.Column="1" Height="24" Margin="0,3" Padding="4,1" ToolTip="支持 3600 或 1h30m / 30s"/>
                             </Grid>
                             <TextBlock Text="支持秒数或时间格式，如 60、3600、1h30m、45s" Foreground="#FF888888" FontSize="11" Margin="80,1,0,0"/>
                         </StackPanel>
-                        <StackPanel x:Name="PanelDaily" Margin="80,4,0,0" Visibility="Collapsed">
+                        <StackPanel x:Name="PanelDaily" Margin="0,4,0,0" Visibility="Collapsed">
                             <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="80"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                                 <TextBlock Text="每天时间" VerticalAlignment="Center" Foreground="#FF555555"/><TextBox x:Name="AtBox" Grid.Column="1" Height="24" Margin="0,3" Padding="4,1" ToolTip="如 02:30 或 14:00:00"/>
                             </Grid>
                             <TextBlock Text="格式为 HH:mm 或 HH:mm:ss，如 09:30 或 22:00:00" Foreground="#FF888888" FontSize="11" Margin="80,1,0,0"/>
                         </StackPanel>
-                        <StackPanel x:Name="PanelCron" Margin="80,4,0,0" Visibility="Collapsed">
+                        <StackPanel x:Name="PanelCron" Margin="0,4,0,0" Visibility="Collapsed">
                             <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="80"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                                 <TextBlock Text="Cron 格式" VerticalAlignment="Center" Foreground="#FF555555"/><TextBox x:Name="CronBox" Grid.Column="1" Height="24" Margin="0,3" Padding="4,1" ToolTip="5段式：分 时 日 月 周，如 0 9 * * 1" TextChanged="CronBox_TextChanged"/>
                             </Grid>
-                            <TextBlock x:Name="CronHintText" Text="提示：0 9 * * 1 = 每周一 09:00" Foreground="#FF1A73E8" FontSize="11" Margin="80,1,0,0"/>
+                            <TextBlock x:Name="CronHintText" Text="提示：0 9 * * 1 = 每周一 09:00" Foreground="#FF1A73E8" FontSize="11" Margin="80,3,0,0"/>
                         </StackPanel>
-                        <StackPanel x:Name="PanelIdle" Margin="80,4,0,0" Visibility="Collapsed">
+                        <StackPanel x:Name="PanelIdle" Margin="0,4,0,0" Visibility="Collapsed">
                             <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="80"/><ColumnDefinition Width="100"/><ColumnDefinition Width="40"/></Grid.ColumnDefinitions>
                                 <TextBlock Text="空闲时长" VerticalAlignment="Center" Foreground="#FF555555"/><TextBox x:Name="IdleBox" Grid.Column="1" Height="24" Margin="0,3" Text="10" Padding="4,1"/><TextBlock Grid.Column="2" Text="分钟" VerticalAlignment="Center" Margin="6,0,0,0" Foreground="#FF666666"/>
                             </Grid>
                         </StackPanel>
-                        <StackPanel x:Name="PanelHotkey" Margin="80,4,0,0" Visibility="Collapsed">
+                        <StackPanel x:Name="PanelHotkey" Margin="0,4,0,0" Visibility="Collapsed">
                             <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="80"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                                 <TextBlock Text="全局热键" VerticalAlignment="Center" Foreground="#FF555555"/><TextBox x:Name="HotkeyBox" Grid.Column="1" Height="24" Margin="0,3" Padding="4,1" ToolTip="如 Ctrl+Alt+Q"/>
                             </Grid>
                             <TextBlock Text="格式如 Ctrl+Alt+Shift+Win+Q，单字母需带修饰键，支持 F1-F24" Foreground="#FF888888" FontSize="11" Margin="80,1,0,0"/>
                         </StackPanel>
-                        <StackPanel x:Name="PanelWatch" Margin="80,4,0,0" Visibility="Collapsed">
+                        <StackPanel x:Name="PanelWatch" Margin="0,4,0,0" Visibility="Collapsed">
                             <Grid>
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="80"/><ColumnDefinition Width="*"/><ColumnDefinition Width="54"/></Grid.ColumnDefinitions>
                                 <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
@@ -274,7 +306,7 @@
                             <Button Content="浏览" Grid.Row="3" Grid.Column="2" Height="26" Margin="4,3,0,3" Click="OnBrowseDirClick"/>
 
                             <!-- 工作目录提示 -->
-                            <TextBlock Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="3" Text="裸文件名如 hello.js 自动在 scripts/ 中查找；留空则取文件所在目录" Foreground="#FF999999" FontSize="10" Margin="0,2,0,0"/>
+                            <TextBlock Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="3" Text="裸文件名如 hello.js 自动在 scripts/ 中查找；留空则取文件所在目录" Foreground="#FF888888" FontSize="11" Margin="0,2,0,0"/>
                         </Grid>
 
                         <Separator Margin="0,12,0,12"/>
@@ -305,7 +337,7 @@
                             <TextBox x:Name="RetryBox" Grid.Column="5" Height="24" Margin="0,3" Text="0" Padding="4,1" TextAlignment="Center"/>
                             <TextBlock Grid.Column="6" Text="次" VerticalAlignment="Center" Margin="4,0,0,0" Foreground="#FF666666"/>
                         </Grid>
-                        <TextBlock Text="超时设为 0 表示不限制运行耗时；重试次数设为 0 表示失败后不自动重跑" Foreground="#FF999999" FontSize="10" Margin="80,2,0,0"/>
+                        <TextBlock Text="超时设为 0 表示不限制运行耗时；重试次数设为 0 表示失败后不自动重跑" Foreground="#FF888888" FontSize="11" Margin="80,2,0,0"/>
 
                         <Separator Margin="0,12,0,12"/>
 
@@ -333,7 +365,7 @@
                 <Button Content="测试运行 (Test)" DockPanel.Dock="Left" Height="30" Padding="14,0" Click="OnTestRunClick" ToolTip="直接试跑当前任务配置并查看返回状态和日志"/>
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
                     <Button Content="校验" Height="30" Width="68" Margin="0,0,8,0" Click="OnValidateClick"/>
-                    <Button Content="保存并生效" FontWeight="SemiBold" Height="30" Padding="16,0" Background="#FF1A73E8" Foreground="White" BorderThickness="0" Margin="0,0,8,0" Click="OnSaveReloadClick"/>
+                    <Button Content="保存并生效" Style="{StaticResource PrimaryBtn}" Height="30" Padding="16,0" Margin="0,0,8,0" Click="OnSaveReloadClick"/>
                     <Button Content="仅保存" Height="30" Width="68" Margin="0,0,8,0" Click="OnSaveClick"/>
                     <Button Content="关闭" Height="30" Width="68" Click="OnCloseClick"/>
                 </StackPanel>

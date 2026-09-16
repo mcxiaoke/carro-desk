@@ -315,49 +315,10 @@ namespace ScreenLock
                 catch { }
             };
 
-            var openScriptsItem = new ToolStripMenuItem("打开 scripts 目录");
-            openScriptsItem.Click += (s, e) =>
-            {
-                try
-                {
-                    var dir = ConfigService.ScriptsDirPath;
-                    if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
-                    System.Diagnostics.Process.Start(dir);
-                }
-                catch { }
-            };
-
             var openDirItem = new ToolStripMenuItem("打开配置目录");
             openDirItem.Click += (s, e) =>
             {
                 try { System.Diagnostics.Process.Start(ConfigService.DirPath); } catch { }
-            };
-
-            var openTasksItem = new ToolStripMenuItem("编辑 tasks.json");
-            openTasksItem.Click += (s, e) =>
-            {
-                try
-                {
-                    var path = ConfigService.TaskFilePath;
-                    if (!File.Exists(path))
-                    {
-                        try { TaskConfigService.LoadOrCreate(); } catch { }
-                    }
-                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = true });
-                }
-                catch { }
-            };
-
-            var openLogsItem = new ToolStripMenuItem("打开 logs 目录");
-            openLogsItem.Click += (s, e) =>
-            {
-                try
-                {
-                    var dir = ConfigService.LogsDirPath;
-                    if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
-                    System.Diagnostics.Process.Start(dir);
-                }
-                catch { }
             };
 
             var exitItem = new ToolStripMenuItem("退出...");
@@ -430,9 +391,6 @@ namespace ScreenLock
             taskMenu.DropDownItems.Add(new ToolStripSeparator());
             taskMenu.DropDownItems.Add(editorItem);
             taskMenu.DropDownItems.Add(reloadTasksItem);
-            taskMenu.DropDownItems.Add(openTasksItem);
-            taskMenu.DropDownItems.Add(openScriptsItem);
-            taskMenu.DropDownItems.Add(openLogsItem);
 
             var configEditorItem = new ToolStripMenuItem("配置编辑器...");
             configEditorItem.Click += (s, e) =>
@@ -449,10 +407,10 @@ namespace ScreenLock
                 catch (Exception ex) { LogError(ex); }
             };
 
-            menu.Items.Add(reloadItem);
-            menu.Items.Add(taskMenu);
             menu.Items.Add(configEditorItem);
+            menu.Items.Add(taskMenu);
             menu.Items.Add(openDirItem);
+            menu.Items.Add(reloadItem);
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(exitItem);
 

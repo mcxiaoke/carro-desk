@@ -203,6 +203,7 @@ namespace ScreenLock.Views
             ValidateText.Text = "";
             UpdateTriggerPanels();
             _isUpdating = false;
+            UpdateCronHint();
         }
 
         private void SelectTriggerTag(string tag)
@@ -774,7 +775,13 @@ namespace ScreenLock.Views
 
         private void CronBox_TextChanged(object sender, TextChangedEventArgs e)
         {
-            if (_isUpdating || CronHintText == null) return;
+            if (_isUpdating) return;
+            UpdateCronHint();
+        }
+
+        private void UpdateCronHint()
+        {
+            if (CronHintText == null || CronBox == null) return;
             string expr = CronBox.Text.Trim();
             if (string.IsNullOrEmpty(expr))
             {
@@ -790,25 +797,12 @@ namespace ScreenLock.Views
             }
             else
             {
-                CronHintText.Text = "✓ 格式有效: " + ExplainCron(expr);
-                CronHintText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x1A, 0x73, 0xE8));
+                string desc = CronHelper.ExplainCron(expr);
+                var next = CronHelper.GetNextOccurrence(expr, DateTime.Now);
+                string nextStr = next.HasValue ? string.Format(" · 下次: {0:yyyy-MM-dd HH:mm}", next.Value) : "";
+                CronHintText.Text = "✓ " + desc + nextStr;
+                CronHintText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x05, 0x96, 0x69));
             }
-        }
-
-        private static string ExplainCron(string expr)
-        {
-            try
-            {
-                var parts = expr.Split(new char[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
-                if (parts.Length != 5) return expr;
-                string m = parts[0], h = parts[1], dom = parts[2], mon = parts[3], dow = parts[4];
-                if (m == "*" && h == "*" && dom == "*" && mon == "*" && dow == "*") return "每分钟执行一次";
-                if (m.StartsWith("*/") && h == "*") return string.Format("每隔 {0} 分钟执行一次", m.Substring(2));
-                if (dom == "*" && mon == "*" && dow == "*") return string.Format("每天 {0:D2}:{1:D2} 执行", int.Parse(h), int.Parse(m));
-                if (dom == "*" && mon == "*" && dow != "*") return string.Format("每周 {0} 的 {1:D2}:{2:D2} 执行", dow, int.Parse(h), int.Parse(m));
-                return "自定义调度: " + expr;
-            }
-            catch { return "有效表达式: " + expr; }
         }
 
         private void TemplateQuickBox_SelectionChanged(object sender, SelectionChangedEventArgs e)

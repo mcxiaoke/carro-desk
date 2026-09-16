@@ -89,6 +89,72 @@ namespace ScreenLock.Models
             get { return "[" + (Trigger != null ? (Trigger.RawType != "" ? Trigger.RawType : Trigger.Type.ToString().ToLowerInvariant()) : "unknown") + "]"; }
         }
 
+        public string TriggerBadgeText
+        {
+            get
+            {
+                if (Trigger == null) return "未知";
+                switch (Trigger.Type)
+                {
+                    case TaskTriggerType.Startup: return "启动";
+                    case TaskTriggerType.Interval: return "间隔";
+                    case TaskTriggerType.Daily: return "定时";
+                    case TaskTriggerType.Cron: return "Cron";
+                    case TaskTriggerType.SessionLock: return "锁屏";
+                    case TaskTriggerType.SessionUnlock: return "解锁";
+                    case TaskTriggerType.Idle: return "空闲";
+                    case TaskTriggerType.Manual: return "手动";
+                    case TaskTriggerType.Hotkey: return "热键";
+                    case TaskTriggerType.Watch: return "监听";
+                    default: return Trigger.Type.ToString();
+                }
+            }
+        }
+
+        public string TriggerBadgeBg
+        {
+            get
+            {
+                if (Trigger == null) return "#F3F4F6";
+                switch (Trigger.Type)
+                {
+                    case TaskTriggerType.Startup: return "#EEF2FF";
+                    case TaskTriggerType.Interval: return "#ECFDF5";
+                    case TaskTriggerType.Daily: return "#F5F3FF";
+                    case TaskTriggerType.Cron: return "#F3E8FF";
+                    case TaskTriggerType.SessionLock: return "#FFF7ED";
+                    case TaskTriggerType.SessionUnlock: return "#FEF3C7";
+                    case TaskTriggerType.Idle: return "#FEF9C3";
+                    case TaskTriggerType.Manual: return "#F1F5F9";
+                    case TaskTriggerType.Hotkey: return "#F3F4F6";
+                    case TaskTriggerType.Watch: return "#ECFEFF";
+                    default: return "#F3F4F6";
+                }
+            }
+        }
+
+        public string TriggerBadgeFg
+        {
+            get
+            {
+                if (Trigger == null) return "#6B7280";
+                switch (Trigger.Type)
+                {
+                    case TaskTriggerType.Startup: return "#4338CA";
+                    case TaskTriggerType.Interval: return "#047857";
+                    case TaskTriggerType.Daily: return "#6D28D9";
+                    case TaskTriggerType.Cron: return "#7E22CE";
+                    case TaskTriggerType.SessionLock: return "#C2410C";
+                    case TaskTriggerType.SessionUnlock: return "#B45309";
+                    case TaskTriggerType.Idle: return "#A16207";
+                    case TaskTriggerType.Manual: return "#475569";
+                    case TaskTriggerType.Hotkey: return "#374151";
+                    case TaskTriggerType.Watch: return "#0E7490";
+                    default: return "#6B7280";
+                }
+            }
+        }
+
         public string Validate()
         {
             if (string.IsNullOrWhiteSpace(Name)) return "name required";
@@ -223,7 +289,7 @@ namespace ScreenLock.Models
         }
     }
 
-    internal static class CronHelper
+    public static class CronHelper
     {
         public static bool Validate(string expr, out string error)
         {
@@ -333,6 +399,60 @@ namespace ScreenLock.Models
                 }
             }
             return false;
+        }
+
+        public static DateTime? GetNextOccurrence(string expr, DateTime fromTime)
+        {
+            string err;
+            if (!Validate(expr, out err)) return null;
+            var cur = new DateTime(fromTime.Year, fromTime.Month, fromTime.Day, fromTime.Hour, fromTime.Minute, 0).AddMinutes(1);
+            int maxMinutes = 60 * 24 * 366;
+            for (int i = 0; i < maxMinutes; i++)
+            {
+                if (IsMatch(cur, expr)) return cur;
+                cur = cur.AddMinutes(1);
+            }
+            return null;
+        }
+
+        public static string ExplainCron(string expr)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(expr)) return "未填写表达式";
+                var parts = expr.Trim().Split(new char[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length != 5) return "需 5 个字段 (分 时 日 月 周)";
+                string m = parts[0], h = parts[1], dom = parts[2], mon = parts[3], dow = parts[4];
+
+                if (m == "*" && h == "*" && dom == "*" && mon == "*" && dow == "*") return "每分钟执行一次";
+                if (m.StartsWith("*/") && h == "*") return string.Format("每隔 {0} 分钟执行一次", m.Substring(2));
+                if (m.StartsWith("*/") && h != "*") return string.Format("在指定小时 ({0}) 内每隔 {1} 分钟执行", h, m.Substring(2));
+                if (h.StartsWith("*/")) return string.Format("每隔 {0} 小时的第 {1} 分钟执行", h.Substring(2), m);
+                if (dom == "*" && mon == "*" && dow == "*")
+                {
+                    int ih, im;
+                    if (int.TryParse(h, out ih) && int.TryParse(m, out im))
+                        return string.Format("每天 {0:D2}:{1:D2} 执行", ih, im);
+                }
+                if (dom == "*" && mon == "*" && dow != "*")
+                {
+                    string dowText = dow;
+                    if (dow == "1-5") dowText = "工作日 (周一至周五)";
+                    else if (dow == "0,6" || dow == "6,0" || dow == "6-7") dowText = "周末 (周六和周日)";
+                    else dowText = "周 " + dow;
+                    int ih, im;
+                    if (int.TryParse(h, out ih) && int.TryParse(m, out im))
+                        return string.Format("每{0} {1:D2}:{2:D2} 执行", dowText, ih, im);
+                }
+                if (dom != "*" && mon == "*" && dow == "*")
+                {
+                    int ih, im;
+                    if (int.TryParse(h, out ih) && int.TryParse(m, out im))
+                        return string.Format("每月 {0} 号 {1:D2}:{2:D2} 执行", dom, ih, im);
+                }
+                return "按规则执行: " + expr;
+            }
+            catch { return "有效表达式: " + expr; }
         }
     }
 
