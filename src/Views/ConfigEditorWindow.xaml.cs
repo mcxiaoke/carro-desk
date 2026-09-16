@@ -52,7 +52,9 @@ namespace ScreenLock.Views
 
                 ShowClockBox.IsChecked = _editing.ShowClock;
                 OpacitySlider.Value = _editing.OverlayOpacity;
-                OpacityText.Text = _editing.OverlayOpacity.ToString("0.00");
+                int initPct = (int)Math.Round(_editing.OverlayOpacity * 100);
+                string initDesc = initPct >= 95 ? "全遮挡" : (initPct >= 80 ? "微透" : "半透");
+                OpacityText.Text = string.Format("{0}% ({1})", initPct, initDesc);
                 AutoStartBox.IsChecked = _editing.AutoStart;
                 UnlockOnResumeBox.IsChecked = _editing.UnlockOnResume;
                 TasksEnabledBox.IsChecked = _editing.TasksEnabled;
@@ -181,7 +183,9 @@ namespace ScreenLock.Views
             IdleBox.Text = def.IdleMinutes.ToString();
             ShowClockBox.IsChecked = def.ShowClock;
             OpacitySlider.Value = def.OverlayOpacity;
-            OpacityText.Text = def.OverlayOpacity.ToString("0.00");
+            int defPct = (int)Math.Round(def.OverlayOpacity * 100);
+            string defDesc = defPct >= 95 ? "全遮挡" : (defPct >= 80 ? "微透" : "半透");
+            OpacityText.Text = string.Format("{0}% ({1})", defPct, defDesc);
             AutoStartBox.IsChecked = def.AutoStart;
             UnlockOnResumeBox.IsChecked = def.UnlockOnResume;
             TasksEnabledBox.IsChecked = def.TasksEnabled;
@@ -192,7 +196,28 @@ namespace ScreenLock.Views
 
         private void OpacitySlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
-            if (OpacityText != null) OpacityText.Text = e.NewValue.ToString("0.00");
+            if (OpacityText != null)
+            {
+                int pct = (int)Math.Round(e.NewValue * 100);
+                string desc = pct >= 95 ? "全遮挡" : (pct >= 80 ? "微透" : "半透");
+                OpacityText.Text = string.Format("{0}% ({1})", pct, desc);
+            }
+        }
+
+        private void OnOpenConfigDirClick(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var dir = ConfigService.DirPath;
+                if (!System.IO.Directory.Exists(dir)) System.IO.Directory.CreateDirectory(dir);
+                System.Diagnostics.Process.Start(dir);
+            }
+            catch { }
+        }
+
+        private void ExcludeList_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            OnExcludeDeleteClick(sender, null);
         }
 
         private AppSettings BuildCurrent()

@@ -90,7 +90,6 @@ namespace ScreenLock.Views
             Deactivated += OnDeactivated;
             Closing += OnClosing;
 
-            UnlockButton.Click += OnUnlockClick;
             PinBox.KeyDown += OnPinKeyDown;
         }
 

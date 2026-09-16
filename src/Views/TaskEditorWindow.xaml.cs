@@ -53,6 +53,7 @@ namespace ScreenLock.Views
             var sel = TaskList.SelectedIndex;
             TaskList.ItemsSource = null;
             TaskList.ItemsSource = _tasks;
+            if (EmptyTasksHint != null) EmptyTasksHint.Visibility = _tasks.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             if (sel >= 0 && sel < _tasks.Count) TaskList.SelectedIndex = sel;
             else if (_tasks.Count > 0) TaskList.SelectedIndex = 0;
             else ClearForm();
@@ -138,7 +139,7 @@ namespace ScreenLock.Views
             _isUpdating = true;
             NameBox.Text = "";
             EnabledBox.IsChecked = true;
-            TriggerTypeBox.SelectedIndex = -1;
+            TriggerTypeBox.SelectedIndex = 0;
             DelayBox.Text = "5";
             EveryBox.Text = "";
             AtBox.Text = "";
@@ -170,7 +171,7 @@ namespace ScreenLock.Views
         {
             if (_isUpdating) return;
             var task = TaskList.SelectedItem as TaskDefinition;
-            if (task == null) { ClearForm(); return; }
+            if (task == null) return;
             _isUpdating = true;
             NameBox.Text = task.Name;
             EnabledBox.IsChecked = task.Enabled;
@@ -267,11 +268,25 @@ namespace ScreenLock.Views
 
         private void OnAddClick(object sender, RoutedEventArgs e)
         {
-            SaveCurrentToTask();
-            var t = new TaskDefinition { Name = "new-task-" + (_tasks.Count + 1), Enabled = true, Trigger = new TaskTrigger { Type = TaskTriggerType.Manual, RawType = "manual" }, Action = new TaskAction { File = "hello.js" }, Options = new TaskOptions { Hidden = true } };
-            _tasks.Add(t);
+            int idx = _tasks.Count + 1;
+            string newName = "new-task-" + idx;
+            while (_tasks.Any(x => string.Equals(x.Name, newName, StringComparison.OrdinalIgnoreCase)))
+            {
+                idx++;
+                newName = "new-task-" + idx;
+            }
+
+            var newTask = new TaskDefinition
+            {
+                Name = newName,
+                Enabled = true,
+                Trigger = new TaskTrigger { Type = TaskTriggerType.Startup, RawType = "startup", DelaySec = 5 },
+                Action = new TaskAction { File = "hello.js" },
+                Options = new TaskOptions { Hidden = true }
+            };
+            _tasks.Add(newTask);
             RefreshList();
-            TaskList.SelectedItem = t;
+            TaskList.SelectedItem = newTask;
             NameBox.Focus();
             NameBox.SelectAll();
         }
@@ -280,19 +295,63 @@ namespace ScreenLock.Views
         {
             var cur = TaskList.SelectedItem as TaskDefinition;
             if (cur == null) return;
-            SaveCurrentToTask();
+
+            string copyName = cur.Name + "-copy";
+            int idx = 1;
+            while (_tasks.Any(x => string.Equals(x.Name, copyName, StringComparison.OrdinalIgnoreCase)))
+            {
+                idx++;
+                copyName = cur.Name + "-copy" + idx;
+            }
+
             var copy = new TaskDefinition
             {
-                Name = cur.Name + "-copy",
+                Name = copyName,
                 Enabled = cur.Enabled,
-                Trigger = new TaskTrigger { Type = cur.Trigger.Type, RawType = cur.Trigger.RawType, DelaySec = cur.Trigger.DelaySec, EverySec = cur.Trigger.EverySec, Every = cur.Trigger.Every, At = cur.Trigger.At, Expr = cur.Trigger.Expr, AfterMinutes = cur.Trigger.AfterMinutes, Hotkey = cur.Trigger.Hotkey, WatchPath = cur.Trigger.WatchPath, WatchFilter = cur.Trigger.WatchFilter, WatchEvent = cur.Trigger.WatchEvent },
-                Action = new TaskAction { File = cur.Action.File, Args = cur.Action.Args, WorkDir = cur.Action.WorkDir },
-                Options = new TaskOptions { Hidden = cur.Options.Hidden, TimeoutSec = cur.Options.TimeoutSec, AllowConcurrent = cur.Options.AllowConcurrent, Retry = cur.Options.Retry, NotifyOnFailure = cur.Options.NotifyOnFailure, WorkDir = cur.Options.WorkDir },
-                When = new TaskCondition { OnlyIdle = cur.When.OnlyIdle, AcPower = cur.When.AcPower, NetworkAvailable = cur.When.NetworkAvailable, FileExists = cur.When.FileExists, FileNotExists = cur.When.FileNotExists }
+                Trigger = new TaskTrigger
+                {
+                    Type = cur.Trigger.Type,
+                    RawType = cur.Trigger.RawType,
+                    DelaySec = cur.Trigger.DelaySec,
+                    EverySec = cur.Trigger.EverySec,
+                    Every = cur.Trigger.Every,
+                    At = cur.Trigger.At,
+                    Expr = cur.Trigger.Expr,
+                    AfterMinutes = cur.Trigger.AfterMinutes,
+                    Hotkey = cur.Trigger.Hotkey,
+                    WatchPath = cur.Trigger.WatchPath,
+                    WatchFilter = cur.Trigger.WatchFilter,
+                    WatchEvent = cur.Trigger.WatchEvent
+                },
+                Action = new TaskAction
+                {
+                    File = cur.Action.File,
+                    Args = cur.Action.Args,
+                    WorkDir = cur.Action.WorkDir
+                },
+                Options = new TaskOptions
+                {
+                    Hidden = cur.Options.Hidden,
+                    TimeoutSec = cur.Options.TimeoutSec,
+                    AllowConcurrent = cur.Options.AllowConcurrent,
+                    Retry = cur.Options.Retry,
+                    NotifyOnFailure = cur.Options.NotifyOnFailure,
+                    WorkDir = cur.Options.WorkDir
+                },
+                When = new TaskCondition
+                {
+                    OnlyIdle = cur.When.OnlyIdle,
+                    AcPower = cur.When.AcPower,
+                    NetworkAvailable = cur.When.NetworkAvailable,
+                    FileExists = cur.When.FileExists,
+                    FileNotExists = cur.When.FileNotExists
+                }
             };
             _tasks.Add(copy);
             RefreshList();
             TaskList.SelectedItem = copy;
+            NameBox.Focus();
+            NameBox.SelectAll();
         }
 
         private void OnDeleteClick(object sender, RoutedEventArgs e)
@@ -425,83 +484,275 @@ namespace ScreenLock.Views
             }
         }
 
-        private void SaveCurrentToTask()
+        private bool ValidateForm(TaskDefinition built, TaskDefinition cur, out string error, out Control controlToFocus)
         {
-            var cur = TaskList.SelectedItem as TaskDefinition;
-            if (cur == null) return;
-            var built = BuildCurrent();
-            // keep same object reference for list
-            cur.Name = built.Name;
-            cur.Enabled = built.Enabled;
-            cur.Trigger = built.Trigger;
-            cur.Action = built.Action;
-            cur.Options = built.Options;
-            cur.When = built.When;
+            error = null;
+            controlToFocus = null;
+
+            if (string.IsNullOrWhiteSpace(built.Name))
+            {
+                error = "请输入任务名称";
+                controlToFocus = NameBox;
+                return false;
+            }
+            if (built.Name.Length > 64)
+            {
+                error = "任务名称过长 (最多 64 个字符)";
+                controlToFocus = NameBox;
+                return false;
+            }
+            foreach (char c in built.Name)
+            {
+                bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
+                if (!ok)
+                {
+                    error = "任务名称包含非法字符 '" + c + "'，仅允许英文字母、数字、下划线和连字符";
+                    controlToFocus = NameBox;
+                    return false;
+                }
+            }
+
+            // 查重：任务名称在其它任务中不可重复
+            bool duplicate = _tasks.Any(t => t != cur && string.Equals(t.Name, built.Name, StringComparison.OrdinalIgnoreCase));
+            if (duplicate)
+            {
+                error = "任务名称 \"" + built.Name + "\" 已存在，请更换名称";
+                controlToFocus = NameBox;
+                return false;
+            }
+
+            if (built.Trigger == null)
+            {
+                error = "请选择触发器类型";
+                controlToFocus = TriggerTypeBox;
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(built.Action.File))
+            {
+                error = "请指定要执行的脚本或程序文件 (Action.File)";
+                controlToFocus = FileBox;
+                return false;
+            }
+
+            if (built.Trigger.Type == TaskTriggerType.Interval)
+            {
+                int sec = built.Trigger.EverySec;
+                if (sec <= 0 && !string.IsNullOrWhiteSpace(built.Trigger.Every))
+                    sec = TaskDefinition.ParseDuration(built.Trigger.Every);
+                if (sec <= 0)
+                {
+                    error = "定时间隔必须大于 0 秒 (例如 30s, 5m, 1h)";
+                    controlToFocus = EveryBox;
+                    return false;
+                }
+            }
+            else if (built.Trigger.Type == TaskTriggerType.Daily)
+            {
+                if (string.IsNullOrWhiteSpace(built.Trigger.At))
+                {
+                    error = "每天定时必须指定时间 (格式 HH:mm，如 09:00)";
+                    controlToFocus = AtBox;
+                    return false;
+                }
+                TimeSpan t;
+                if (!TaskDefinition.TryParseTime(built.Trigger.At, out t))
+                {
+                    error = "每天定时时间格式无效: " + built.Trigger.At + " (请使用 HH:mm，如 09:30)";
+                    controlToFocus = AtBox;
+                    return false;
+                }
+            }
+            else if (built.Trigger.Type == TaskTriggerType.Cron)
+            {
+                if (string.IsNullOrWhiteSpace(built.Trigger.Expr))
+                {
+                    error = "Cron 表达式不能为空 (如 0 9 * * 1)";
+                    controlToFocus = CronBox;
+                    return false;
+                }
+                string cronErr;
+                if (!CronHelper.Validate(built.Trigger.Expr, out cronErr))
+                {
+                    error = "Cron 表达式无效: " + cronErr;
+                    controlToFocus = CronBox;
+                    return false;
+                }
+            }
+            else if (built.Trigger.Type == TaskTriggerType.Idle)
+            {
+                if (built.Trigger.AfterMinutes <= 0)
+                {
+                    error = "系统空闲等待时间必须大于 0 分钟";
+                    controlToFocus = IdleBox;
+                    return false;
+                }
+            }
+            else if (built.Trigger.Type == TaskTriggerType.Hotkey)
+            {
+                if (string.IsNullOrWhiteSpace(built.Trigger.Hotkey))
+                {
+                    error = "热键不能为空 (例如 Ctrl+Alt+Q)";
+                    controlToFocus = HotkeyBox;
+                    return false;
+                }
+                string hkErr;
+                if (!HotkeyHelper.Validate(built.Trigger.Hotkey, out hkErr))
+                {
+                    error = "热键格式无效: " + hkErr;
+                    controlToFocus = HotkeyBox;
+                    return false;
+                }
+            }
+            else if (built.Trigger.Type == TaskTriggerType.Watch)
+            {
+                if (string.IsNullOrWhiteSpace(built.Trigger.WatchPath))
+                {
+                    error = "文件监听目录不能为空";
+                    controlToFocus = WatchPathBox;
+                    return false;
+                }
+            }
+
+            if (built.Options != null && built.Options.TimeoutSec < 0)
+            {
+                error = "超时时间不能为负数";
+                controlToFocus = TimeoutBox;
+                return false;
+            }
+            if (built.Options != null && built.Options.Retry < 0)
+            {
+                error = "重试次数不能为负数";
+                controlToFocus = RetryBox;
+                return false;
+            }
+
+            return true;
+        }
+
+        private void FocusInput(Control ctrl)
+        {
+            if (ctrl is TextBox tb)
+            {
+                tb.Focus();
+                tb.SelectAll();
+            }
+            else if (ctrl != null)
+            {
+                ctrl.Focus();
+            }
         }
 
         private void OnValidateClick(object sender, RoutedEventArgs e)
         {
-            var cur = BuildCurrent();
-            string err = cur.Validate();
-            if (err != null)
+            var cur = TaskList.SelectedItem as TaskDefinition;
+            var built = BuildCurrent();
+            string err;
+            Control focusCtrl;
+            if (!ValidateForm(built, cur, out err, out focusCtrl))
             {
                 ValidateText.Text = "校验失败: " + err;
+                FocusInput(focusCtrl);
                 MessageBox.Show(err, "校验失败", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
             else
             {
-                // also check whole list duplicates
-                var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                string dup = null;
-                foreach (var t in _tasks)
-                {
-                    string n = t == TaskList.SelectedItem ? cur.Name : t.Name;
-                    if (names.Contains(n)) { dup = n; break; }
-                    names.Add(n);
-                }
-                if (dup != null)
-                {
-                    ValidateText.Text = "校验失败: 重名 " + dup;
-                    MessageBox.Show("重名: " + dup, "校验失败", MessageBoxButton.OK, MessageBoxImage.Warning);
-                }
-                else
-                {
-                    ValidateText.Text = "校验通过";
-                    MessageBox.Show("校验通过", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
-                }
+                ValidateText.Text = "✓ 校验通过";
+                MessageBox.Show("当前任务配置合法有效！", "校验通过", MessageBoxButton.OK, MessageBoxImage.Information);
             }
         }
 
-        private void OnSaveClick(object sender, RoutedEventArgs e)
+        private bool SaveTasksInternal()
         {
-            SaveCurrentToTask();
-            // validate all
+            var cur = TaskList.SelectedItem as TaskDefinition;
+            var built = BuildCurrent();
+
+            // 如果当前无任何任务且表单完全为空，无需保存
+            if (cur == null && _tasks.Count == 0 && string.IsNullOrWhiteSpace(built.Name) && string.IsNullOrWhiteSpace(built.Action.File))
+            {
+                MessageBox.Show("当前没有需要保存的任务。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                return false;
+            }
+
+            // 1. 先校验当前正在编辑的表单项，校验未通过前绝不修改内存列表
+            string err;
+            Control focusCtrl;
+            if (!ValidateForm(built, cur, out err, out focusCtrl))
+            {
+                ValidateText.Text = "校验失败: " + err;
+                FocusInput(focusCtrl);
+                MessageBox.Show("当前任务表单存在错误，无法保存:\n" + err, "校验失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return false;
+            }
+
+            // 2. 检查内存中已有的其他任务合法性（防止脏数据存盘）
             var errors = new List<string>();
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var t in _tasks)
             {
-                string err = t.Validate();
-                if (err != null) errors.Add(t.Name + ": " + err);
+                if (t == cur) continue;
+                string terr = t.Validate();
+                if (terr != null) errors.Add(t.Name + ": " + terr);
                 if (seen.Contains(t.Name)) errors.Add("重名: " + t.Name);
                 else seen.Add(t.Name);
             }
             if (errors.Count > 0)
             {
-                MessageBox.Show("存在错误，无法保存:\n" + string.Join("\n", errors), "校验失败", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
+                MessageBox.Show("其他任务存在错误，无法保存:\n" + string.Join("\n", errors), "校验失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return false;
             }
+
+            // 3. 校验通过，原子性提交到任务列表中
+            TaskDefinition targetTask = cur;
+            if (targetTask == null)
+            {
+                targetTask = built;
+                _tasks.Add(targetTask);
+            }
+            else
+            {
+                targetTask.Name = built.Name;
+                targetTask.Enabled = built.Enabled;
+                targetTask.Trigger = built.Trigger;
+                targetTask.Action = built.Action;
+                targetTask.Options = built.Options;
+                targetTask.When = built.When;
+            }
+
+            // 4. 持久化到 tasks.json 磁盘文件
             try
             {
                 TaskConfigService.Save(_tasks);
-                MessageBox.Show("已保存到 " + Services.ConfigService.TaskFilePath, "保存成功", MessageBoxButton.OK, MessageBoxImage.Information);
-                RefreshList();
+                ValidateText.Text = "✓ 已保存 (" + DateTime.Now.ToString("HH:mm:ss") + ")";
+
+                // 刷新左侧列表展示（徽标、状态圆点、名称）并保持当前选中项
+                _isUpdating = true;
+                TaskList.ItemsSource = null;
+                TaskList.ItemsSource = _tasks;
+                if (EmptyTasksHint != null) EmptyTasksHint.Visibility = _tasks.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+                TaskList.SelectedItem = targetTask;
+                _isUpdating = false;
+
+                return true;
             }
-            catch (Exception ex) { MessageBox.Show("保存失败: " + ex.Message); }
+            catch (Exception ex)
+            {
+                MessageBox.Show("保存失败: " + ex.Message, "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                return false;
+            }
+        }
+
+        private void OnSaveClick(object sender, RoutedEventArgs e)
+        {
+            if (SaveTasksInternal())
+            {
+                MessageBox.Show("已保存到 " + Services.ConfigService.TaskFilePath, "保存成功", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
         }
 
         private void OnSaveReloadClick(object sender, RoutedEventArgs e)
         {
-            OnSaveClick(sender, e);
+            if (!SaveTasksInternal()) return;
             try
             {
                 var app = Application.Current as ScreenLock.App;
@@ -513,7 +764,10 @@ namespace ScreenLock.Views
                     try { app.Dispatcher.Invoke(new Action(() => app.RefreshTaskMenu())); } catch { }
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                MessageBox.Show("重载失败: " + ex.Message, "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         private void OnCloseClick(object sender, RoutedEventArgs e) { Close(); }
@@ -575,10 +829,14 @@ namespace ScreenLock.Views
 
         private async void OnTestRunClick(object sender, RoutedEventArgs e)
         {
+            var selected = TaskList.SelectedItem as TaskDefinition;
             var cur = BuildCurrent();
-            string err = cur.Validate();
-            if (err != null)
+            string err;
+            Control focusCtrl;
+            if (!ValidateForm(cur, selected, out err, out focusCtrl))
             {
+                ValidateText.Text = "校验失败: " + err;
+                FocusInput(focusCtrl);
                 MessageBox.Show("任务配置有误，无法测试运行:\n" + err, "校验失败", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }

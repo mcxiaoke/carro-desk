@@ -79,6 +79,11 @@ namespace ScreenLock.Models
             get { return Enabled ? "🟢" : "⚪"; }
         }
 
+        public string StatusColor
+        {
+            get { return Enabled ? "#10B981" : "#9CA3AF"; }
+        }
+
         public string TriggerBadge
         {
             get { return "[" + (Trigger != null ? (Trigger.RawType != "" ? Trigger.RawType : Trigger.Type.ToString().ToLowerInvariant()) : "unknown") + "]"; }
