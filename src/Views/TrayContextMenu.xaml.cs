@@ -65,6 +65,11 @@ namespace CarroDesk.Views
             catch { }
         }
 
+        private void OnFloatingPanelClick(object sender, RoutedEventArgs e)
+        {
+            App.CurrentApp?.ToggleFloatingPanel();
+        }
+
         private void OnAutoStartClick(object sender, RoutedEventArgs e)
         {
             if (App.Config?.Current != null)

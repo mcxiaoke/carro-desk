@@ -1,22 +1,15 @@
-<ContextMenu x:Class="CarroDesk.Views.TrayContextMenu"
-             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:loc="clr-namespace:CarroDesk.Services.Localization"
-             FontFamily="Segoe UI, Microsoft YaHei UI"
-             FontSize="12" Foreground="#FF24292F"
-             OverridesDefaultStyle="True"
-             Grid.IsSharedSizeScope="True">
-    <ContextMenu.Template>
-        <ControlTemplate TargetType="{x:Type ContextMenu}">
-            <Border Background="White" BorderBrush="#FFE2E5E8" BorderThickness="1" CornerRadius="8" Padding="4" SnapsToDevicePixels="True">
-                <Border.Effect>
-                    <DropShadowEffect BlurRadius="18" ShadowDepth="4" Opacity="0.16" Color="#000000"/>
-                </Border.Effect>
-                <StackPanel IsItemsHost="True"/>
-            </Border>
-        </ControlTemplate>
-    </ContextMenu.Template>
-    <ContextMenu.Resources>
+<Window x:Class="CarroDesk.Views.FloatingPanelWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="clr-namespace:CarroDesk.Services.Localization"
+        Title="CarroDesk Panel"
+        Width="230" SizeToContent="Height"
+        WindowStyle="None" AllowsTransparency="True"
+        Background="Transparent" ShowInTaskbar="False"
+        Topmost="True" ResizeMode="NoResize"
+        FontFamily="Segoe UI, Microsoft YaHei UI"
+        FontSize="12" Foreground="#FF24292F">
+    <Window.Resources>
         <!-- 分隔线样式 -->
         <Style TargetType="{x:Type Separator}">
             <Setter Property="OverridesDefaultStyle" Value="True"/>
@@ -24,6 +17,33 @@
                 <Setter.Value>
                     <ControlTemplate TargetType="{x:Type Separator}">
                         <Border Height="1" Background="#FFE9ECEF" Margin="6,4"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 工具栏小图标按钮样式 -->
+        <Style x:Key="ToolButtonStyle" TargetType="{x:Type Button}">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Width" Value="24"/>
+            <Setter Property="Height" Value="22"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Button}">
+                        <Border x:Name="Bg" Background="{TemplateBinding Background}" CornerRadius="4" Padding="2">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#FFE2E8F0"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#FFCBD5E1"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
@@ -117,44 +137,61 @@
                 </Trigger>
             </Style.Triggers>
         </Style>
+    </Window.Resources>
 
-    </ContextMenu.Resources>
+    <!-- 窗口主卡片容器 -->
+    <Border Background="White" BorderBrush="#FFE2E5E8" BorderThickness="1" CornerRadius="10" Padding="0" SnapsToDevicePixels="True">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="22" ShadowDepth="4" Opacity="0.18" Color="#000000"/>
+        </Border.Effect>
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/> <!-- 标题栏 / 工具栏 -->
+                <RowDefinition Height="*"/>    <!-- 菜单内容区 -->
+            </Grid.RowDefinitions>
 
-    <!-- ① 宿主标题项（仅应用名，状态卡已砍 §4.4） -->
-    <MenuItem Focusable="False" StaysOpenOnClick="True" Cursor="Arrow">
-        <MenuItem.Template>
-            <ControlTemplate TargetType="{x:Type MenuItem}">
-                <ContentPresenter ContentSource="Header"/>
-            </ControlTemplate>
-        </MenuItem.Template>
-        <MenuItem.Header>
-            <Border Background="#FFF8FAFC" BorderBrush="#FFE2E8F0" BorderThickness="1" CornerRadius="6" Padding="10,7" Margin="2,2,2,4">
-                <TextBlock Text="{loc:Loc Tray.Title, Default='CarroDesk'}" FontWeight="Bold" FontSize="12" Foreground="#FF1E293B"/>
+            <!-- ① 顶部精致标题与控制手柄栏 -->
+            <Border x:Name="HeaderBar" Grid.Row="0" Background="#FFF8FAFC" BorderBrush="#FFE2E8F0" BorderThickness="0,0,0,1" CornerRadius="9,9,0,0" Padding="10,6" Cursor="SizeAll">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- 左侧：图标 + 标题 -->
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="🚀" FontSize="12" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <TextBlock Text="{loc:Loc Tray.FloatingPanel, Default='控制面板'}" FontWeight="SemiBold" FontSize="12" Foreground="#FF1E293B" VerticalAlignment="Center"/>
+                    </StackPanel>
+
+                    <!-- 右侧：位置预设、锁定位置、停留桌面、收起 -->
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Cursor="Arrow">
+                        <Button x:Name="BtnPosition" Style="{StaticResource ToolButtonStyle}" ToolTip="设置面板位置" Click="OnPositionClick">
+                            <TextBlock Text="📍" FontSize="11"/>
+                        </Button>
+                        <Button x:Name="BtnLock" Style="{StaticResource ToolButtonStyle}" Click="OnLockClick" Margin="2,0,0,0">
+                            <TextBlock x:Name="TxtLock" Text="🔓" FontSize="11" Foreground="#FF64748B"/>
+                        </Button>
+                        <Button x:Name="BtnPin" Style="{StaticResource ToolButtonStyle}" Click="OnPinClick" Margin="2,0,0,0">
+                            <TextBlock x:Name="TxtPin" Text="📌" FontSize="11" Foreground="#FF64748B"/>
+                        </Button>
+                        <Button x:Name="BtnClose" Style="{StaticResource ToolButtonStyle}" ToolTip="收起 (Esc)" Click="OnCloseClick" Margin="2,0,0,0">
+                            <TextBlock Text="✕" FontSize="11" Foreground="#FF64748B"/>
+                        </Button>
+                    </StackPanel>
+                </Grid>
             </Border>
-        </MenuItem.Header>
-    </MenuItem>
 
-    <!-- ② 双锚点：动态注入各模块 GetTrayMenuItems()（运行时由 DynamicTrayController 填充） -->
-    <Separator x:Name="PluginSlotAnchorTop"/>
-    <Separator x:Name="PluginSlotAnchorBottom"/>
-
-    <!-- ③ 宿主通用区：桌面控制面板/开机自启/配置目录/语言/退出（仅真正宿主项，不含业务） -->
-    <MenuItem Header="{loc:Loc Tray.FloatingPanel}" InputGestureText="Win+Alt+C" Click="OnFloatingPanelClick"/>
-    <MenuItem x:Name="AutoStartItem" Header="{loc:Loc Tray.AutoStart}" Click="OnAutoStartClick"/>
-    <MenuItem Header="{loc:Loc Tray.ConfigEditor}" Click="OnConfigEditorClick"/>
-    <MenuItem Header="{loc:Loc Tray.OpenConfigDir}" Click="OnOpenConfigDirClick"/>
-    <MenuItem Header="{loc:Loc Tray.ReloadConfig}" Click="OnReloadConfigClick"/>
-
-    <!-- 语言切换 -->
-    <MenuItem x:Name="LanguageMenu" Header="{loc:Loc Tray.Language}">
-        <MenuItem x:Name="LangAutoItem" Header="{loc:Loc Tray.LangAuto}" Tag="auto" Click="OnLanguageSelectClick"/>
-        <Separator/>
-        <MenuItem x:Name="LangZhItem" Header="{loc:Loc Tray.LangZh}" Tag="zh-CN" Click="OnLanguageSelectClick"/>
-        <MenuItem x:Name="LangEnItem" Header="{loc:Loc Tray.LangEn}" Tag="en-US" Click="OnLanguageSelectClick"/>
-    </MenuItem>
-
-    <Separator/>
-
-    <!-- 退出 -->
-    <MenuItem Header="{loc:Loc Tray.Exit}" Click="OnExitClick"/>
-</ContextMenu>
+            <!-- ② 下方主菜单项容器（竖向排列并支持自适应弹出子菜单） -->
+            <Border Grid.Row="1" Padding="4">
+                <Menu x:Name="ItemsHostMenu" Background="Transparent" Grid.IsSharedSizeScope="True">
+                    <Menu.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Vertical" IsItemsHost="True"/>
+                        </ItemsPanelTemplate>
+                    </Menu.ItemsPanel>
+                </Menu>
+            </Border>
+        </Grid>
+    </Border>
+</Window>

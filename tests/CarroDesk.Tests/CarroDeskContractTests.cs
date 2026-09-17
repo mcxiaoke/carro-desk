@@ -9,6 +9,7 @@ using CarroDesk.Modules.AppAutoMute;
 using CarroDesk.Modules.AudioSwitch;
 using CarroDesk.Modules.ScreenLock;
 using CarroDesk.Modules.TaskScheduler;
+using CarroDesk.Models;
 using CarroDesk.Services;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -167,6 +168,33 @@ namespace CarroDesk.Tests
             Assert.AreEqual("audioswitch_root", root.Id);
             Assert.IsTrue(root.Header.Contains("音频输出设备"), $"根项 Header 应包含音频输出设备，实际: {root.Header}");
             Assert.IsTrue(root.Children.Any(c => c.Id == "audioswitch_fast_toggle"), "二级菜单应包含快捷切换");
+        }
+
+        [TestMethod]
+        public void AppSettings_FloatingPanel_DefaultsAndClone()
+        {
+            var s = new AppSettings();
+            Assert.AreEqual("Win+Alt+C", s.FloatingPanelHotkey);
+            Assert.AreEqual("Tray", s.FloatingPanelPosition);
+            Assert.IsFalse(s.FloatingPanelPinned);
+            Assert.IsFalse(s.FloatingPanelLocked);
+            Assert.AreEqual(-1, s.FloatingPanelX);
+            Assert.AreEqual(-1, s.FloatingPanelY);
+
+            s.FloatingPanelHotkey = "Ctrl+Shift+D";
+            s.FloatingPanelPosition = "Center";
+            s.FloatingPanelPinned = true;
+            s.FloatingPanelLocked = true;
+            s.FloatingPanelX = 500;
+            s.FloatingPanelY = 300;
+
+            var clone = s.Clone();
+            Assert.AreEqual("Ctrl+Shift+D", clone.FloatingPanelHotkey);
+            Assert.AreEqual("Center", clone.FloatingPanelPosition);
+            Assert.IsTrue(clone.FloatingPanelPinned);
+            Assert.IsTrue(clone.FloatingPanelLocked);
+            Assert.AreEqual(500, clone.FloatingPanelX);
+            Assert.AreEqual(300, clone.FloatingPanelY);
         }
 
         private sealed class StubLogger : ILoggerService

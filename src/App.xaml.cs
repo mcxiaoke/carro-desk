@@ -39,6 +39,7 @@ namespace CarroDesk
         private static TaskbarIcon _tbIcon;
         private static TrayContextMenu _trayMenu;
         private DynamicTrayController _trayController;
+        private int _floatingPanelHotkeyId;
 
         internal static App CurrentApp => Current as App;
         internal DateTime PauseUntil => ScreenLockMod != null ? ScreenLockMod.PauseUntil : DateTime.MinValue;
@@ -175,6 +176,47 @@ namespace CarroDesk
 
             Exit += OnAppExit;
             UpdateTrayText();
+            RegisterFloatingPanelHotkey();
+        }
+
+        public void ToggleFloatingPanel()
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                CarroDesk.Views.FloatingPanelWindow.Toggle();
+            }));
+        }
+
+        private void RegisterFloatingPanelHotkey()
+        {
+            UnregisterFloatingPanelHotkey();
+            var hotkeys = Services?.GetService<IHotkeyService>();
+            var config = Config?.Current;
+            if (hotkeys != null && config != null && !string.IsNullOrWhiteSpace(config.FloatingPanelHotkey))
+            {
+                try
+                {
+                    _floatingPanelHotkeyId = hotkeys.Register("Host.FloatingPanel", config.FloatingPanelHotkey, () =>
+                    {
+                        ToggleFloatingPanel();
+                    }, out _);
+                }
+                catch { }
+            }
+        }
+
+        private void UnregisterFloatingPanelHotkey()
+        {
+            if (_floatingPanelHotkeyId > 0)
+            {
+                try
+                {
+                    var hotkeys = Services?.GetService<IHotkeyService>();
+                    hotkeys?.Unregister("Host.FloatingPanel", _floatingPanelHotkeyId);
+                    _floatingPanelHotkeyId = 0;
+                }
+                catch { }
+            }
         }
 
         internal void ReloadConfig()
@@ -186,6 +228,7 @@ namespace CarroDesk
             Modules?.ReloadAll();
             AutoStartService.Sync(c.AutoStart);
             try { ProcessExclusionService.InvalidateCache(); } catch { }
+            RegisterFloatingPanelHotkey();
             _trayController?.RequestRefresh();
             UpdateTrayText();
             if (_tbIcon != null)
@@ -245,7 +288,7 @@ namespace CarroDesk
                 ToolTipText = "CarroDesk",
                 ContextMenu = _trayMenu
             };
-            _tbIcon.TrayMouseDoubleClick += (s, e) => ScreenLockMod?.LockSafe();
+            _tbIcon.TrayMouseDoubleClick += (s, e) => ToggleFloatingPanel();
 
             RefreshMenuChecks();
         }

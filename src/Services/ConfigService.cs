@@ -145,6 +145,11 @@ namespace CarroDesk.Services
                     if (obj.HasKey("UnlockOnResume")) s.UnlockOnResume = obj["UnlockOnResume"].AsBool;
                     else s.UnlockOnResume = true;
                     if (obj.HasKey("Language")) s.Language = obj["Language"].Value;
+                    if (obj.HasKey("FloatingPanelHotkey")) s.FloatingPanelHotkey = obj["FloatingPanelHotkey"].Value;
+                    if (obj.HasKey("FloatingPanelPosition")) s.FloatingPanelPosition = obj["FloatingPanelPosition"].Value;
+                    if (obj.HasKey("FloatingPanelPinned")) s.FloatingPanelPinned = obj["FloatingPanelPinned"].AsBool;
+                    if (obj.HasKey("FloatingPanelX")) s.FloatingPanelX = obj["FloatingPanelX"].AsDouble;
+                    if (obj.HasKey("FloatingPanelY")) s.FloatingPanelY = obj["FloatingPanelY"].AsDouble;
 
                     // ExcludeProcesses: support array ["a.exe","b.exe"] or comma-string "a.exe, b.exe"
                     if (obj.HasKey("ExcludeProcesses"))
@@ -225,6 +230,11 @@ namespace CarroDesk.Services
             else
                 s.UnlockOnResume = true;
             if (map.ContainsKey("Language")) s.Language = map["Language"];
+            if (map.ContainsKey("FloatingPanelHotkey")) s.FloatingPanelHotkey = map["FloatingPanelHotkey"];
+            if (map.ContainsKey("FloatingPanelPosition")) s.FloatingPanelPosition = map["FloatingPanelPosition"];
+            if (map.ContainsKey("FloatingPanelPinned")) s.FloatingPanelPinned = map["FloatingPanelPinned"] == "true";
+            if (map.ContainsKey("FloatingPanelX") && double.TryParse(map["FloatingPanelX"], NumberStyles.Float, CultureInfo.InvariantCulture, out double fx)) s.FloatingPanelX = fx;
+            if (map.ContainsKey("FloatingPanelY") && double.TryParse(map["FloatingPanelY"], NumberStyles.Float, CultureInfo.InvariantCulture, out double fy)) s.FloatingPanelY = fy;
             var excl = ExtractStringArray(json, "ExcludeProcesses");
             if (excl != null) s.ExcludeProcesses = excl;
             else s.ExcludeProcesses = new List<string>();
@@ -246,6 +256,11 @@ namespace CarroDesk.Services
             sb.AppendLine("  \"TasksEnabled\": " + (Current.TasksEnabled ? "true" : "false") + ",");
             sb.AppendLine("  \"UnlockOnResume\": " + (Current.UnlockOnResume ? "true" : "false") + ",");
             sb.AppendLine("  \"Language\": \"" + Escape(Current.Language ?? "auto") + "\",");
+            sb.AppendLine("  \"FloatingPanelHotkey\": \"" + Escape(Current.FloatingPanelHotkey ?? "Win+Alt+C") + "\",");
+            sb.AppendLine("  \"FloatingPanelPosition\": \"" + Escape(Current.FloatingPanelPosition ?? "Tray") + "\",");
+            sb.AppendLine("  \"FloatingPanelPinned\": " + (Current.FloatingPanelPinned ? "true" : "false") + ",");
+            sb.AppendLine("  \"FloatingPanelX\": " + Current.FloatingPanelX.ToString(CultureInfo.InvariantCulture) + ",");
+            sb.AppendLine("  \"FloatingPanelY\": " + Current.FloatingPanelY.ToString(CultureInfo.InvariantCulture) + ",");
             sb.Append("  \"ExcludeProcesses\": ");
             sb.Append(SerializeStringArray(Current.ExcludeProcesses));
             sb.AppendLine();
