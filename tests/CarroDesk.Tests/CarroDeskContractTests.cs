@@ -4,6 +4,7 @@ using System.Threading;
 using CarroDesk.Core;
 using CarroDesk.Core.Models;
 using CarroDesk.Host.Services;
+using CarroDesk.Modules.AudioSwitch;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace CarroDesk.Tests
@@ -62,6 +63,33 @@ namespace CarroDesk.Tests
             var container = new ServiceContainer();
             container.AddSingleton<ILoggerService>(new StubLogger());
             Assert.IsNotNull(container.GetService<ILoggerService>());
+        }
+
+        [TestMethod]
+        public void AudioSwitchModule_GetDeviceShortName_Extracts_CompactNames()
+        {
+            var module = new AudioSwitchModule();
+
+            // 扬声器与耳机标准名称精简
+            Assert.AreEqual("扬声器", module.GetDeviceShortName("扬声器 (Realtek High Definition Audio)"));
+            Assert.AreEqual("耳机", module.GetDeviceShortName("耳机 (Realtek USB Audio)"));
+            Assert.AreEqual("扬声器", module.GetDeviceShortName("扬声器 (Realtek(R) Audio)"));
+
+            // 英文设备名称
+            Assert.AreEqual("Speakers", module.GetDeviceShortName("Speakers (Realtek Audio)"));
+            Assert.AreEqual("Headphones", module.GetDeviceShortName("Headphones (2- High Definition Audio Device)"));
+
+            // 其他外接设备去除控制器驱动后缀
+            Assert.AreEqual("DELL U27", module.GetDeviceShortName("DELL U27 (NVIDIA High Definition Audio)"));
+
+            // 超长设备名截断至 <= 8 字符加省略号
+            string longDevice = module.GetDeviceShortName("SuperLongExternalAudioDACInterface (USB Audio)");
+            Assert.IsTrue(longDevice.Length <= 8, "超长设备名应在 8 字符以内以避免撑宽菜单");
+            Assert.IsTrue(longDevice.EndsWith("…"));
+
+            // 空值安全
+            Assert.AreEqual(string.Empty, module.GetDeviceShortName(null));
+            Assert.AreEqual(string.Empty, module.GetDeviceShortName("   "));
         }
 
         private sealed class StubLogger : ILoggerService

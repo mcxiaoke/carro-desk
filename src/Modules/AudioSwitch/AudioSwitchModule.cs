@@ -4,6 +4,7 @@ using System.Media;
 using CarroDesk.Core;
 using CarroDesk.Core.Models;
 using CarroDesk.Modules.AudioSwitch.Models;
+using CarroDesk.Services.Localization;
 
 namespace CarroDesk.Modules.AudioSwitch
 {
@@ -60,6 +61,12 @@ namespace CarroDesk.Modules.AudioSwitch
             base.OnConfigReloaded();
             UnregisterHotkey();
             RegisterHotkey();
+            UpdateCurrentDevice();
+        }
+
+        public override void OnLanguageChanged()
+        {
+            base.OnLanguageChanged();
             UpdateCurrentDevice();
         }
 
@@ -186,17 +193,78 @@ namespace CarroDesk.Modules.AudioSwitch
             try
             {
                 CurrentDefaultDevice = _audioService?.GetDefaultPlaybackDevice();
-                SetTrayHeaderSelf(BuildDeviceHeader());
+                SetTrayItemSelf(BuildDeviceHeader(), BuildDeviceToolTip());
             }
             catch { }
+        }
+
+        public string GetDeviceShortName(string fullName)
+        {
+            if (string.IsNullOrWhiteSpace(fullName)) return string.Empty;
+
+            string speakerPattern = Config?.SpeakerPattern ?? "扬声器";
+            string headphonePattern = Config?.HeadphonePattern ?? "耳机";
+
+            // 1. 若匹配预设的耳机或扬声器关键字，优先返回标准精简类别名
+            if (!string.IsNullOrEmpty(headphonePattern) &&
+                fullName.IndexOf(headphonePattern, StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return headphonePattern;
+            }
+
+            if (!string.IsNullOrEmpty(speakerPattern) &&
+                fullName.IndexOf(speakerPattern, StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return speakerPattern;
+            }
+
+            // 2. 常见英文回退（若设备名为英文 Speakers/Headphones）
+            if (fullName.IndexOf("Headphone", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                fullName.IndexOf("Headset", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return "Headphones";
+            }
+            if (fullName.IndexOf("Speaker", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return "Speakers";
+            }
+
+            // 3. 其他设备（如外接显示器、USB 声卡、蓝牙设备等）：
+            // 去除最外层括号中冗长的控制器/芯片驱动名称，如 "DELL U2720Q (NVIDIA High Definition Audio)" -> "DELL U2720Q"
+            int parenIndex = fullName.IndexOf('(');
+            string clean = (parenIndex > 0 ? fullName.Substring(0, parenIndex) : fullName).Trim();
+
+            // 若仍过长，截断至最多 8 个字符加省略号，防止极端长名称撑宽主菜单
+            if (clean.Length > 8)
+            {
+                clean = clean.Substring(0, 7) + "…";
+            }
+
+            return clean;
         }
 
         private string BuildDeviceHeader()
         {
             string devName = CurrentDefaultDevice?.Name;
-            if (string.IsNullOrEmpty(devName)) return "音频输出设备";
+            string baseTitle = Loc.T("Tray.AudioSwitch", "音频输出设备");
+            if (string.IsNullOrEmpty(devName)) return baseTitle;
+
             string icon = GetDeviceIcon(devName);
-            return $"音频输出设备 ({icon} {devName})";
+            string shortName = GetDeviceShortName(devName);
+
+            if (string.IsNullOrEmpty(shortName))
+            {
+                return $"{baseTitle} ({icon})";
+            }
+            return $"{baseTitle} ({icon} {shortName})";
+        }
+
+        private string BuildDeviceToolTip()
+        {
+            string devName = CurrentDefaultDevice?.Name;
+            if (string.IsNullOrEmpty(devName)) return null;
+            string icon = GetDeviceIcon(devName);
+            return $"{Loc.T("Tray.AudioSwitch", "音频输出设备")}: {icon} {devName}";
         }
 
         private string GetDeviceIcon(string name)
@@ -211,16 +279,17 @@ namespace CarroDesk.Modules.AudioSwitch
         }
 
         /// <summary>节点属性变更若在后台线程触发，模块自行 Dispatcher 封送回 UI（规范 §4.3）。</summary>
-        private void SetTrayHeaderSelf(string header)
+        private void SetTrayItemSelf(string header, string toolTip)
         {
             if (_trayItem == null) return;
             var d = Context?.Dispatcher;
             if (d != null && !d.CheckAccess())
             {
-                d.BeginInvoke(new Action(() => SetTrayHeaderSelf(header)));
+                d.BeginInvoke(new Action(() => SetTrayItemSelf(header, toolTip)));
                 return;
             }
             _trayItem.Header = header;
+            _trayItem.ToolTip = toolTip;
         }
 
         private void RequestRefreshSelf()
@@ -236,7 +305,8 @@ namespace CarroDesk.Modules.AudioSwitch
             var root = new TrayMenuItem
             {
                 Id = "audioswitch_root",
-                Header = BuildDeviceHeader()
+                Header = BuildDeviceHeader(),
+                ToolTip = BuildDeviceToolTip()
             };
             _trayItem = root;
 
