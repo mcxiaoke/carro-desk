@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using CarroDesk.Services.Localization;
+using Newtonsoft.Json;
 
 namespace CarroDesk.Models
 {
@@ -32,6 +33,7 @@ namespace CarroDesk.Models
         public string WatchFilter { get; set; } = "*.*";
         public string WatchEvent { get; set; } = "created";
 
+        [JsonIgnore]
         public string RawType { get; set; } = "";
     }
 
@@ -75,21 +77,25 @@ namespace CarroDesk.Models
         public TaskOptions Options { get; set; } = new TaskOptions();
         public TaskCondition When { get; set; } = new TaskCondition();
 
+        [JsonIgnore]
         public string StatusIndicator
         {
             get { return Enabled ? "🟢" : "⚪"; }
         }
 
+        [JsonIgnore]
         public string StatusColor
         {
             get { return Enabled ? "#10B981" : "#9CA3AF"; }
         }
 
+        [JsonIgnore]
         public string TriggerBadge
         {
             get { return "[" + (Trigger != null ? (Trigger.RawType != "" ? Trigger.RawType : Trigger.Type.ToString().ToLowerInvariant()) : "unknown") + "]"; }
         }
 
+        [JsonIgnore]
         public string TriggerBadgeText
         {
             get
@@ -112,6 +118,7 @@ namespace CarroDesk.Models
             }
         }
 
+        [JsonIgnore]
         public string TriggerBadgeBg
         {
             get
@@ -134,6 +141,7 @@ namespace CarroDesk.Models
             }
         }
 
+        [JsonIgnore]
         public string TriggerBadgeFg
         {
             get

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using CarroDesk.Core;
 using CarroDesk.Models;
 using CarroDesk.Services;
-using SimpleJSON;
+using Newtonsoft.Json;
 
 namespace CarroDesk.Host.Services
 {
@@ -74,9 +74,7 @@ namespace CarroDesk.Host.Services
             {
                 if (typeof(T) == typeof(Modules.AudioSwitch.Models.AudioSwitchConfig))
                 {
-                    _audioSwitchConfig = string.IsNullOrWhiteSpace(_underlying.AudioSwitchJson)
-                        ? new Modules.AudioSwitch.Models.AudioSwitchConfig()
-                        : DeserializeAudioSwitch(_underlying.AudioSwitchJson);
+                    _audioSwitchConfig = DeserializeConfig<Modules.AudioSwitch.Models.AudioSwitchConfig>(_underlying.AudioSwitchJson);
                     return _audioSwitchConfig as T;
                 }
             }
@@ -84,9 +82,7 @@ namespace CarroDesk.Host.Services
             {
                 if (typeof(T) == typeof(Modules.AppAutoMute.Models.AppAutoMuteConfig))
                 {
-                    _appAutoMuteConfig = string.IsNullOrWhiteSpace(_underlying.AppAutoMuteJson)
-                        ? new Modules.AppAutoMute.Models.AppAutoMuteConfig()
-                        : DeserializeAppAutoMute(_underlying.AppAutoMuteJson);
+                    _appAutoMuteConfig = DeserializeConfig<Modules.AppAutoMute.Models.AppAutoMuteConfig>(_underlying.AppAutoMuteJson);
                     return _appAutoMuteConfig as T;
                 }
             }
@@ -96,7 +92,7 @@ namespace CarroDesk.Host.Services
                 {
                     _monitorProfileConfig = string.IsNullOrWhiteSpace(_underlying.MonitorProfileJson)
                         ? Modules.MonitorProfile.Models.MonitorProfileConfig.CreateDefault()
-                        : DeserializeMonitorProfile(_underlying.MonitorProfileJson);
+                        : DeserializeConfig(_underlying.MonitorProfileJson, Modules.MonitorProfile.Models.MonitorProfileConfig.CreateDefault);
                     return _monitorProfileConfig as T;
                 }
             }
@@ -107,87 +103,6 @@ namespace CarroDesk.Host.Services
         private Modules.AudioSwitch.Models.AudioSwitchConfig _audioSwitchConfig;
         private Modules.AppAutoMute.Models.AppAutoMuteConfig _appAutoMuteConfig;
         private Modules.MonitorProfile.Models.MonitorProfileConfig _monitorProfileConfig;
-
-        private static string SerializeAudioSwitch(Modules.AudioSwitch.Models.AudioSwitchConfig c)
-        {
-            var o = new JSONObject();
-            o["Enabled"] = c.Enabled;
-            o["Hotkey"] = c.Hotkey ?? "";
-            o["SpeakerPattern"] = c.SpeakerPattern ?? "";
-            o["HeadphonePattern"] = c.HeadphonePattern ?? "";
-            o["PlayNotificationSound"] = c.PlayNotificationSound;
-            return o.ToString();
-        }
-
-        private static Modules.AudioSwitch.Models.AudioSwitchConfig DeserializeAudioSwitch(string json)
-        {
-            var c = new Modules.AudioSwitch.Models.AudioSwitchConfig();
-            try
-            {
-                var node = JSONNode.Parse(json);
-                if (node != null && node.IsObject)
-                {
-                    var o = node.AsObject;
-                    if (o.HasKey("Enabled")) c.Enabled = o["Enabled"].AsBool;
-                    if (o.HasKey("Hotkey")) c.Hotkey = o["Hotkey"].Value;
-                    if (o.HasKey("SpeakerPattern")) c.SpeakerPattern = o["SpeakerPattern"].Value;
-                    if (o.HasKey("HeadphonePattern")) c.HeadphonePattern = o["HeadphonePattern"].Value;
-                    if (o.HasKey("PlayNotificationSound")) c.PlayNotificationSound = o["PlayNotificationSound"].AsBool;
-                }
-            }
-            catch { }
-            return c;
-        }
-
-        private static string SerializeAppAutoMute(Modules.AppAutoMute.Models.AppAutoMuteConfig c)
-        {
-            var o = new JSONObject();
-            o["Enabled"] = c.Enabled;
-            o["Hotkey"] = c.Hotkey ?? "";
-            o["MuteDelayMs"] = c.MuteDelayMs;
-            o["UnmuteDelayMs"] = c.UnmuteDelayMs;
-            o["Mode"] = c.Mode ?? "";
-            var arr = new JSONArray();
-            if (c.TargetApps != null)
-            {
-                foreach (var t in c.TargetApps)
-                {
-                    if (t != null) arr.Add(t);
-                }
-            }
-            o["TargetApps"] = arr;
-            return o.ToString();
-        }
-
-        private static Modules.AppAutoMute.Models.AppAutoMuteConfig DeserializeAppAutoMute(string json)
-        {
-            var c = new Modules.AppAutoMute.Models.AppAutoMuteConfig();
-            try
-            {
-                var node = JSONNode.Parse(json);
-                if (node != null && node.IsObject)
-                {
-                    var o = node.AsObject;
-                    if (o.HasKey("Enabled")) c.Enabled = o["Enabled"].AsBool;
-                    if (o.HasKey("Hotkey")) c.Hotkey = o["Hotkey"].Value;
-                    if (o.HasKey("MuteDelayMs")) c.MuteDelayMs = o["MuteDelayMs"].AsInt;
-                    if (o.HasKey("UnmuteDelayMs")) c.UnmuteDelayMs = o["UnmuteDelayMs"].AsInt;
-                    if (o.HasKey("Mode")) c.Mode = o["Mode"].Value;
-                    if (o.HasKey("TargetApps") && o["TargetApps"].IsArray)
-                    {
-                        var list = new List<string>();
-                        foreach (JSONNode item in o["TargetApps"].AsArray.Children)
-                        {
-                            var v = item.Value;
-                            if (!string.IsNullOrEmpty(v)) list.Add(v);
-                        }
-                        c.TargetApps = list;
-                    }
-                }
-            }
-            catch { }
-            return c;
-        }
 
         public void SaveModuleConfig<T>(string moduleId, T config) where T : class
         {
@@ -218,7 +133,7 @@ namespace CarroDesk.Host.Services
                 if (config is Modules.AudioSwitch.Models.AudioSwitchConfig asc)
                 {
                     _audioSwitchConfig = asc;
-                    _underlying.AudioSwitchJson = SerializeAudioSwitch(asc);
+                    _underlying.AudioSwitchJson = JsonConvert.SerializeObject(asc, Formatting.None);
                     _underlying.Save();
                 }
             }
@@ -227,7 +142,7 @@ namespace CarroDesk.Host.Services
                 if (config is Modules.AppAutoMute.Models.AppAutoMuteConfig aam)
                 {
                     _appAutoMuteConfig = aam;
-                    _underlying.AppAutoMuteJson = SerializeAppAutoMute(aam);
+                    _underlying.AppAutoMuteJson = JsonConvert.SerializeObject(aam, Formatting.None);
                     _underlying.Save();
                 }
             }
@@ -236,120 +151,27 @@ namespace CarroDesk.Host.Services
                 if (config is Modules.MonitorProfile.Models.MonitorProfileConfig mpc)
                 {
                     _monitorProfileConfig = mpc;
-                    _underlying.MonitorProfileJson = SerializeMonitorProfile(mpc);
+                    _underlying.MonitorProfileJson = JsonConvert.SerializeObject(mpc, Formatting.None);
                     _underlying.Save();
                 }
             }
         }
 
-        private static string SerializeMonitorProfile(Modules.MonitorProfile.Models.MonitorProfileConfig c)
+        private static T DeserializeConfig<T>(string json, Func<T> defaultFactory = null) where T : class, new()
         {
-            var o = new JSONObject();
-            o["Enabled"] = c.Enabled;
-            o["AutoSchedule"] = c.AutoSchedule;
-            o["ActiveProfile"] = c.ActiveProfile ?? "Daily";
-            o["BrightnessStep"] = c.BrightnessStep;
-
-            var hk = new JSONObject();
-            if (c.Hotkeys != null)
+            if (string.IsNullOrWhiteSpace(json))
             {
-                hk["SwitchToDailyMode"] = c.Hotkeys.SwitchToDailyMode ?? "";
-                hk["SwitchToGameMode"] = c.Hotkeys.SwitchToGameMode ?? "";
-                hk["SwitchToNightMode"] = c.Hotkeys.SwitchToNightMode ?? "";
-                hk["ManualRefresh"] = c.Hotkeys.ManualRefresh ?? "";
-                hk["IncreaseBrightness"] = c.Hotkeys.IncreaseBrightness ?? "";
-                hk["DecreaseBrightness"] = c.Hotkeys.DecreaseBrightness ?? "";
+                return defaultFactory != null ? defaultFactory() : new T();
             }
-            o["Hotkeys"] = hk;
 
-            var profilesObj = new JSONObject();
-            if (c.Profiles != null)
-            {
-                foreach (var kvp in c.Profiles)
-                {
-                    var arr = new JSONArray();
-                    if (kvp.Value != null)
-                    {
-                        foreach (var s in kvp.Value)
-                        {
-                            if (s != null)
-                            {
-                                var so = new JSONObject();
-                                so["Time"] = s.Time ?? "08:00";
-                                so["Brightness"] = s.Brightness;
-                                so["Contrast"] = s.Contrast;
-                                arr.Add(so);
-                            }
-                        }
-                    }
-                    profilesObj[kvp.Key] = arr;
-                }
-            }
-            o["Profiles"] = profilesObj;
-
-            return o.ToString();
-        }
-
-        private static Modules.MonitorProfile.Models.MonitorProfileConfig DeserializeMonitorProfile(string json)
-        {
-            var c = Modules.MonitorProfile.Models.MonitorProfileConfig.CreateDefault();
             try
             {
-                var node = JSONNode.Parse(json);
-                if (node != null && node.IsObject)
-                {
-                    var o = node.AsObject;
-                    if (o.HasKey("Enabled")) c.Enabled = o["Enabled"].AsBool;
-                    if (o.HasKey("AutoSchedule")) c.AutoSchedule = o["AutoSchedule"].AsBool;
-                    if (o.HasKey("ActiveProfile")) c.ActiveProfile = o["ActiveProfile"].Value;
-                    if (o.HasKey("BrightnessStep")) c.BrightnessStep = o["BrightnessStep"].AsInt;
-
-                    if (o.HasKey("Hotkeys") && o["Hotkeys"].IsObject)
-                    {
-                        var hk = o["Hotkeys"].AsObject;
-                        if (hk.HasKey("SwitchToDailyMode")) c.Hotkeys.SwitchToDailyMode = hk["SwitchToDailyMode"].Value;
-                        if (hk.HasKey("SwitchToGameMode")) c.Hotkeys.SwitchToGameMode = hk["SwitchToGameMode"].Value;
-                        if (hk.HasKey("SwitchToNightMode")) c.Hotkeys.SwitchToNightMode = hk["SwitchToNightMode"].Value;
-                        if (hk.HasKey("ManualRefresh")) c.Hotkeys.ManualRefresh = hk["ManualRefresh"].Value;
-                        if (hk.HasKey("IncreaseBrightness")) c.Hotkeys.IncreaseBrightness = hk["IncreaseBrightness"].Value;
-                        if (hk.HasKey("DecreaseBrightness")) c.Hotkeys.DecreaseBrightness = hk["DecreaseBrightness"].Value;
-                    }
-
-                    if (o.HasKey("Profiles") && o["Profiles"].IsObject)
-                    {
-                        var profilesObj = o["Profiles"].AsObject;
-                        var dict = new Dictionary<string, List<Modules.MonitorProfile.Models.MonitorTimeSetting>>(StringComparer.OrdinalIgnoreCase);
-                        foreach (var key in profilesObj.Keys)
-                        {
-                            var nodeItem = profilesObj[key];
-                            if (nodeItem.IsArray)
-                            {
-                                var list = new List<Modules.MonitorProfile.Models.MonitorTimeSetting>();
-                                foreach (JSONNode sNode in nodeItem.AsArray.Children)
-                                {
-                                    if (sNode.IsObject)
-                                    {
-                                        var so = sNode.AsObject;
-                                        list.Add(new Modules.MonitorProfile.Models.MonitorTimeSetting
-                                        {
-                                            Time = so.HasKey("Time") ? so["Time"].Value : "08:00",
-                                            Brightness = so.HasKey("Brightness") ? so["Brightness"].AsInt : 60,
-                                            Contrast = so.HasKey("Contrast") ? so["Contrast"].AsInt : 70
-                                        });
-                                    }
-                                }
-                                dict[key] = list;
-                            }
-                        }
-                        if (dict.Count > 0)
-                        {
-                            c.Profiles = dict;
-                        }
-                    }
-                }
+                return JsonConvert.DeserializeObject<T>(json) ?? (defaultFactory != null ? defaultFactory() : new T());
             }
-            catch { }
-            return c;
+            catch
+            {
+                return defaultFactory != null ? defaultFactory() : new T();
+            }
         }
     }
 }

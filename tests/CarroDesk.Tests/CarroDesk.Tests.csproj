@@ -13,6 +13,7 @@
   <ItemGroup>
     <Compile Include="CarroDeskContractTests.cs" />
     <Compile Include="MonitorProfileTests.cs" />
+    <Compile Include="JsonMigrationTests.cs" />
   </ItemGroup>
 
   <ItemGroup>

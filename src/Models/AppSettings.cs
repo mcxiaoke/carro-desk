@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using CarroDesk.Models.Converters;
+using Newtonsoft.Json;
 
 namespace CarroDesk.Models
 {
@@ -14,6 +16,8 @@ namespace CarroDesk.Models
         public bool TasksEnabled { get; set; } = true;
         public bool UnlockOnResume { get; set; } = true;
         public string Language { get; set; } = "auto";
+
+        [JsonConverter(typeof(StringOrStringListConverter))]
         public List<string> ExcludeProcesses { get; set; } = new List<string>();
 
         // 桌面悬浮控制面板配置

@@ -5,7 +5,7 @@ using System.Globalization;
 using System.IO;
 using System.Reflection;
 using System.Text;
-using SimpleJSON;
+using Newtonsoft.Json.Linq;
 
 namespace CarroDesk.Services.Localization
 {
@@ -169,48 +169,50 @@ namespace CarroDesk.Services.Localization
 
         private void ParseAndRegisterLocale(string json)
         {
-            var node = JSONNode.Parse(json);
-            if (node == null || !node.IsObject) return;
+            if (string.IsNullOrWhiteSpace(json)) return;
 
-            var obj = node.AsObject;
-            string code = "";
-            string dispName = "";
-
-            if (obj.HasKey("_meta") && obj["_meta"].IsObject)
+            try
             {
-                var meta = obj["_meta"].AsObject;
-                code = meta.HasKey("code") ? meta["code"].Value : "";
-                dispName = meta.HasKey("name") ? meta["name"].Value : "";
+                var obj = JObject.Parse(json);
+                string code = "";
+                string dispName = "";
+
+                if (obj["_meta"] is JObject meta)
+                {
+                    code = meta["code"]?.ToString() ?? "";
+                    dispName = meta["name"]?.ToString() ?? "";
+                }
+
+                if (string.IsNullOrEmpty(code)) return;
+                if (string.IsNullOrEmpty(dispName)) dispName = code;
+
+                if (!_locales.TryGetValue(code, out var dict))
+                {
+                    dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    _locales[code] = dict;
+                }
+
+                _languageNames[code] = dispName;
+
+                FlattenJson(obj, "", dict);
             }
-
-            if (string.IsNullOrEmpty(code)) return;
-            if (string.IsNullOrEmpty(dispName)) dispName = code;
-
-            if (!_locales.TryGetValue(code, out var dict))
-            {
-                dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                _locales[code] = dict;
-            }
-
-            _languageNames[code] = dispName;
-
-            FlattenJson(obj, "", dict);
+            catch { }
         }
 
-        private void FlattenJson(JSONObject obj, string prefix, Dictionary<string, string> target)
+        private void FlattenJson(JObject obj, string prefix, Dictionary<string, string> target)
         {
-            foreach (var kvp in obj)
+            foreach (var prop in obj.Properties())
             {
-                if (string.Equals(kvp.Key, "_meta", StringComparison.OrdinalIgnoreCase)) continue;
+                if (string.Equals(prop.Name, "_meta", StringComparison.OrdinalIgnoreCase)) continue;
 
-                string fullKey = string.IsNullOrEmpty(prefix) ? kvp.Key : prefix + "." + kvp.Key;
-                if (kvp.Value is JSONObject childObj)
+                string fullKey = string.IsNullOrEmpty(prefix) ? prop.Name : prefix + "." + prop.Name;
+                if (prop.Value is JObject childObj)
                 {
                     FlattenJson(childObj, fullKey, target);
                 }
-                else
+                else if (prop.Value != null)
                 {
-                    target[fullKey] = kvp.Value.Value;
+                    target[fullKey] = prop.Value.ToString();
                 }
             }
         }

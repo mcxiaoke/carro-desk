@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using System.Text;
 using CarroDesk.Models;
-using SimpleJSON;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace CarroDesk.Services
 {
@@ -72,6 +72,13 @@ namespace CarroDesk.Services
         public string AppAutoMuteJson { get; set; } = "";
         public string MonitorProfileJson { get; set; } = "";
 
+        private static readonly JsonSerializerSettings SerializerSettings = new JsonSerializerSettings
+        {
+            Formatting = Formatting.Indented,
+            NullValueHandling = NullValueHandling.Ignore,
+            MissingMemberHandling = MissingMemberHandling.Ignore
+        };
+
         public void LoadOrCreate()
         {
             if (!Directory.Exists(DirPath)) Directory.CreateDirectory(DirPath);
@@ -126,396 +133,72 @@ namespace CarroDesk.Services
 
         private AppSettings ReadFile()
         {
-            var json = File.ReadAllText(FilePath, Encoding.UTF8);
-            var s = new AppSettings();
             try
             {
-                var node = JSONNode.Parse(json);
-                if (node != null && node.IsObject)
-                {
-                    var obj = node.AsObject;
-                    if (obj.HasKey("IdleMinutes")) s.IdleMinutes = obj["IdleMinutes"].AsInt;
-                    if (obj.HasKey("AutoStart")) s.AutoStart = obj["AutoStart"].AsBool;
-                    if (obj.HasKey("ShowClock")) s.ShowClock = obj["ShowClock"].AsBool;
-                    if (obj.HasKey("OverlayOpacity")) s.OverlayOpacity = obj["OverlayOpacity"].AsDouble;
-                    if (obj.HasKey("PinSalt")) s.PinSalt = obj["PinSalt"].Value;
-                    if (obj.HasKey("PinHash")) s.PinHash = obj["PinHash"].Value;
-                    if (obj.HasKey("TasksEnabled")) s.TasksEnabled = obj["TasksEnabled"].AsBool;
-                    else s.TasksEnabled = true;
-                    if (obj.HasKey("UnlockOnResume")) s.UnlockOnResume = obj["UnlockOnResume"].AsBool;
-                    else s.UnlockOnResume = true;
-                    if (obj.HasKey("Language")) s.Language = obj["Language"].Value;
-                    if (obj.HasKey("FloatingPanelHotkey")) s.FloatingPanelHotkey = obj["FloatingPanelHotkey"].Value;
-                    if (obj.HasKey("FloatingPanelPosition")) s.FloatingPanelPosition = obj["FloatingPanelPosition"].Value;
-                    if (obj.HasKey("FloatingPanelPinned")) s.FloatingPanelPinned = obj["FloatingPanelPinned"].AsBool;
-                    if (obj.HasKey("FloatingPanelX")) s.FloatingPanelX = obj["FloatingPanelX"].AsDouble;
-                    if (obj.HasKey("FloatingPanelY")) s.FloatingPanelY = obj["FloatingPanelY"].AsDouble;
+                if (!File.Exists(FilePath)) return new AppSettings();
+                var json = File.ReadAllText(FilePath, Encoding.UTF8);
+                if (string.IsNullOrWhiteSpace(json)) return new AppSettings();
 
-                    // ExcludeProcesses: support array ["a.exe","b.exe"] or comma-string "a.exe, b.exe"
-                    if (obj.HasKey("ExcludeProcesses"))
+                using (var sr = new StringReader(json))
+                using (var reader = new JsonTextReader(sr))
+                {
+                    var loadSettings = new JsonLoadSettings
                     {
-                        var exclNode = obj["ExcludeProcesses"];
-                        var list = new List<string>();
-                        if (exclNode.IsArray)
-                        {
-                            foreach (JSONNode item in exclNode.AsArray.Children)
-                            {
-                                var v = item.Value != null ? item.Value.Trim() : "";
-                                if (!string.IsNullOrEmpty(v)) list.Add(v);
-                            }
-                            s.ExcludeProcesses = list;
-                        }
-                        else if (exclNode.IsString)
-                        {
-                            var str = exclNode.Value;
-                            var parts = str.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries);
-                            var list2 = new List<string>();
-                            foreach (var p in parts)
-                            {
-                                var t = p.Trim();
-                                if (!string.IsNullOrEmpty(t)) list2.Add(t);
-                            }
-                            s.ExcludeProcesses = list2;
-                        }
-                        else
-                        {
-                            s.ExcludeProcesses = new List<string>();
-                        }
-                    }
-                    else
+                        CommentHandling = CommentHandling.Ignore,
+                        LineInfoHandling = LineInfoHandling.Ignore
+                    };
+
+                    while (reader.TokenType == JsonToken.None || reader.TokenType == JsonToken.Comment)
                     {
-                        s.ExcludeProcesses = new List<string>();
+                        if (!reader.Read()) break;
                     }
 
-                    this.AudioSwitchJson = obj.HasKey("AudioSwitch") ? obj["AudioSwitch"].Value : "";
-                    this.AppAutoMuteJson = obj.HasKey("AppAutoMute") ? obj["AppAutoMute"].Value : "";
-                    this.MonitorProfileJson = obj.HasKey("MonitorProfile") ? obj["MonitorProfile"].Value : "";
-                }
-                else
-                {
-                    // fallback to old parser for malformed? use SimpleJson
-                    return ReadFileLegacy(json);
+                    if (reader.TokenType == JsonToken.None) return new AppSettings();
+
+                    var token = JToken.Load(reader, loadSettings);
+                    if (token is JObject obj)
+                    {
+                        var serializer = JsonSerializer.Create(SerializerSettings);
+                        var s = obj.ToObject<AppSettings>(serializer) ?? new AppSettings();
+
+                        // 模块专属配置槽提取（兼容内嵌 JSON 字符串或直接内嵌对象）
+                        this.AudioSwitchJson = ExtractSubJson(obj["AudioSwitch"]);
+                        this.AppAutoMuteJson = ExtractSubJson(obj["AppAutoMute"]);
+                        this.MonitorProfileJson = ExtractSubJson(obj["MonitorProfile"]);
+
+                        return AppSettings.Merge(s);
+                    }
                 }
             }
             catch
             {
-                // fallback to legacy parser on exception
-                return ReadFileLegacy(json);
+                // 若解析异常，安全回退到默认设置
             }
-            return AppSettings.Merge(s);
+            return new AppSettings();
         }
 
-        private AppSettings ReadFileLegacy(string json)
+        private static string ExtractSubJson(JToken token)
         {
-            var map = SimpleJson.Parse(json);
-            var s = new AppSettings();
-            int n;
-            double d;
-            if (map.ContainsKey("IdleMinutes") && int.TryParse(map["IdleMinutes"], NumberStyles.Integer, CultureInfo.InvariantCulture, out n))
-                s.IdleMinutes = n;
-            if (map.ContainsKey("AutoStart"))
-                s.AutoStart = map["AutoStart"] == "true";
-            if (map.ContainsKey("ShowClock"))
-                s.ShowClock = map["ShowClock"] == "true";
-            if (map.ContainsKey("OverlayOpacity") && double.TryParse(map["OverlayOpacity"], NumberStyles.Float, CultureInfo.InvariantCulture, out d))
-                s.OverlayOpacity = d;
-            if (map.ContainsKey("PinSalt")) s.PinSalt = map["PinSalt"];
-            if (map.ContainsKey("PinHash")) s.PinHash = map["PinHash"];
-            if (map.ContainsKey("TasksEnabled"))
-                s.TasksEnabled = map["TasksEnabled"] == "true";
-            else
-                s.TasksEnabled = true;
-            if (map.ContainsKey("UnlockOnResume"))
-                s.UnlockOnResume = map["UnlockOnResume"] == "true";
-            else
-                s.UnlockOnResume = true;
-            if (map.ContainsKey("Language")) s.Language = map["Language"];
-            if (map.ContainsKey("FloatingPanelHotkey")) s.FloatingPanelHotkey = map["FloatingPanelHotkey"];
-            if (map.ContainsKey("FloatingPanelPosition")) s.FloatingPanelPosition = map["FloatingPanelPosition"];
-            if (map.ContainsKey("FloatingPanelPinned")) s.FloatingPanelPinned = map["FloatingPanelPinned"] == "true";
-            if (map.ContainsKey("FloatingPanelX") && double.TryParse(map["FloatingPanelX"], NumberStyles.Float, CultureInfo.InvariantCulture, out double fx)) s.FloatingPanelX = fx;
-            if (map.ContainsKey("FloatingPanelY") && double.TryParse(map["FloatingPanelY"], NumberStyles.Float, CultureInfo.InvariantCulture, out double fy)) s.FloatingPanelY = fy;
-            var excl = ExtractStringArray(json, "ExcludeProcesses");
-            if (excl != null) s.ExcludeProcesses = excl;
-            else s.ExcludeProcesses = new List<string>();
-            return AppSettings.Merge(s);
+            if (token == null || token.Type == JTokenType.Null) return "";
+            if (token.Type == JTokenType.String) return token.Value<string>() ?? "";
+            return token.ToString(Formatting.None);
         }
 
         public void Save()
         {
             if (!Directory.Exists(DirPath)) Directory.CreateDirectory(DirPath);
             if (Current == null) Current = new AppSettings();
-            var sb = new StringBuilder();
-            sb.AppendLine("{");
-            sb.AppendLine("  \"IdleMinutes\": " + Current.IdleMinutes + ",");
-            sb.AppendLine("  \"AutoStart\": " + (Current.AutoStart ? "true" : "false") + ",");
-            sb.AppendLine("  \"ShowClock\": " + (Current.ShowClock ? "true" : "false") + ",");
-            sb.AppendLine("  \"OverlayOpacity\": " + Current.OverlayOpacity.ToString(CultureInfo.InvariantCulture) + ",");
-            sb.AppendLine("  \"PinSalt\": \"" + Escape(Current.PinSalt ?? "") + "\",");
-            sb.AppendLine("  \"PinHash\": \"" + Escape(Current.PinHash ?? "") + "\",");
-            sb.AppendLine("  \"TasksEnabled\": " + (Current.TasksEnabled ? "true" : "false") + ",");
-            sb.AppendLine("  \"UnlockOnResume\": " + (Current.UnlockOnResume ? "true" : "false") + ",");
-            sb.AppendLine("  \"Language\": \"" + Escape(Current.Language ?? "auto") + "\",");
-            sb.AppendLine("  \"FloatingPanelHotkey\": \"" + Escape(Current.FloatingPanelHotkey ?? "Win+Alt+C") + "\",");
-            sb.AppendLine("  \"FloatingPanelPosition\": \"" + Escape(Current.FloatingPanelPosition ?? "Tray") + "\",");
-            sb.AppendLine("  \"FloatingPanelPinned\": " + (Current.FloatingPanelPinned ? "true" : "false") + ",");
-            sb.AppendLine("  \"FloatingPanelX\": " + Current.FloatingPanelX.ToString(CultureInfo.InvariantCulture) + ",");
-            sb.AppendLine("  \"FloatingPanelY\": " + Current.FloatingPanelY.ToString(CultureInfo.InvariantCulture) + ",");
-            sb.Append("  \"ExcludeProcesses\": ");
-            sb.Append(SerializeStringArray(Current.ExcludeProcesses));
-            sb.AppendLine();
-            sb.Append("  \"AudioSwitch\": \"").Append(Escape(this.AudioSwitchJson ?? "")).Append("\"");
-            sb.AppendLine(",");
-            sb.Append("  \"AppAutoMute\": \"").Append(Escape(this.AppAutoMuteJson ?? "")).Append("\"");
-            sb.AppendLine(",");
-            sb.Append("  \"MonitorProfile\": \"").Append(Escape(this.MonitorProfileJson ?? "")).Append("\"");
-            sb.AppendLine();
-            sb.AppendLine("}");
-            File.WriteAllText(FilePath, sb.ToString(), Encoding.UTF8);
-        }
 
-        private static string Escape(string value)
-        {
-            return value.Replace("\\", "\\\\").Replace("\"", "\\\"");
-        }
+            var serializer = JsonSerializer.Create(SerializerSettings);
+            var obj = JObject.FromObject(Current, serializer);
 
-        private static string SerializeStringArray(List<string> list)
-        {
-            if (list == null || list.Count == 0) return "[]";
-            var sb = new StringBuilder();
-            sb.Append("[");
-            for (int i = 0; i < list.Count; i++)
-            {
-                if (i > 0) sb.Append(", ");
-                sb.Append("\"").Append(Escape(list[i] ?? "")).Append("\"");
-            }
-            sb.Append("]");
-            return sb.ToString();
-        }
+            // 存入模块专属配置字符串槽
+            obj["AudioSwitch"] = this.AudioSwitchJson ?? "";
+            obj["AppAutoMute"] = this.AppAutoMuteJson ?? "";
+            obj["MonitorProfile"] = this.MonitorProfileJson ?? "";
 
-        private static List<string> ExtractStringArray(string json, string key)
-        {
-            if (string.IsNullOrEmpty(json) || string.IsNullOrEmpty(key)) return null;
-            try
-            {
-                // find "key" (case-insensitive)
-                int idx = json.IndexOf("\"" + key + "\"", StringComparison.OrdinalIgnoreCase);
-                if (idx < 0) return null;
-                idx = json.IndexOf(':', idx);
-                if (idx < 0) return null;
-                idx++;
-                // skip ws
-                while (idx < json.Length && char.IsWhiteSpace(json[idx])) idx++;
-                if (idx >= json.Length) return null;
-                if (json[idx] == '[')
-                {
-                    // parse array of strings
-                    idx++;
-                    var result = new List<string>();
-                    while (idx < json.Length)
-                    {
-                        while (idx < json.Length && char.IsWhiteSpace(json[idx])) idx++;
-                        if (idx >= json.Length) break;
-                        if (json[idx] == ']') { idx++; break; }
-                        if (json[idx] == ',') { idx++; continue; }
-                        if (json[idx] == '"')
-                        {
-                            // read string
-                            int start = idx;
-                            int p = idx;
-                            string s = SimpleJsonReadString(json, ref p);
-                            if (s != null)
-                            {
-                                // trim and ignore empty
-                                s = s.Trim();
-                                if (!string.IsNullOrEmpty(s)) result.Add(s);
-                                idx = p;
-                            }
-                            else
-                            {
-                                idx++;
-                            }
-                        }
-                        else
-                        {
-                            // unexpected token, skip to next
-                            idx++;
-                        }
-                    }
-                    return result;
-                }
-                else if (json[idx] == '"')
-                {
-                    int p = idx;
-                    string s = SimpleJsonReadString(json, ref p);
-                    if (s == null) return new List<string>();
-                    // support comma-separated inside single string
-                    var parts = s.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries);
-                    var list = new List<string>();
-                    foreach (var part in parts)
-                    {
-                        var t = part.Trim();
-                        if (!string.IsNullOrEmpty(t)) list.Add(t);
-                    }
-                    return list;
-                }
-                else
-                {
-                    // bare value (unlikely)
-                    return new List<string>();
-                }
-            }
-            catch { return null; }
-        }
-
-        private static string SimpleJsonReadString(string s, ref int i)
-        {
-            // reuse SimpleJson.ReadString logic but static
-            while (i < s.Length && char.IsWhiteSpace(s[i])) i++;
-            if (i >= s.Length || s[i] != '"') return null;
-            i++;
-            var sb = new StringBuilder();
-            while (i < s.Length)
-            {
-                char c = s[i];
-                if (c == '\\')
-                {
-                    i++;
-                    if (i >= s.Length) break;
-                    char e = s[i];
-                    switch (e)
-                    {
-                        case '"': sb.Append('"'); break;
-                        case '\\': sb.Append('\\'); break;
-                        case '/': sb.Append('/'); break;
-                        case 'n': sb.Append('\n'); break;
-                        case 't': sb.Append('\t'); break;
-                        case 'r': sb.Append('\r'); break;
-                        case 'b': sb.Append('\b'); break;
-                        case 'f': sb.Append('\f'); break;
-                        case 'u':
-                            if (i + 4 < s.Length)
-                            {
-                                int code;
-                                if (int.TryParse(s.Substring(i + 1, 4), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out code))
-                                {
-                                    sb.Append((char)code);
-                                    i += 4;
-                                }
-                            }
-                            break;
-                        default: sb.Append(e); break;
-                    }
-                    i++;
-                    continue;
-                }
-                if (c == '"') { i++; return sb.ToString(); }
-                sb.Append(c);
-                i++;
-            }
-            return sb.ToString();
-        }
-    }
-
-    public static class SimpleJson
-    {
-        public static Dictionary<string, string> Parse(string json)
-        {
-            var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            if (string.IsNullOrEmpty(json)) return result;
-
-            int i = 0;
-            SkipWs(json, ref i);
-            if (i >= json.Length || json[i] != '{') return result;
-            i++;
-
-            while (i < json.Length)
-            {
-                SkipWs(json, ref i);
-                if (i >= json.Length) break;
-                char c = json[i];
-                if (c == '}') break;
-                if (c == ',') { i++; continue; }
-
-                string key = ReadString(json, ref i);
-                SkipWs(json, ref i);
-                if (i < json.Length && json[i] == ':') i++;
-                SkipWs(json, ref i);
-                if (key == null || i >= json.Length) break;
-
-                char vc = json[i];
-                string value;
-                if (vc == '"')
-                {
-                    value = ReadString(json, ref i);
-                }
-                else
-                {
-                    int start = i;
-                    while (i < json.Length && json[i] != ',' && json[i] != '}' && !char.IsWhiteSpace(json[i]))
-                        i++;
-                    value = json.Substring(start, i - start).Trim();
-                }
-                if (key != null && value != null)
-                    result[key] = value;
-            }
-            return result;
-        }
-
-        private static void SkipWs(string s, ref int i)
-        {
-            while (i < s.Length && char.IsWhiteSpace(s[i])) i++;
-        }
-
-        private static string ReadString(string s, ref int i)
-        {
-            SkipWs(s, ref i);
-            if (i >= s.Length || s[i] != '"') return null;
-            i++;
-            var sb = new StringBuilder();
-            while (i < s.Length)
-            {
-                char c = s[i];
-                if (c == '\\')
-                {
-                    i++;
-                    if (i >= s.Length) break;
-                    char e = s[i];
-                    switch (e)
-                    {
-                        case '"': sb.Append('"'); break;
-                        case '\\': sb.Append('\\'); break;
-                        case '/': sb.Append('/'); break;
-                        case 'n': sb.Append('\n'); break;
-                        case 't': sb.Append('\t'); break;
-                        case 'r': sb.Append('\r'); break;
-                        case 'b': sb.Append('\b'); break;
-                        case 'f': sb.Append('\f'); break;
-                        case 'u':
-                            if (i + 4 < s.Length)
-                            {
-                                int code;
-                                if (int.TryParse(s.Substring(i + 1, 4), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out code))
-                                {
-                                    sb.Append((char)code);
-                                    i += 4;
-                                }
-                            }
-                            break;
-                        default: sb.Append(e); break;
-                    }
-                    i++;
-                    continue;
-                }
-                if (c == '"')
-                {
-                    i++;
-                    return sb.ToString();
-                }
-                sb.Append(c);
-                i++;
-            }
-            return sb.ToString();
+            var json = obj.ToString(Formatting.Indented);
+            File.WriteAllText(FilePath, json, Encoding.UTF8);
         }
     }
 }
