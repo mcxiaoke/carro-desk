@@ -6,11 +6,13 @@
     <IsPackable>false</IsPackable>
     <Nullable>disable</Nullable>
     <OutputType>Library</OutputType>
+    <UseWPF>true</UseWPF>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>
 
   <ItemGroup>
     <Compile Include="CarroDeskContractTests.cs" />
+    <Compile Include="MonitorProfileTests.cs" />
   </ItemGroup>
 
   <ItemGroup>

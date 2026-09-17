@@ -90,12 +90,23 @@ namespace CarroDesk.Host.Services
                     return _appAutoMuteConfig as T;
                 }
             }
+            else if (string.Equals(moduleId, "MonitorProfile", StringComparison.OrdinalIgnoreCase))
+            {
+                if (typeof(T) == typeof(Modules.MonitorProfile.Models.MonitorProfileConfig))
+                {
+                    _monitorProfileConfig = string.IsNullOrWhiteSpace(_underlying.MonitorProfileJson)
+                        ? Modules.MonitorProfile.Models.MonitorProfileConfig.CreateDefault()
+                        : DeserializeMonitorProfile(_underlying.MonitorProfileJson);
+                    return _monitorProfileConfig as T;
+                }
+            }
 
             return new T();
         }
 
         private Modules.AudioSwitch.Models.AudioSwitchConfig _audioSwitchConfig;
         private Modules.AppAutoMute.Models.AppAutoMuteConfig _appAutoMuteConfig;
+        private Modules.MonitorProfile.Models.MonitorProfileConfig _monitorProfileConfig;
 
         private static string SerializeAudioSwitch(Modules.AudioSwitch.Models.AudioSwitchConfig c)
         {
@@ -220,6 +231,125 @@ namespace CarroDesk.Host.Services
                     _underlying.Save();
                 }
             }
+            else if (string.Equals(moduleId, "MonitorProfile", StringComparison.OrdinalIgnoreCase))
+            {
+                if (config is Modules.MonitorProfile.Models.MonitorProfileConfig mpc)
+                {
+                    _monitorProfileConfig = mpc;
+                    _underlying.MonitorProfileJson = SerializeMonitorProfile(mpc);
+                    _underlying.Save();
+                }
+            }
+        }
+
+        private static string SerializeMonitorProfile(Modules.MonitorProfile.Models.MonitorProfileConfig c)
+        {
+            var o = new JSONObject();
+            o["Enabled"] = c.Enabled;
+            o["AutoSchedule"] = c.AutoSchedule;
+            o["ActiveProfile"] = c.ActiveProfile ?? "Daily";
+            o["BrightnessStep"] = c.BrightnessStep;
+
+            var hk = new JSONObject();
+            if (c.Hotkeys != null)
+            {
+                hk["SwitchToDailyMode"] = c.Hotkeys.SwitchToDailyMode ?? "";
+                hk["SwitchToGameMode"] = c.Hotkeys.SwitchToGameMode ?? "";
+                hk["SwitchToNightMode"] = c.Hotkeys.SwitchToNightMode ?? "";
+                hk["ManualRefresh"] = c.Hotkeys.ManualRefresh ?? "";
+                hk["IncreaseBrightness"] = c.Hotkeys.IncreaseBrightness ?? "";
+                hk["DecreaseBrightness"] = c.Hotkeys.DecreaseBrightness ?? "";
+            }
+            o["Hotkeys"] = hk;
+
+            var profilesObj = new JSONObject();
+            if (c.Profiles != null)
+            {
+                foreach (var kvp in c.Profiles)
+                {
+                    var arr = new JSONArray();
+                    if (kvp.Value != null)
+                    {
+                        foreach (var s in kvp.Value)
+                        {
+                            if (s != null)
+                            {
+                                var so = new JSONObject();
+                                so["Time"] = s.Time ?? "08:00";
+                                so["Brightness"] = s.Brightness;
+                                so["Contrast"] = s.Contrast;
+                                arr.Add(so);
+                            }
+                        }
+                    }
+                    profilesObj[kvp.Key] = arr;
+                }
+            }
+            o["Profiles"] = profilesObj;
+
+            return o.ToString();
+        }
+
+        private static Modules.MonitorProfile.Models.MonitorProfileConfig DeserializeMonitorProfile(string json)
+        {
+            var c = Modules.MonitorProfile.Models.MonitorProfileConfig.CreateDefault();
+            try
+            {
+                var node = JSONNode.Parse(json);
+                if (node != null && node.IsObject)
+                {
+                    var o = node.AsObject;
+                    if (o.HasKey("Enabled")) c.Enabled = o["Enabled"].AsBool;
+                    if (o.HasKey("AutoSchedule")) c.AutoSchedule = o["AutoSchedule"].AsBool;
+                    if (o.HasKey("ActiveProfile")) c.ActiveProfile = o["ActiveProfile"].Value;
+                    if (o.HasKey("BrightnessStep")) c.BrightnessStep = o["BrightnessStep"].AsInt;
+
+                    if (o.HasKey("Hotkeys") && o["Hotkeys"].IsObject)
+                    {
+                        var hk = o["Hotkeys"].AsObject;
+                        if (hk.HasKey("SwitchToDailyMode")) c.Hotkeys.SwitchToDailyMode = hk["SwitchToDailyMode"].Value;
+                        if (hk.HasKey("SwitchToGameMode")) c.Hotkeys.SwitchToGameMode = hk["SwitchToGameMode"].Value;
+                        if (hk.HasKey("SwitchToNightMode")) c.Hotkeys.SwitchToNightMode = hk["SwitchToNightMode"].Value;
+                        if (hk.HasKey("ManualRefresh")) c.Hotkeys.ManualRefresh = hk["ManualRefresh"].Value;
+                        if (hk.HasKey("IncreaseBrightness")) c.Hotkeys.IncreaseBrightness = hk["IncreaseBrightness"].Value;
+                        if (hk.HasKey("DecreaseBrightness")) c.Hotkeys.DecreaseBrightness = hk["DecreaseBrightness"].Value;
+                    }
+
+                    if (o.HasKey("Profiles") && o["Profiles"].IsObject)
+                    {
+                        var profilesObj = o["Profiles"].AsObject;
+                        var dict = new Dictionary<string, List<Modules.MonitorProfile.Models.MonitorTimeSetting>>(StringComparer.OrdinalIgnoreCase);
+                        foreach (var key in profilesObj.Keys)
+                        {
+                            var nodeItem = profilesObj[key];
+                            if (nodeItem.IsArray)
+                            {
+                                var list = new List<Modules.MonitorProfile.Models.MonitorTimeSetting>();
+                                foreach (JSONNode sNode in nodeItem.AsArray.Children)
+                                {
+                                    if (sNode.IsObject)
+                                    {
+                                        var so = sNode.AsObject;
+                                        list.Add(new Modules.MonitorProfile.Models.MonitorTimeSetting
+                                        {
+                                            Time = so.HasKey("Time") ? so["Time"].Value : "08:00",
+                                            Brightness = so.HasKey("Brightness") ? so["Brightness"].AsInt : 60,
+                                            Contrast = so.HasKey("Contrast") ? so["Contrast"].AsInt : 70
+                                        });
+                                    }
+                                }
+                                dict[key] = list;
+                            }
+                        }
+                        if (dict.Count > 0)
+                        {
+                            c.Profiles = dict;
+                        }
+                    }
+                }
+            }
+            catch { }
+            return c;
         }
     }
 }

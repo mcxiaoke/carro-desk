@@ -70,6 +70,7 @@ namespace CarroDesk.Services
         // 模块专属配置（JSON 字符串槽），随 config.json 一起落盘，避免模块配置仅存内存
         public string AudioSwitchJson { get; set; } = "";
         public string AppAutoMuteJson { get; set; } = "";
+        public string MonitorProfileJson { get; set; } = "";
 
         public void LoadOrCreate()
         {
@@ -183,6 +184,7 @@ namespace CarroDesk.Services
 
                     this.AudioSwitchJson = obj.HasKey("AudioSwitch") ? obj["AudioSwitch"].Value : "";
                     this.AppAutoMuteJson = obj.HasKey("AppAutoMute") ? obj["AppAutoMute"].Value : "";
+                    this.MonitorProfileJson = obj.HasKey("MonitorProfile") ? obj["MonitorProfile"].Value : "";
                 }
                 else
                 {
@@ -232,6 +234,7 @@ namespace CarroDesk.Services
         public void Save()
         {
             if (!Directory.Exists(DirPath)) Directory.CreateDirectory(DirPath);
+            if (Current == null) Current = new AppSettings();
             var sb = new StringBuilder();
             sb.AppendLine("{");
             sb.AppendLine("  \"IdleMinutes\": " + Current.IdleMinutes + ",");
@@ -249,6 +252,8 @@ namespace CarroDesk.Services
             sb.Append("  \"AudioSwitch\": \"").Append(Escape(this.AudioSwitchJson ?? "")).Append("\"");
             sb.AppendLine(",");
             sb.Append("  \"AppAutoMute\": \"").Append(Escape(this.AppAutoMuteJson ?? "")).Append("\"");
+            sb.AppendLine(",");
+            sb.Append("  \"MonitorProfile\": \"").Append(Escape(this.MonitorProfileJson ?? "")).Append("\"");
             sb.AppendLine();
             sb.AppendLine("}");
             File.WriteAllText(FilePath, sb.ToString(), Encoding.UTF8);
