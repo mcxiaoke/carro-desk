@@ -68,8 +68,11 @@ namespace CarroDesk.Services
 
         public void ApplyPinFromConfig()
         {
-            var c = _config.Current;
-            _pinService.SetFromConfig(c.PinSalt, c.PinHash);
+            var c = _config != null ? _config.Current : null;
+            if (c != null)
+            {
+                _pinService.SetFromConfig(c.PinSalt, c.PinHash);
+            }
         }
 
         public void Lock()

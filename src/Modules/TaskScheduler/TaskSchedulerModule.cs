@@ -75,6 +75,34 @@ namespace CarroDesk.Modules.TaskScheduler
             {
                 Context?.GetService<ILoggerService>()?.LogError(Id, "重载任务调度器失败", ex);
             }
+            UpdateTrayHeader();
+        }
+
+        public override void OnLanguageChanged()
+        {
+            base.OnLanguageChanged();
+            UpdateTrayHeader();
+        }
+
+        private TrayMenuItem _trayRoot;
+
+        public string BuildTaskSchedulerHeader()
+        {
+            string baseTitle = Loc.T("Tray.TasksRoot", "自动化任务");
+            string status = IsGlobalEnabled ? Loc.T("Tray.Running", "运行中") : Loc.T("Tray.Paused", "已暂停");
+            return $"{baseTitle} ({status})";
+        }
+
+        private void UpdateTrayHeader()
+        {
+            if (_trayRoot == null) return;
+            var d = Context?.Dispatcher;
+            if (d != null && !d.CheckAccess())
+            {
+                d.BeginInvoke(new Action(UpdateTrayHeader));
+                return;
+            }
+            _trayRoot.Header = BuildTaskSchedulerHeader();
         }
 
         public void SetGlobalEnabled(bool enabled)
@@ -86,6 +114,7 @@ namespace CarroDesk.Modules.TaskScheduler
                 var configMgr = Context?.GetService<IConfigManager>();
                 configMgr?.SaveModuleConfig(Id, Config);
             }
+            UpdateTrayHeader();
             RequestRefreshSelf();
         }
 
@@ -108,8 +137,9 @@ namespace CarroDesk.Modules.TaskScheduler
             var root = new TrayMenuItem
             {
                 Id = "task_scheduler_root",
-                Header = Loc.T("Tray.Tasks", "自动化计划任务")
+                Header = BuildTaskSchedulerHeader()
             };
+            _trayRoot = root;
 
             root.Children.Add(new TrayMenuItem
             {

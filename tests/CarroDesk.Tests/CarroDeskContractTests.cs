@@ -1,10 +1,15 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using CarroDesk.Core;
 using CarroDesk.Core.Models;
 using CarroDesk.Host.Services;
+using CarroDesk.Modules.AppAutoMute;
 using CarroDesk.Modules.AudioSwitch;
+using CarroDesk.Modules.ScreenLock;
+using CarroDesk.Modules.TaskScheduler;
+using CarroDesk.Services;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace CarroDesk.Tests
@@ -90,6 +95,78 @@ namespace CarroDesk.Tests
             // 空值安全
             Assert.AreEqual(string.Empty, module.GetDeviceShortName(null));
             Assert.AreEqual(string.Empty, module.GetDeviceShortName("   "));
+        }
+
+        [TestMethod]
+        public void ScreenLockModule_GetTrayMenuItems_ReturnsSingleRootItem_WithExpectedChildren()
+        {
+            var configService = new ConfigService();
+            var module = new ScreenLockModule(configService);
+
+            var items = module.GetTrayMenuItems()?.ToList();
+            Assert.IsNotNull(items);
+            Assert.AreEqual(1, items.Count, "ScreenLockModule 应按照二级收敛规范严格只输出 1 个根菜单项");
+
+            var root = items[0];
+            Assert.AreEqual("screenlock_root", root.Id);
+            Assert.IsTrue(root.Header.Contains("屏幕保护"), $"根项 Header 应包含模块名，实际: {root.Header}");
+            Assert.IsTrue(root.Children.Count >= 3, "二级菜单应包含立即锁定、档位、暂停等选项");
+
+            Assert.IsTrue(root.Children.Any(c => c.Id == "screenlock_lock_now"), "二级菜单应包含立即锁定");
+            Assert.IsTrue(root.Children.Any(c => c.Id == "screenlock_idle_root"), "二级菜单应包含空闲锁定");
+            Assert.IsTrue(root.Children.Any(c => c.Id == "screenlock_pause_root"), "二级菜单应包含暂停计时");
+        }
+
+        [TestMethod]
+        public void AppAutoMuteModule_GetTrayMenuItems_ReturnsSingleRootItem_WithExpectedChildren()
+        {
+            var module = new AppAutoMuteModule();
+
+            var items = module.GetTrayMenuItems()?.ToList();
+            Assert.IsNotNull(items);
+            Assert.AreEqual(1, items.Count, "AppAutoMuteModule 应按照二级收敛规范严格只输出 1 个根菜单项");
+
+            var root = items[0];
+            Assert.AreEqual("appautomute_root", root.Id);
+            Assert.IsTrue(root.Header.Contains("应用后台静音"), $"根项 Header 应包含模块名，实际: {root.Header}");
+
+            Assert.IsTrue(root.Children.Any(c => c.Id == "appautomute_toggle"), "二级菜单应包含总开关");
+            Assert.IsTrue(root.Children.Any(c => c.Id == "appautomute_settings"), "二级菜单应包含设置窗口项");
+        }
+
+        [TestMethod]
+        public void TaskSchedulerModule_GetTrayMenuItems_ReturnsSingleRootItem_WithExpectedChildren()
+        {
+            var module = new TaskSchedulerModule();
+
+            var items = module.GetTrayMenuItems()?.ToList();
+            Assert.IsNotNull(items);
+            Assert.AreEqual(1, items.Count, "TaskSchedulerModule 应按照二级收敛规范严格只输出 1 个根菜单项");
+
+            var root = items[0];
+            Assert.AreEqual("task_scheduler_root", root.Id);
+            Assert.IsTrue(root.Header.Contains("自动化任务"), $"根项 Header 应包含模块名，实际: {root.Header}");
+
+            Assert.IsTrue(root.Children.Any(c => c.Id == "task_scheduler_toggle"), "二级菜单应包含启用总开关");
+            Assert.IsTrue(root.Children.Any(c => c.Id == "task_scheduler_manual"), "二级菜单应包含手动运行");
+            Assert.IsTrue(root.Children.Any(c => c.Id == "task_scheduler_recent"), "二级菜单应包含最近运行");
+            Assert.IsTrue(root.Children.Any(c => c.Id == "task_scheduler_editor"), "二级菜单应包含任务编辑器");
+            Assert.IsTrue(root.Children.Any(c => c.Id == "task_scheduler_reload"), "二级菜单应包含重载任务");
+        }
+
+        [TestMethod]
+        public void AudioSwitchModule_GetTrayMenuItems_ReturnsSingleRootItem()
+        {
+            var module = new AudioSwitchModule();
+
+            var items = module.GetTrayMenuItems()?.ToList();
+            Assert.IsNotNull(items);
+            Assert.AreEqual(1, items.Count, "AudioSwitchModule 应按照二级收敛规范严格只输出 1 个根菜单项");
+
+            var root = items[0];
+            Assert.AreEqual("audioswitch_root", root.Id);
+            Assert.IsTrue(root.Header.Contains("音频输出设备"), $"根项 Header 应包含音频输出设备，实际: {root.Header}");
+            Assert.IsTrue(root.Children.Any(c => c.Id == "audioswitch_fast_toggle"), "二级菜单应包含快捷切换");
         }
 
         private sealed class StubLogger : ILoggerService

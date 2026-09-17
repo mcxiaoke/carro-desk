@@ -5,6 +5,7 @@ using System.Windows.Threading;
 using CarroDesk.Core;
 using CarroDesk.Core.Models;
 using CarroDesk.Modules.AppAutoMute.Models;
+using CarroDesk.Services.Localization;
 
 namespace CarroDesk.Modules.AppAutoMute
 {
@@ -24,7 +25,8 @@ namespace CarroDesk.Modules.AppAutoMute
         private readonly DispatcherTimer _unmuteTimer;
 
         private string _lastTargetProc;
-        private TrayMenuItem _trayItem;
+        private TrayMenuItem _trayRoot;
+        private TrayMenuItem _toggleItem;
 
         public bool IsEnabledUser => Config != null && Config.Enabled;
 
@@ -70,9 +72,16 @@ namespace CarroDesk.Modules.AppAutoMute
             base.OnConfigReloaded();
             UnregisterHotkey();
             RegisterHotkey();
-            if (_trayItem != null)
+            SetCheckedSelf(IsEnabledUser);
+        }
+
+        public override void OnLanguageChanged()
+        {
+            base.OnLanguageChanged();
+            UpdateTrayHeader();
+            if (_toggleItem != null)
             {
-                _trayItem.IsChecked = IsEnabledUser;
+                _toggleItem.Header = Loc.T("Tray.AutoMuteToggle", "启用后台自动静音");
             }
         }
 
@@ -131,17 +140,36 @@ namespace CarroDesk.Modules.AppAutoMute
             }
         }
 
+        public string BuildAutoMuteHeader()
+        {
+            string baseTitle = Loc.T("Tray.AutoMuteRoot", "应用后台静音");
+            string status = IsEnabledUser ? Loc.T("Tray.Enabled", "已启用") : Loc.T("Tray.Disabled", "已禁用");
+            return $"{baseTitle} ({status})";
+        }
+
+        private void UpdateTrayHeader()
+        {
+            if (_trayRoot == null) return;
+            var d = Context?.Dispatcher;
+            if (d != null && !d.CheckAccess())
+            {
+                d.BeginInvoke(new Action(UpdateTrayHeader));
+                return;
+            }
+            _trayRoot.Header = BuildAutoMuteHeader();
+        }
+
         /// <summary>节点属性变更若在后台线程触发，模块自行 Dispatcher 封送回 UI（规范 §4.3）。</summary>
         private void SetCheckedSelf(bool value)
         {
-            if (_trayItem == null) return;
             var d = Context?.Dispatcher;
             if (d != null && !d.CheckAccess())
             {
                 d.BeginInvoke(new Action(() => SetCheckedSelf(value)));
                 return;
             }
-            _trayItem.IsChecked = value;
+            if (_toggleItem != null) _toggleItem.IsChecked = value;
+            if (_trayRoot != null) _trayRoot.Header = BuildAutoMuteHeader();
         }
 
         private void OnForegroundChanged(IntPtr hwnd, string procName)
@@ -238,23 +266,35 @@ namespace CarroDesk.Modules.AppAutoMute
 
         public override IEnumerable<TrayMenuItem> GetTrayMenuItems()
         {
+            // 按模块二级聚合规范：本模块仅输出单一根节点，总开关与设置项收敛入二级菜单
             var items = new List<TrayMenuItem>();
 
-            _trayItem = new TrayMenuItem
+            var root = new TrayMenuItem
+            {
+                Id = "appautomute_root",
+                Header = BuildAutoMuteHeader(),
+                ToolTip = Loc.T("Tray.AppAutoMute", "应用后台自动静音")
+            };
+            _trayRoot = root;
+
+            // 1. 启用/禁用总开关
+            _toggleItem = new TrayMenuItem
             {
                 Id = "appautomute_toggle",
-                Header = "应用后台自动静音",
+                Header = Loc.T("Tray.AutoMuteToggle", "启用后台自动静音"),
                 InputGestureText = Config?.Hotkey ?? "Ctrl+Win+S",
                 IsChecked = IsEnabledUser,
                 ClickAction = () => ToggleEnabled()
             };
+            root.Children.Add(_toggleItem);
 
-            items.Add(_trayItem);
+            root.Children.Add(TrayMenuItem.Separator());
 
-            items.Add(new TrayMenuItem
+            // 2. 独立设置入口
+            root.Children.Add(new TrayMenuItem
             {
                 Id = "appautomute_settings",
-                Header = "后台静音设置...",
+                Header = Loc.T("Tray.AppAutoMuteSettings", "后台静音设置..."),
                 ClickAction = () =>
                 {
                     try
@@ -270,6 +310,7 @@ namespace CarroDesk.Modules.AppAutoMute
                 }
             });
 
+            items.Add(root);
             return items;
         }
 

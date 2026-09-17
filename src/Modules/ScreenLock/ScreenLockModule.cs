@@ -83,6 +83,13 @@ namespace CarroDesk.Modules.ScreenLock
             {
                 Controller.ApplyPinFromConfig();
             }
+            UpdateTrayHeaderAndToolTip();
+        }
+
+        public override void OnLanguageChanged()
+        {
+            base.OnLanguageChanged();
+            UpdateTrayHeaderAndToolTip();
         }
 
         private void OnIdleTick(TimeSpan rawIdle)
@@ -213,6 +220,8 @@ namespace CarroDesk.Modules.ScreenLock
             return Config != null && !string.IsNullOrEmpty(Config.PinHash) && !string.IsNullOrEmpty(Config.PinSalt);
         }
 
+        private TrayMenuItem _trayRoot;
+
         public void SetIdleMinutes(int mins)
         {
             if (Config != null)
@@ -222,12 +231,14 @@ namespace CarroDesk.Modules.ScreenLock
                 configMgr?.SaveModuleConfig(Id, Config);
             }
             ResetIdleMachine();
+            UpdateTrayHeaderAndToolTip();
             RequestTrayRefreshSelf();
         }
 
         public void PauseFor(TimeSpan span)
         {
             _pauseUntil = DateTime.Now.Add(span);
+            UpdateTrayHeaderAndToolTip();
             RequestTrayRefreshSelf();
         }
 
@@ -235,7 +246,63 @@ namespace CarroDesk.Modules.ScreenLock
         {
             _pauseUntil = DateTime.MinValue;
             ResetIdleMachine();
+            UpdateTrayHeaderAndToolTip();
             RequestTrayRefreshSelf();
+        }
+
+        public string BuildScreenLockHeader()
+        {
+            string baseTitle = Loc.T("Tray.ScreenLockRoot", "屏幕保护");
+            string status;
+            if (IsPaused)
+            {
+                status = Loc.T("Tray.Paused", "已暂停");
+            }
+            else
+            {
+                int mins = Config != null ? Config.IdleMinutes : 0;
+                if (mins <= 0)
+                {
+                    status = Loc.T("Tray.Disabled", "已禁用");
+                }
+                else
+                {
+                    status = Loc.T("Tray.IdleMinutesFormat", mins);
+                }
+            }
+            return $"{baseTitle} ({status})";
+        }
+
+        public string BuildScreenLockToolTip()
+        {
+            if (IsPaused)
+            {
+                return Loc.T("Tray.StatusPausedDetail", PauseUntil);
+            }
+            int mins = Config != null ? Config.IdleMinutes : 0;
+            if (mins <= 0)
+            {
+                return Loc.T("Tray.StatusDisabledDetail", "空闲锁定已禁用");
+            }
+            return Loc.T("Tray.StatusIdleDetail", mins);
+        }
+
+        private void UpdateTrayHeaderAndToolTip()
+        {
+            SetTrayItemSelf(BuildScreenLockHeader(), BuildScreenLockToolTip());
+        }
+
+        private void SetTrayItemSelf(string header, string toolTip)
+        {
+            if (_trayRoot == null) return;
+            var d = Context?.Dispatcher;
+            if (d != null && !d.CheckAccess())
+            {
+                d.BeginInvoke(new Action(() => SetTrayItemSelf(header, toolTip)));
+                return;
+            }
+            _trayRoot.Header = header;
+            _trayRoot.ToolTip = toolTip;
         }
 
         private void RequestTrayRefreshSelf()
@@ -245,20 +312,31 @@ namespace CarroDesk.Modules.ScreenLock
 
         public override IEnumerable<TrayMenuItem> GetTrayMenuItems()
         {
-            // 托盘业务项全量并入本模块（规范 §4.1/§4.4）
+            // 按模块二级聚合规范：本模块仅输出单一根节点，所有控制项收敛入二级菜单
             var items = new List<TrayMenuItem>();
             int currentMinutes = Config != null ? Config.IdleMinutes : 0;
 
+            var root = new TrayMenuItem
+            {
+                Id = "screenlock_root",
+                Header = BuildScreenLockHeader(),
+                ToolTip = BuildScreenLockToolTip()
+            };
+            _trayRoot = root;
+
+            // 1. 核心动作置顶：立即锁定
             var lockItem = new TrayMenuItem
             {
                 Id = "screenlock_lock_now",
-                Header = Loc.T("Tray.LockNow", "立即锁屏"),
+                Header = Loc.T("Tray.LockNow", "立即锁定"),
                 InputGestureText = "Win+L (仿真)",
                 ClickAction = () => LockSafe()
             };
-            items.Add(lockItem);
+            root.Children.Add(lockItem);
 
-            // 空闲锁定档位：当前档位用 IsChecked 表达，"0-禁用" 即禁用态
+            root.Children.Add(TrayMenuItem.Separator());
+
+            // 2. 空闲锁定档位：当前档位用 IsChecked 表达，"0-禁用" 即禁用态
             var idleRoot = new TrayMenuItem
             {
                 Id = "screenlock_idle_root",
@@ -269,9 +347,9 @@ namespace CarroDesk.Modules.ScreenLock
             {
                 AddIdlePreset(idleRoot, m, Loc.T("Tray.IdleMinutesFormat", m), currentMinutes);
             }
-            items.Add(idleRoot);
+            root.Children.Add(idleRoot);
 
-            // 暂停计时：暂停态以其根节点 IsChecked 表达（§4.4），子项执行暂停/恢复
+            // 3. 暂停计时：暂停态以其根节点 IsChecked 表达
             var pauseRoot = new TrayMenuItem
             {
                 Id = "screenlock_pause_root",
@@ -298,8 +376,9 @@ namespace CarroDesk.Modules.ScreenLock
                 IsChecked = IsPaused,
                 ClickAction = () => ResumeIdle()
             });
-            items.Add(pauseRoot);
+            root.Children.Add(pauseRoot);
 
+            items.Add(root);
             return items;
         }
 
