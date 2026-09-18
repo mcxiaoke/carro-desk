@@ -336,7 +336,7 @@ namespace CarroDesk.Modules.MyFeature.Models
 ### 6.3 Win32 / 系统原生消息监听范式（HWND 与 STA 约束）
 
 当模块需要监听 Windows 系统广播（如剪贴板变更 `WM_CLIPBOARDUPDATE`、设备插拔 `WM_DEVICECHANGE`、电源变化 `WM_POWERBROADCAST`）时：
-1. **轻量原生消息窗**：推荐继承 `System.Windows.Forms.NativeWindow`（参考 `HotkeyService`），在 STA 线程通过 `CreateHandle(new CreateParams())` 创建纯消息隐形窗口，无需额外渲染 WPF Window。
+1. **轻量原生消息窗（零依赖 WinForms）**：推荐使用 WPF 原生 `System.Windows.Interop.HwndSource`（父句柄设为 `HWND_MESSAGE (-3)`，参考 `HotkeyService` 与 `Win32ClipboardListener`），在 STA 线程创建纯消息隐形窗口，零额外渲染开销且不引入 WinForms 依赖。
 2. **STA 线程与 COM 边界**：
    - 诸如 `Clipboard.GetText()` 等 Windows Shell/OLE API 必须在 **STA 线程**（或调度回 `Context.Dispatcher`）中执行，严禁直接在 MTA 后台线程调用。
 3. **并发竞争与重试保护**：

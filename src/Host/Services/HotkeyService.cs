@@ -1,13 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
-using System.Windows.Forms;
+using System.Windows.Interop;
 using CarroDesk.Core;
 using CarroDesk.Models;
 
 namespace CarroDesk.Services.Tasks
 {
-    internal class HotkeyService : NativeWindow, IDisposable, IHotkeyService
+    internal class HotkeyService : IDisposable, IHotkeyService
     {
         [DllImport("user32.dll", SetLastError = true)]
         private static extern bool RegisterHotKey(IntPtr hWnd, int id, int fsModifiers, int vk);
@@ -16,12 +16,15 @@ namespace CarroDesk.Services.Tasks
         private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
 
         private const int WM_HOTKEY = 0x0312;
+        private static readonly IntPtr HWND_MESSAGE = new IntPtr(-3);
 
         private static HotkeyService _instance;
         private static readonly object _lock = new object();
         private int _nextId = 0x1000;
-        private Dictionary<int, Action> _map = new Dictionary<int, Action>();
-        private Dictionary<int, string> _owner = new Dictionary<int, string>();
+        private readonly Dictionary<int, Action> _map = new Dictionary<int, Action>();
+        private readonly Dictionary<int, string> _owner = new Dictionary<int, string>();
+        private readonly Dictionary<uint, int> _chordToId = new Dictionary<uint, int>();
+        private HwndSource _hwndSource;
         private bool _created;
 
         public static HotkeyService Instance
@@ -40,12 +43,18 @@ namespace CarroDesk.Services.Tasks
         {
             try
             {
-                CreateParams cp = new CreateParams();
-                cp.Caption = "ScreenLock_Hotkey";
-                this.CreateHandle(cp);
+                var parameters = new HwndSourceParameters("CarroDesk_HotkeyService")
+                {
+                    ParentWindow = HWND_MESSAGE
+                };
+                _hwndSource = new HwndSource(parameters);
+                _hwndSource.AddHook(WndProc);
                 _created = true;
             }
-            catch { }
+            catch
+            {
+                _created = false;
+            }
         }
 
         public int Register(string hotkey, Action callback, out string error)
@@ -61,7 +70,12 @@ namespace CarroDesk.Services.Tasks
         private int RegisterCore(string moduleId, string hotkey, Action callback, out string error)
         {
             error = null;
-            if (!_created) { error = "hotkey window not created"; return 0; }
+            if (!_created || _hwndSource == null || _hwndSource.Handle == IntPtr.Zero)
+            {
+                error = "hotkey window not created";
+                return 0;
+            }
+
             int mods, vk;
             string err;
             if (!HotkeyHelper.TryParse(hotkey, out mods, out vk, out err))
@@ -69,20 +83,34 @@ namespace CarroDesk.Services.Tasks
                 error = err;
                 return 0;
             }
-            int id = ++_nextId;
-            bool ok = RegisterHotKey(this.Handle, id, mods, vk);
-            if (!ok)
-            {
-                int e = Marshal.GetLastWin32Error();
-                error = "RegisterHotKey failed code=" + e + " (maybe in use)";
-                return 0;
-            }
+
+            uint chord = ((uint)mods << 16) | (uint)vk;
+
             lock (_lock)
             {
+                // 内部冲突检测
+                if (_chordToId.TryGetValue(chord, out int existingId) && _owner.TryGetValue(existingId, out string existingModule))
+                {
+                    error = $"快捷键 '{hotkey}' 与内部模块 [{existingModule}] 冲突";
+                    return 0;
+                }
+
+                int id = ++_nextId;
+                bool ok = RegisterHotKey(_hwndSource.Handle, id, mods, vk);
+                if (!ok)
+                {
+                    int e = Marshal.GetLastWin32Error();
+                    error = e == 1409
+                        ? $"快捷键 '{hotkey}' 已被系统或其他外部程序占用 (Win32: 1409)"
+                        : $"RegisterHotKey failed code={e}";
+                    return 0;
+                }
+
                 _map[id] = callback;
                 _owner[id] = moduleId ?? "unknown";
+                _chordToId[chord] = id;
+                return id;
             }
-            return id;
         }
 
         public void Unregister(int id)
@@ -98,11 +126,31 @@ namespace CarroDesk.Services.Tasks
         private void UnregisterCore(int id)
         {
             if (id == 0) return;
-            try { UnregisterHotKey(this.Handle, id); } catch { }
             lock (_lock)
             {
+                if (_hwndSource != null && _hwndSource.Handle != IntPtr.Zero)
+                {
+                    try { UnregisterHotKey(_hwndSource.Handle, id); } catch { }
+                }
+
                 _map.Remove(id);
                 _owner.Remove(id);
+
+                uint keyToRemove = 0;
+                bool found = false;
+                foreach (var kv in _chordToId)
+                {
+                    if (kv.Value == id)
+                    {
+                        keyToRemove = kv.Key;
+                        found = true;
+                        break;
+                    }
+                }
+                if (found)
+                {
+                    _chordToId.Remove(keyToRemove);
+                }
             }
         }
 
@@ -125,36 +173,46 @@ namespace CarroDesk.Services.Tasks
             }
         }
 
-        protected override void WndProc(ref Message m)
+        private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
         {
-            if (m.Msg == WM_HOTKEY)
+            if (msg == WM_HOTKEY)
             {
-                int id = m.WParam.ToInt32();
+                int id = wParam.ToInt32();
                 Action cb = null;
                 lock (_lock) _map.TryGetValue(id, out cb);
                 if (cb != null)
                 {
                     try { cb(); } catch { }
+                    handled = true;
                 }
             }
-            base.WndProc(ref m);
+            return IntPtr.Zero;
         }
 
         public void Dispose()
         {
-            try
+            lock (_lock)
             {
-                lock (_lock)
+                if (_hwndSource != null)
                 {
                     foreach (var id in new List<int>(_map.Keys))
                     {
-                        try { UnregisterHotKey(this.Handle, id); } catch { }
+                        try { UnregisterHotKey(_hwndSource.Handle, id); } catch { }
                     }
                     _map.Clear();
+                    _owner.Clear();
+                    _chordToId.Clear();
+
+                    try
+                    {
+                        _hwndSource.RemoveHook(WndProc);
+                        _hwndSource.Dispose();
+                    }
+                    catch { }
+                    _hwndSource = null;
+                    _created = false;
                 }
-                if (_created) this.DestroyHandle();
             }
-            catch { }
         }
     }
 }

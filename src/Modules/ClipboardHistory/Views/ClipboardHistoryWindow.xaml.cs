@@ -22,6 +22,7 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
 
             _service.HistoryChanged += OnServiceHistoryChanged;
 
+            Loaded += (s, e) => RefreshList();
             Deactivated += OnWindowDeactivated;
             KeyDown += ClipboardHistoryWindow_KeyDown;
         }

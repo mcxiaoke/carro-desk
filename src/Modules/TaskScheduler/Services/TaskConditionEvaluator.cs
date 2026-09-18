@@ -1,13 +1,27 @@
 using System;
 using System.IO;
 using System.Net.NetworkInformation;
-using System.Windows.Forms;
+using System.Runtime.InteropServices;
 using CarroDesk.Models;
 
 namespace CarroDesk.Services.Tasks
 {
     public static class TaskConditionEvaluator
     {
+        [StructLayout(LayoutKind.Sequential)]
+        private struct SystemPowerStatus
+        {
+            public byte ACLineStatus; // 0 = Offline (Battery), 1 = Online (AC), 255 = Unknown
+            public byte BatteryFlag;
+            public byte BatteryLifePercent;
+            public byte SystemStatusFlag;
+            public int BatteryLifeTime;
+            public int BatteryFullLifeTime;
+        }
+
+        [DllImport("kernel32.dll")]
+        private static extern bool GetSystemPowerStatus(out SystemPowerStatus status);
+
         public static bool ShouldRun(TaskDefinition task, out string skipReason)
         {
             skipReason = null;
@@ -33,11 +47,13 @@ namespace CarroDesk.Services.Tasks
             {
                 try
                 {
-                    var status = SystemInformation.PowerStatus;
-                    if (status.PowerLineStatus != PowerLineStatus.Online)
+                    if (GetSystemPowerStatus(out var status))
                     {
-                        skipReason = "when.acPower: not on AC";
-                        return false;
+                        if (status.ACLineStatus != 1)
+                        {
+                            skipReason = "when.acPower: not on AC";
+                            return false;
+                        }
                     }
                 }
                 catch { }

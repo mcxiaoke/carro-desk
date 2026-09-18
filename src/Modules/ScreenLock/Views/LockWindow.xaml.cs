@@ -45,7 +45,7 @@ namespace CarroDesk.Views
         private readonly ILockService _lockService;
         private readonly ILockAppearance _appearance;
         private readonly bool _primary;
-        private readonly System.Drawing.Rectangle _bounds;
+        private readonly CarroDesk.Common.DisplayMonitorInfo _monitor;
         private readonly DispatcherTimer _keepAliveTimer;
         private readonly DispatcherTimer _uiTimer;
         private readonly DispatcherTimer _deactivateTimer;
@@ -56,19 +56,22 @@ namespace CarroDesk.Views
         private readonly Func<bool> _isShuttingDown;
         private bool IsAppShuttingDown => _isShuttingDown != null ? _isShuttingDown() : false;
 
-        public LockWindow(ILockService lockService, ILockAppearance appearance, System.Windows.Forms.Screen screen, bool primary, Func<bool> isShuttingDown = null)
+        public LockWindow(ILockService lockService, ILockAppearance appearance, CarroDesk.Common.DisplayMonitorInfo monitor, bool primary, Func<bool> isShuttingDown = null)
         {
             InitializeComponent();
             _lockService = lockService;
             _appearance = appearance;
             _primary = primary;
-            _bounds = screen.Bounds;
+            _monitor = monitor;
             _isShuttingDown = isShuttingDown;
 
-            Left = screen.Bounds.Left;
-            Top = screen.Bounds.Top;
-            Width = screen.Bounds.Width;
-            Height = screen.Bounds.Height;
+            if (monitor != null)
+            {
+                Left = monitor.Left;
+                Top = monitor.Top;
+                Width = monitor.Width;
+                Height = monitor.Height;
+            }
             WindowStartupLocation = WindowStartupLocation.Manual;
 
             InputPanel.Visibility = primary ? Visibility.Visible : Visibility.Collapsed;
@@ -106,7 +109,12 @@ namespace CarroDesk.Views
             var hwnd = new WindowInteropHelper(this).Handle;
             int style = GetWindowLong(hwnd, GWL_EXSTYLE);
             SetWindowLong(hwnd, GWL_EXSTYLE, style | WS_EX_TOOLWINDOW);
-            SetWindowPos(hwnd, HWND_TOPMOST, _bounds.Left, _bounds.Top, _bounds.Width, _bounds.Height, SWP_NOACTIVATE);
+
+            int x = _monitor != null ? _monitor.Left : (int)Left;
+            int y = _monitor != null ? _monitor.Top : (int)Top;
+            int w = _monitor != null ? _monitor.Width : (int)Width;
+            int h = _monitor != null ? _monitor.Height : (int)Height;
+            SetWindowPos(hwnd, HWND_TOPMOST, x, y, w, h, SWP_NOACTIVATE);
 
             // 注册 WndProc 拦截 WM_WINDOWPOSCHANGING 以无闪烁方式维持 TOPMOST
             var source = HwndSource.FromHwnd(hwnd);

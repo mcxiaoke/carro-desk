@@ -425,13 +425,12 @@ namespace CarroDesk.Views
         {
             try
             {
-                var dlg = new System.Windows.Forms.FolderBrowserDialog();
-                dlg.Description = Loc.T("Tasks.SelectWorkDir", "选择工作目录");
+                var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
                 string scripts = Services.ConfigService.ScriptsDirPath;
-                if (Directory.Exists(scripts)) dlg.SelectedPath = scripts;
-                if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+                string initial = Directory.Exists(scripts) ? scripts : null;
+                if (CarroDesk.Common.FolderPicker.PickFolder(hwnd, Loc.T("Tasks.SelectWorkDir", "选择工作目录"), initial, out string path))
                 {
-                    WorkDirBox.Text = dlg.SelectedPath;
+                    WorkDirBox.Text = path;
                 }
             }
             catch { }
@@ -441,9 +440,11 @@ namespace CarroDesk.Views
         {
             try
             {
-                var dlg = new System.Windows.Forms.FolderBrowserDialog();
-                dlg.Description = Loc.T("Tasks.SelectWatchDir", "选择监听目录");
-                if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK) WatchPathBox.Text = dlg.SelectedPath;
+                var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+                if (CarroDesk.Common.FolderPicker.PickFolder(hwnd, Loc.T("Tasks.SelectWatchDir", "选择监听目录"), null, out string path))
+                {
+                    WatchPathBox.Text = path;
+                }
             }
             catch { }
         }

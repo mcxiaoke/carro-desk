@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.Windows.Forms;
+using CarroDesk.Common;
 using CarroDesk.Modules.ScreenLock.Models;
 using CarroDesk.Services.Localization;
 using CarroDesk.Views;
@@ -41,9 +41,9 @@ namespace CarroDesk.Services
                         win.CloseSafe();
                     }
                     _lockWindows.Clear();
-                    foreach (Screen screen in Screen.AllScreens)
+                    foreach (var monitor in DisplayMonitorHelper.GetAllMonitors())
                     {
-                        var win = new LockWindow(this, this, screen, screen.Primary, IsShuttingDownProvider);
+                        var win = new LockWindow(this, this, monitor, monitor.IsPrimary, IsShuttingDownProvider);
                         _lockWindows.Add(win);
                         win.Show();
                         win.ActivateIfNeeded();
@@ -79,9 +79,9 @@ namespace CarroDesk.Services
             _locked = true;
             _blocker.Install();
 
-            foreach (Screen screen in Screen.AllScreens)
+            foreach (var monitor in DisplayMonitorHelper.GetAllMonitors())
             {
-                var win = new LockWindow(this, this, screen, screen.Primary, IsShuttingDownProvider);
+                var win = new LockWindow(this, this, monitor, monitor.IsPrimary, IsShuttingDownProvider);
                 _lockWindows.Add(win);
                 win.Show();
                 win.ActivateIfNeeded();
