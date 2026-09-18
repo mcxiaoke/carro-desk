@@ -141,7 +141,10 @@ namespace CarroDesk.Services
 
             _fails++;
             if (_fails >= MaxFreeAttempts)
+            {
                 _blockedUntil = DateTime.Now.AddSeconds((_fails - MaxFreeAttempts + 1) * 30.0);
+                blockRemaining = RemainingBlock();
+            }
             return PinAttemptResult.Wrong;
         }
 

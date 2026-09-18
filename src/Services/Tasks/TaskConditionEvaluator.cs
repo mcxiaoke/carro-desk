@@ -6,7 +6,7 @@ using CarroDesk.Models;
 
 namespace CarroDesk.Services.Tasks
 {
-    internal static class TaskConditionEvaluator
+    public static class TaskConditionEvaluator
     {
         public static bool ShouldRun(TaskDefinition task, out string skipReason)
         {

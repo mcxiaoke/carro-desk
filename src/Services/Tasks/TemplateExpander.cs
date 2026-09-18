@@ -38,8 +38,15 @@ namespace CarroDesk.Services.Tasks
                 if (string.Equals(key, "dir", StringComparison.OrdinalIgnoreCase))
                     return ConfigService.DirPath;
 
+                // 环境变量回退优先匹配
+                string envVal = Environment.GetEnvironmentVariable(key);
+                if (envVal != null)
+                {
+                    return envVal;
+                }
+
                 // 尝试作为 DateTime 格式化串（如 yyyyMMdd, yyyy-MM-dd_HHmmss 等）
-                if (ContainsDateTimeFormatChars(key))
+                if (IsLikelyDateTimeFormat(key))
                 {
                     try
                     {
@@ -51,26 +58,50 @@ namespace CarroDesk.Services.Tasks
                     }
                 }
 
-                // 环境变量回退
-                string envVal = Environment.GetEnvironmentVariable(key);
-                if (envVal != null)
-                {
-                    return envVal;
-                }
-
                 // 无法识别的保留原样
                 return match.Value;
             });
         }
 
-        private static bool ContainsDateTimeFormatChars(string fmt)
+        private static bool IsLikelyDateTimeFormat(string fmt)
         {
+            if (string.IsNullOrWhiteSpace(fmt)) return false;
+
+            bool hasCoreChar = false;
             foreach (char c in fmt)
             {
-                if (c == 'y' || c == 'M' || c == 'd' || c == 'H' || c == 'h' || c == 'm' || c == 's' || c == 'f')
-                    return true;
+                if (c == 'y' || c == 'M' || c == 'd' || c == 'H' || c == 'h' || c == 'm' || c == 's')
+                {
+                    hasCoreChar = true;
+                    break;
+                }
             }
-            return false;
+            if (!hasCoreChar) return false;
+
+            // 格式串中所有非数字字符必须是合法的日期时间占位符或常见分隔符，
+            // 避免任意包含 m, d, s 的普通单词（如 password, custom_var）被意外当成日期解析
+            foreach (char c in fmt)
+            {
+                if (char.IsDigit(c)) continue;
+                switch (c)
+                {
+                    case 'y': case 'Y':
+                    case 'M':
+                    case 'd': case 'D':
+                    case 'h': case 'H':
+                    case 'm':
+                    case 's': case 'S':
+                    case 'f': case 'F':
+                    case 't': case 'T':
+                    case 'z': case 'Z':
+                    case '-': case '_': case ':': case '.': case '/': case ' ':
+                    case '\\': case '\'': case '"':
+                        continue;
+                    default:
+                        return false;
+                }
+            }
+            return true;
         }
     }
 }

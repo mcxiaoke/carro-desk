@@ -16,6 +16,11 @@
     <Compile Include="JsonMigrationTests.cs" />
     <Compile Include="AwakeModuleTests.cs" />
     <Compile Include="ProcessHelperTests.cs" />
+    <Compile Include="PinServiceTests.cs" />
+    <Compile Include="CronHelperTests.cs" />
+    <Compile Include="TemplateExpanderTests.cs" />
+    <Compile Include="ModuleManagerTests.cs" />
+    <Compile Include="TaskConditionEvaluatorTests.cs" />
   </ItemGroup>
 
   <ItemGroup>
