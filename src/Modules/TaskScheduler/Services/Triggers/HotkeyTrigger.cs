@@ -1,4 +1,6 @@
 using System;
+using CarroDesk.Core;
+using CarroDesk.Host.Services;
 using CarroDesk.Models;
 using CarroDesk.Services.Tasks;
 
@@ -8,11 +10,13 @@ namespace CarroDesk.Services.Tasks.Triggers
     {
         public TaskDefinition Task { get; private set; }
         public event Action<TaskDefinition, string> Fired;
+        private readonly IHotkeyService _hotkeyService;
         private int _hotkeyId;
 
-        public HotkeyTrigger(TaskDefinition task)
+        public HotkeyTrigger(TaskDefinition task, IHotkeyService hotkeyService = null)
         {
             Task = task;
+            _hotkeyService = hotkeyService;
         }
 
         public void Start()
@@ -21,7 +25,9 @@ namespace CarroDesk.Services.Tasks.Triggers
             string hotkey = Task.Trigger.Hotkey ?? "";
             if (string.IsNullOrWhiteSpace(hotkey)) return;
             string error;
-            _hotkeyId = HotkeyService.Instance.Register("TaskScheduler", hotkey, OnHotkey, out error);
+            var svc = _hotkeyService ?? HotkeyService.Instance;
+            if (svc == null) return;
+            _hotkeyId = svc.Register("TaskScheduler", hotkey, OnHotkey, out error);
             if (_hotkeyId == 0)
             {
                 TaskLogger.Warn(Task.Name, "hotkey register failed [" + hotkey + "]: " + error);
@@ -42,7 +48,12 @@ namespace CarroDesk.Services.Tasks.Triggers
         {
             if (_hotkeyId != 0)
             {
-                try { HotkeyService.Instance.Unregister("TaskScheduler", _hotkeyId); } catch { }
+                try
+                {
+                    var svc = _hotkeyService ?? HotkeyService.Instance;
+                    svc?.Unregister("TaskScheduler", _hotkeyId);
+                }
+                catch { }
                 _hotkeyId = 0;
             }
         }

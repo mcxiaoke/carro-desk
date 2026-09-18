@@ -12,8 +12,6 @@ namespace CarroDesk.Modules.AppAutoMute
 {
     public class AppAutoMuteModule : ModuleBase<AppAutoMuteConfig>
     {
-        public static AppAutoMuteModule Instance { get; private set; }
-
         public override string Id => "AppAutoMute";
         public override string Name => "应用前后台智能静音";
         public override string Description => "当目标应用位于后台时自动静音，切回前台时自动恢复发声";
@@ -31,11 +29,8 @@ namespace CarroDesk.Modules.AppAutoMute
 
         public bool IsEnabledUser => Config != null && Config.Enabled;
 
-        public Action<string> NotificationCallback { get; set; }
-
         public AppAutoMuteModule()
         {
-            Instance = this;
 
             _muteTimer = new DispatcherTimer();
             _muteTimer.Tick += OnMuteTimerTick;
@@ -127,7 +122,7 @@ namespace CarroDesk.Modules.AppAutoMute
             configMgr?.SaveModuleConfig(Id, Config);
 
             string msg = Config.Enabled ? "应用自动静音已启用" : "应用自动静音已禁用 (已恢复所有声音)";
-            NotificationCallback?.Invoke(msg);
+            Context?.ShowNotification(msg);
 
             if (!Config.Enabled)
             {
@@ -326,7 +321,7 @@ namespace CarroDesk.Modules.AppAutoMute
                     {
                         var cfgMgr = Context?.GetService<IConfigManager>();
                         var audio = Context?.GetService<IAudioService>();
-                        var win = new CarroDesk.Views.AppAutoMuteSettingsWindow(this, cfgMgr, audio, NotificationCallback)
+                        var win = new CarroDesk.Views.AppAutoMuteSettingsWindow(this, cfgMgr, audio, msg => Context?.ShowNotification(msg))
                         {
                             WindowStartupLocation = System.Windows.WindowStartupLocation.CenterScreen
                         };

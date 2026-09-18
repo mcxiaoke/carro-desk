@@ -73,7 +73,6 @@ namespace CarroDesk
             _configManager = new ConfigManager(rawConfig);
             Services.AddSingleton<ConfigManager>(_configManager);
             Services.AddSingleton<IConfigManager>(_configManager);
-            Services.AddSingleton<IConfigRegistry>(_configManager);
 
             // PIN 能力下沉 Host（规范 §3.5）：缺模块仍按"有 PIN 则验"兜底
             var hostPinService = new HostPinService(rawConfig);
@@ -137,39 +136,24 @@ namespace CarroDesk
                 (msg, title) => ShowBalloon(msg));
             _trayController.Attach(_trayMenu);
 
-            _screenLockModule = new ScreenLockModule(rawConfig)
-            {
-                BalloonNotifier = ShowBalloon
-            };
+            _screenLockModule = new ScreenLockModule();
             _screenLockModule.Controller.IsShuttingDownProvider = () => IsShuttingDown;
             Modules.RegisterModule(_screenLockModule);
 
-            var taskSchedulerModule = new TaskSchedulerModule(rawConfig);
+            var taskSchedulerModule = new TaskSchedulerModule();
             Modules.RegisterModule(taskSchedulerModule);
             Services.AddSingleton<ITaskSchedulerService>(sp => taskSchedulerModule.Scheduler);
 
-            var audioSwitchModule = new AudioSwitchModule()
-            {
-                NotificationCallback = ShowBalloon
-            };
+            var audioSwitchModule = new AudioSwitchModule();
             Modules.RegisterModule(audioSwitchModule);
 
-            var appAutoMuteModule = new AppAutoMuteModule()
-            {
-                NotificationCallback = ShowBalloon
-            };
+            var appAutoMuteModule = new AppAutoMuteModule();
             Modules.RegisterModule(appAutoMuteModule);
 
-            var monitorProfileModule = new CarroDesk.Modules.MonitorProfile.MonitorProfileModule()
-            {
-                NotificationCallback = ShowBalloon
-            };
+            var monitorProfileModule = new CarroDesk.Modules.MonitorProfile.MonitorProfileModule();
             Modules.RegisterModule(monitorProfileModule);
 
-            var awakeModule = new AwakeModule()
-            {
-                NotificationCallback = ShowBalloon
-            };
+            var awakeModule = new AwakeModule();
             Modules.RegisterModule(awakeModule);
 
             // 5. 初始化并启动模块
@@ -247,7 +231,9 @@ namespace CarroDesk
             UpdateTrayText();
             if (_tbIcon != null)
             {
-                string balloonMsg = Loc.T("Tray.BalloonConfigReloaded", c.IdleMinutes);
+                var slConfig = _configManager?.GetModuleConfig<CarroDesk.Modules.ScreenLock.Models.ScreenLockConfig>("ScreenLock");
+                int idleMins = slConfig?.IdleMinutes ?? 5;
+                string balloonMsg = Loc.T("Tray.BalloonConfigReloaded", idleMins);
                 _tbIcon.ShowBalloonTip("CarroDesk", balloonMsg, BalloonIcon.Info);
             }
         }

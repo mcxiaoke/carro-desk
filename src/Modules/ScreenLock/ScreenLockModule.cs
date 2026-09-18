@@ -11,8 +11,6 @@ namespace CarroDesk.Modules.ScreenLock
 {
     public class ScreenLockModule : ModuleBase<ScreenLockConfig>, IExitGuard
     {
-        public static ScreenLockModule Instance { get; private set; }
-
         public override string Id => "ScreenLock";
         public override string Name => Loc.T("Tray.ScreenLockTitle", "屏幕锁定与闲时保护");
         public override string Description => "提供闲时伪锁屏保护、PIN验证与键盘输入防御";
@@ -36,48 +34,9 @@ namespace CarroDesk.Modules.ScreenLock
         public DateTime PauseUntil => _pauseUntil;
         public bool IsPaused => DateTime.Now < _pauseUntil;
 
-        public Action<string> BalloonNotifier { get; set; }
-
-        private readonly ConfigService _configService;
-
-        public ScreenLockModule(ConfigService configService)
+        public ScreenLockModule()
         {
-            Instance = this;
-            _configService = configService;
-            Controller = new LockController(configService);
-        }
-
-        public override void RegisterConfig(IConfigRegistry registry)
-        {
-            registry?.Register<ScreenLockConfig>(Id,
-                () =>
-                {
-                    var s = _configService?.Current ?? new CarroDesk.Models.AppSettings();
-                    return new ScreenLockConfig
-                    {
-                        IdleMinutes = s.IdleMinutes,
-                        PinHash = s.PinHash,
-                        PinSalt = s.PinSalt,
-                        ShowClock = s.ShowClock,
-                        OverlayOpacity = s.OverlayOpacity,
-                        ExcludeProcesses = s.ExcludeProcesses != null ? new List<string>(s.ExcludeProcesses) : new List<string>(),
-                        UnlockOnResume = s.UnlockOnResume,
-                        Enabled = true
-                    };
-                },
-                cfg =>
-                {
-                    if (cfg == null || _configService?.Current == null) return;
-                    var s = _configService.Current;
-                    s.IdleMinutes = cfg.IdleMinutes;
-                    s.PinHash = cfg.PinHash;
-                    s.PinSalt = cfg.PinSalt;
-                    s.ShowClock = cfg.ShowClock;
-                    s.OverlayOpacity = cfg.OverlayOpacity;
-                    s.ExcludeProcesses = cfg.ExcludeProcesses != null ? new List<string>(cfg.ExcludeProcesses) : new List<string>();
-                    s.UnlockOnResume = cfg.UnlockOnResume;
-                    _configService.Save();
-                });
+            Controller = new LockController(() => Context?.GetService<IPinService>(), () => Config);
         }
 
         protected override void OnStart()
@@ -213,7 +172,7 @@ namespace CarroDesk.Modules.ScreenLock
 
         private void OnIdleWarning()
         {
-            BalloonNotifier?.Invoke(Loc.T("Tray.BalloonIdleWarn", Config?.IdleMinutes ?? 5));
+            Context?.ShowNotification(Loc.T("Tray.BalloonIdleWarn", Config?.IdleMinutes ?? 5));
         }
 
         private void OnControllerUnlocked()
@@ -252,8 +211,8 @@ namespace CarroDesk.Modules.ScreenLock
 
         public bool RequestBlockExit()
         {
-            // 已设置 PIN 时阻止退出并让 Host 弹挑战；未设 PIN 则放行
-            return Config != null && !string.IsNullOrEmpty(Config.PinHash) && !string.IsNullOrEmpty(Config.PinSalt);
+            var pinService = Context?.GetService<IPinService>();
+            return pinService?.IsConfigured ?? false;
         }
 
         private TrayMenuItem _trayRoot;

@@ -31,7 +31,19 @@ namespace CarroDesk.Services
         public bool Verify(string pin)
         {
             BuildFromCurrent();
-            return _inner.Verify(pin);
+            bool ok = _inner.Verify(pin);
+            if (ok && _inner.JustUpgraded)
+            {
+                var c = Current();
+                if (c != null)
+                {
+                    c.PinSalt = _inner.Salt;
+                    c.PinHash = _inner.Hash;
+                    _config?.Save();
+                    _inner.ClearUpgraded();
+                }
+            }
+            return ok;
         }
 
         public void SetNewPin(string pin)

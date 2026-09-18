@@ -4,7 +4,7 @@ using System.Text;
 
 namespace CarroDesk.Services
 {
-    public class PinService
+    public class PinService : IPinService
     {
         private const int Pbkdf2Iterations = 100000;
 
@@ -107,16 +107,20 @@ namespace CarroDesk.Services
     {
         private const int MaxFreeAttempts = 5;
 
-        private readonly PinService _pin;
+        private readonly Func<IPinService> _pinProvider;
         private int _fails;
         private DateTime _blockedUntil = DateTime.MinValue;
 
-        public PinGuard(PinService pin)
+        public PinGuard(Func<IPinService> pinProvider)
         {
-            _pin = pin;
+            _pinProvider = pinProvider;
         }
 
-        public void Reload(PinService pin)
+        public PinGuard(IPinService pin) : this(() => pin)
+        {
+        }
+
+        public void Reload(IPinService pin)
         {
             _fails = 0;
             _blockedUntil = DateTime.MinValue;
@@ -133,7 +137,8 @@ namespace CarroDesk.Services
             blockRemaining = RemainingBlock();
             if (blockRemaining > TimeSpan.Zero) return PinAttemptResult.Blocked;
 
-            if (_pin.Verify(pin))
+            var pinService = _pinProvider?.Invoke();
+            if (pinService != null && pinService.Verify(pin))
             {
                 Reset();
                 return PinAttemptResult.Success;

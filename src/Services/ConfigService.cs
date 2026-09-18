@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using CarroDesk.Common;
 using CarroDesk.Models;
@@ -68,11 +69,10 @@ namespace CarroDesk.Services
 
         public AppSettings Current { get; private set; }
 
-        // 模块专属配置（JSON 字符串槽），随 config.json 一起落盘，避免模块配置仅存内存
-        public string AudioSwitchJson { get; set; } = "";
-        public string AppAutoMuteJson { get; set; } = "";
-        public string MonitorProfileJson { get; set; } = "";
-        public string AwakeJson { get; set; } = "";
+        private static readonly HashSet<string> HostSettingNames = new HashSet<string>(
+            typeof(AppSettings).GetProperties().Select(p => p.Name),
+            StringComparer.OrdinalIgnoreCase
+        );
 
         private static readonly JsonSerializerSettings SerializerSettings = new JsonSerializerSettings
         {
@@ -166,7 +166,7 @@ namespace CarroDesk.Services
                         _moduleConfigs.Clear();
                         foreach (var prop in obj.Properties())
                         {
-                            if (IsCoreAppSetting(prop.Name)) continue;
+                            if (HostSettingNames.Contains(prop.Name)) continue;
                             var val = prop.Value;
                             if (val != null && val.Type == JTokenType.String)
                             {
@@ -178,12 +178,6 @@ namespace CarroDesk.Services
                             }
                             _moduleConfigs[prop.Name] = val;
                         }
-
-                        // 模块专属配置槽提取（兼容向后属性访问）
-                        this.AudioSwitchJson = GetModuleRawJson("AudioSwitch");
-                        this.AppAutoMuteJson = GetModuleRawJson("AppAutoMute");
-                        this.MonitorProfileJson = GetModuleRawJson("MonitorProfile");
-                        this.AwakeJson = GetModuleRawJson("Awake");
 
                         return AppSettings.Merge(s);
                     }
@@ -205,73 +199,18 @@ namespace CarroDesk.Services
             return new AppSettings();
         }
 
-        private static bool IsCoreAppSetting(string name)
-        {
-            switch (name)
-            {
-                case "IdleMinutes":
-                case "AutoStart":
-                case "ShowClock":
-                case "OverlayOpacity":
-                case "PinSalt":
-                case "PinHash":
-                case "TasksEnabled":
-                case "UnlockOnResume":
-                case "Language":
-                case "ExcludeProcesses":
-                case "FloatingPanelHotkey":
-                case "FloatingPanelPosition":
-                case "FloatingPanelPinned":
-                case "FloatingPanelLocked":
-                case "FloatingPanelX":
-                case "FloatingPanelY":
-                    return true;
-                default:
-                    return false;
-            }
-        }
-
         private readonly Dictionary<string, JToken> _moduleConfigs = new Dictionary<string, JToken>(StringComparer.OrdinalIgnoreCase);
 
         public JToken GetModuleToken(string moduleId)
         {
             if (string.IsNullOrEmpty(moduleId)) return null;
-            if (_moduleConfigs.TryGetValue(moduleId, out var token)) return token;
-
-            if (string.Equals(moduleId, "AudioSwitch", StringComparison.OrdinalIgnoreCase)) return TryParseToken(AudioSwitchJson);
-            if (string.Equals(moduleId, "AppAutoMute", StringComparison.OrdinalIgnoreCase)) return TryParseToken(AppAutoMuteJson);
-            if (string.Equals(moduleId, "MonitorProfile", StringComparison.OrdinalIgnoreCase)) return TryParseToken(MonitorProfileJson);
-            if (string.Equals(moduleId, "Awake", StringComparison.OrdinalIgnoreCase)) return TryParseToken(AwakeJson);
-
-            return null;
+            return _moduleConfigs.TryGetValue(moduleId, out var token) ? token : null;
         }
 
         public void SetModuleToken(string moduleId, JToken token)
         {
             if (string.IsNullOrEmpty(moduleId)) return;
             _moduleConfigs[moduleId] = token;
-
-            string raw = token != null ? token.ToString(Formatting.None) : "";
-            if (string.Equals(moduleId, "AudioSwitch", StringComparison.OrdinalIgnoreCase)) AudioSwitchJson = raw;
-            else if (string.Equals(moduleId, "AppAutoMute", StringComparison.OrdinalIgnoreCase)) AppAutoMuteJson = raw;
-            else if (string.Equals(moduleId, "MonitorProfile", StringComparison.OrdinalIgnoreCase)) MonitorProfileJson = raw;
-            else if (string.Equals(moduleId, "Awake", StringComparison.OrdinalIgnoreCase)) AwakeJson = raw;
-        }
-
-        private string GetModuleRawJson(string moduleId)
-        {
-            if (_moduleConfigs.TryGetValue(moduleId, out var token) && token != null)
-            {
-                if (token.Type == JTokenType.String) return token.Value<string>() ?? "";
-                return token.ToString(Formatting.None);
-            }
-            return "";
-        }
-
-        private static JToken TryParseToken(string json)
-        {
-            if (string.IsNullOrWhiteSpace(json)) return null;
-            try { return JToken.Parse(json); } catch { return null; }
         }
 
         public void Save()
@@ -281,16 +220,6 @@ namespace CarroDesk.Services
 
             var serializer = JsonSerializer.Create(SerializerSettings);
             var obj = JObject.FromObject(Current, serializer);
-
-            // 保持同步已有旧字符串槽
-            if (!string.IsNullOrEmpty(AudioSwitchJson) && !_moduleConfigs.ContainsKey("AudioSwitch"))
-                _moduleConfigs["AudioSwitch"] = TryParseToken(AudioSwitchJson) ?? (JToken)AudioSwitchJson;
-            if (!string.IsNullOrEmpty(AppAutoMuteJson) && !_moduleConfigs.ContainsKey("AppAutoMute"))
-                _moduleConfigs["AppAutoMute"] = TryParseToken(AppAutoMuteJson) ?? (JToken)AppAutoMuteJson;
-            if (!string.IsNullOrEmpty(MonitorProfileJson) && !_moduleConfigs.ContainsKey("MonitorProfile"))
-                _moduleConfigs["MonitorProfile"] = TryParseToken(MonitorProfileJson) ?? (JToken)MonitorProfileJson;
-            if (!string.IsNullOrEmpty(AwakeJson) && !_moduleConfigs.ContainsKey("Awake"))
-                _moduleConfigs["Awake"] = TryParseToken(AwakeJson) ?? (JToken)AwakeJson;
 
             // 存入标准原生 JSON 对象
             foreach (var kvp in _moduleConfigs)

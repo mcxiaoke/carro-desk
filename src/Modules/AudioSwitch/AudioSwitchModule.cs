@@ -10,8 +10,6 @@ namespace CarroDesk.Modules.AudioSwitch
 {
     public class AudioSwitchModule : ModuleBase<AudioSwitchConfig>
     {
-        public static AudioSwitchModule Instance { get; private set; }
-
         public override string Id => "AudioSwitch";
         public override string Name => "音频输出设备切换";
         public override string Description => "快速在扬声器与耳机之间一键切换默认音频输出端点";
@@ -21,11 +19,9 @@ namespace CarroDesk.Modules.AudioSwitch
         private TrayMenuItem _trayItem;
 
         public AudioDeviceItem CurrentDefaultDevice { get; private set; }
-        public Action<string> NotificationCallback { get; set; }
 
         public AudioSwitchModule()
         {
-            Instance = this;
         }
 
         protected override void OnStart()
@@ -127,7 +123,7 @@ namespace CarroDesk.Modules.AudioSwitch
                     else if (devName.IndexOf(Config.SpeakerPattern ?? "扬声器", StringComparison.OrdinalIgnoreCase) >= 0) icon = "🔊";
                 }
                 string msg = $"已切换音频输出至: {icon} {devName}";
-                NotificationCallback?.Invoke(msg);
+                Context?.ShowNotification(msg);
                 return true;
             }
             return false;
@@ -141,13 +137,13 @@ namespace CarroDesk.Modules.AudioSwitch
             var all = _audioService.GetPlaybackDevices();
             if (all == null || all.Count == 0)
             {
-                NotificationCallback?.Invoke("未找到可用的音频输出设备");
+                Context?.ShowNotification("未找到可用的音频输出设备");
                 return false;
             }
 
             if (all.Count == 1)
             {
-                NotificationCallback?.Invoke($"当前仅有一个音频输出设备: {all[0].Name}");
+                Context?.ShowNotification($"当前仅有一个音频输出设备: {all[0].Name}");
                 return false;
             }
 

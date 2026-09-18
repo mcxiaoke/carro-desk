@@ -158,7 +158,7 @@ namespace CarroDesk.Tests
             configMgr.SaveModuleConfig("MonitorProfile", initial);
 
             // 从底层 JSON 验证并重新反序列化
-            Assert.IsFalse(string.IsNullOrEmpty(configService.MonitorProfileJson));
+            Assert.IsNotNull(configService.GetModuleToken("MonitorProfile"));
             var reloaded = configMgr.GetModuleConfig<MonitorProfileConfig>("MonitorProfile");
 
             Assert.AreEqual("Night", reloaded.ActiveProfile);

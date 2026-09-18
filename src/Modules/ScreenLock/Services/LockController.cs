@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Windows.Forms;
+using CarroDesk.Modules.ScreenLock.Models;
 using CarroDesk.Services.Localization;
 using CarroDesk.Views;
 
@@ -8,8 +9,8 @@ namespace CarroDesk.Services
 {
     public class LockController : IDisposable, ILockService, ILockAppearance
     {
-        private readonly ConfigService _config;
-        private readonly PinService _pinService;
+        private readonly Func<IPinService> _pinServiceProvider;
+        private readonly Func<ScreenLockConfig> _configProvider;
         private readonly PinGuard _pinGuard;
         private readonly KeyboardBlocker _blocker;
 
@@ -18,13 +19,12 @@ namespace CarroDesk.Services
 
         public event Action Unlocked;
 
-        public LockController(ConfigService config)
+        public LockController(Func<IPinService> pinServiceProvider, Func<ScreenLockConfig> configProvider)
         {
-            _config = config;
-            _pinService = new PinService();
+            _pinServiceProvider = pinServiceProvider;
+            _configProvider = configProvider;
             _blocker = new KeyboardBlocker();
-            _pinGuard = new PinGuard(_pinService);
-            ApplyPinFromConfig();
+            _pinGuard = new PinGuard(() => _pinServiceProvider?.Invoke());
             try { Microsoft.Win32.SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged; } catch { }
         }
 
@@ -56,30 +56,26 @@ namespace CarroDesk.Services
         public bool IsLocked { get { return _locked; } }
 
         // ILockAppearance：只读活引用，锁定窗口每次读取当前生效值
-        public bool ShowClock { get { return _config.Current != null && _config.Current.ShowClock; } }
-        public double OverlayOpacity { get { return _config.Current != null ? _config.Current.OverlayOpacity : 0.88; } }
+        public bool ShowClock { get { return _configProvider?.Invoke()?.ShowClock ?? true; } }
+        public double OverlayOpacity { get { return _configProvider?.Invoke()?.OverlayOpacity ?? 0.88; } }
 
         public TimeSpan GetBlockRemaining()
         {
             return _locked ? _pinGuard.RemainingBlock() : TimeSpan.Zero;
         }
 
-        public PinService Pins { get { return _pinService; } }
+        public IPinService Pins { get { return _pinServiceProvider?.Invoke(); } }
 
         public void ApplyPinFromConfig()
         {
-            var c = _config != null ? _config.Current : null;
-            if (c != null)
-            {
-                _pinService.SetFromConfig(c.PinSalt, c.PinHash);
-            }
         }
 
         public Func<bool> IsShuttingDownProvider { get; set; }
 
         public void Lock()
         {
-            if (_locked || !_pinService.IsConfigured) return;
+            var pinService = _pinServiceProvider?.Invoke();
+            if (_locked || pinService == null || !pinService.IsConfigured) return;
             _locked = true;
             _blocker.Install();
 
@@ -111,7 +107,6 @@ namespace CarroDesk.Services
             if (result == PinAttemptResult.Success)
             {
                 error = null;
-                PersistPinUpgrade();
                 Unlock();
                 return PinAttemptResult.Success;
             }
@@ -146,19 +141,8 @@ namespace CarroDesk.Services
 
         public bool VerifyForExit(string pin)
         {
-            var ok = _pinService.Verify(pin);
-            if (ok) PersistPinUpgrade();
-            return ok;
-        }
-
-        private void PersistPinUpgrade()
-        {
-            if (!_pinService.JustUpgraded) return;
-            var c = _config.Current;
-            c.PinSalt = _pinService.Salt;
-            c.PinHash = _pinService.Hash;
-            _config.Save();
-            _pinService.ClearUpgraded();
+            var pinService = _pinServiceProvider?.Invoke();
+            return pinService != null && pinService.Verify(pin);
         }
 
         public void Dispose()

@@ -49,22 +49,6 @@ namespace CarroDesk.Host.Services
         {
             _services = services ?? throw new ArgumentNullException(nameof(services));
             var logger = services.GetService<ILoggerService>();
-            var configRegistry = services.GetService<IConfigRegistry>();
-
-            if (configRegistry != null)
-            {
-                foreach (var module in Modules)
-                {
-                    try
-                    {
-                        module.RegisterConfig(configRegistry);
-                    }
-                    catch (Exception ex)
-                    {
-                        logger?.LogError(module.Id, $"注册模块 '{module.Name}' 配置适配器失败", ex);
-                    }
-                }
-            }
 
             foreach (var module in Modules.Where(m => m.DefaultEnabled))
             {

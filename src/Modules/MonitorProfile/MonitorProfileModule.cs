@@ -11,8 +11,6 @@ namespace CarroDesk.Modules.MonitorProfile
 {
     public class MonitorProfileModule : ModuleBase<MonitorProfileConfig>
     {
-        public static MonitorProfileModule Instance { get; private set; }
-
         public override string Id => "MonitorProfile";
         public override string Name => Loc.T("Tray.MonitorProfileTitle", "显示器亮度与情境");
         public override string Description => Loc.T("Tray.MonitorProfileDesc", "多情境亮度与对比度管理、按时间段自动调节与全局快捷键支持");
@@ -21,7 +19,6 @@ namespace CarroDesk.Modules.MonitorProfile
 
         public MonitorDdcService DdcService { get; private set; }
         public ProfileScheduleEngine ScheduleEngine { get; private set; }
-        public Action<string> NotificationCallback { get; set; }
 
         private IHotkeyService _hotkeys;
         private TrayMenuItem _trayRoot;
@@ -29,12 +26,6 @@ namespace CarroDesk.Modules.MonitorProfile
 
         public MonitorProfileModule()
         {
-            Instance = this;
-        }
-
-        public override void RegisterConfig(IConfigRegistry registry)
-        {
-            registry?.RegisterDefault(Id, MonitorProfileConfig.CreateDefault);
         }
 
         public override void Initialize(IModuleContext context)
@@ -125,27 +116,27 @@ namespace CarroDesk.Modules.MonitorProfile
             {
                 ScheduleEngine.SwitchProfile("Daily");
                 SaveConfig();
-                NotificationCallback?.Invoke("已切换至显示器日常模式");
+                Context?.ShowNotification("已切换至显示器日常模式");
             });
 
             RegisterSingleHotkey(Config.Hotkeys.SwitchToGameMode, () =>
             {
                 ScheduleEngine.SwitchProfile("Game");
                 SaveConfig();
-                NotificationCallback?.Invoke("已切换至显示器游戏模式");
+                Context?.ShowNotification("已切换至显示器游戏模式");
             });
 
             RegisterSingleHotkey(Config.Hotkeys.SwitchToNightMode, () =>
             {
                 ScheduleEngine.SwitchProfile("Night");
                 SaveConfig();
-                NotificationCallback?.Invoke("已切换至显示器夜间模式");
+                Context?.ShowNotification("已切换至显示器夜间模式");
             });
 
             RegisterSingleHotkey(Config.Hotkeys.ManualRefresh, () =>
             {
                 ScheduleEngine.ApplyCurrentSetting(force: true);
-                NotificationCallback?.Invoke("已刷新并重新应用显示器设置");
+                Context?.ShowNotification("已刷新并重新应用显示器设置");
             });
 
             int step = Config.BrightnessStep > 0 ? Config.BrightnessStep : 5;
@@ -333,7 +324,7 @@ namespace CarroDesk.Modules.MonitorProfile
                 ClickAction = () =>
                 {
                     ScheduleEngine?.ApplyCurrentSetting(force: true);
-                    NotificationCallback?.Invoke("已重新校准并应用显示器设置");
+                    Context?.ShowNotification("已重新校准并应用显示器设置");
                 }
             });
 

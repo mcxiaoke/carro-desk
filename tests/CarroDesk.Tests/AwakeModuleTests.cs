@@ -123,7 +123,7 @@ namespace CarroDesk.Tests
             };
 
             manager.SaveModuleConfig("Awake", originalConfig);
-            Assert.IsFalse(string.IsNullOrWhiteSpace(configService.AwakeJson));
+            Assert.IsNotNull(configService.GetModuleToken("Awake"));
 
             var loadedConfig = manager.GetModuleConfig<AwakeConfig>("Awake");
             Assert.IsNotNull(loadedConfig);

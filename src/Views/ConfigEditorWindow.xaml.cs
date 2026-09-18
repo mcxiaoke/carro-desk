@@ -6,6 +6,8 @@ using System.Windows.Controls;
 using CarroDesk.Core;
 using CarroDesk.Host.Services;
 using CarroDesk.Models;
+using CarroDesk.Modules.ScreenLock.Models;
+using CarroDesk.Modules.TaskScheduler.Models;
 using CarroDesk.Services;
 using CarroDesk.Services.Localization;
 
@@ -14,6 +16,8 @@ namespace CarroDesk.Views
     public partial class ConfigEditorWindow : Window
     {
         private AppSettings _editing;
+        private ScreenLockConfig _editingScreenLock;
+        private TaskSchedulerConfig _editingTaskScheduler;
         private bool _isInitializing = false;
         private readonly IPinService _pinService;
         private readonly ConfigManager _configManager;
@@ -41,6 +45,9 @@ namespace CarroDesk.Views
                 var cur = _configManager?.Current ?? new AppSettings();
                 _editing = cur.Clone();
 
+                _editingScreenLock = _configManager?.GetModuleConfig<ScreenLockConfig>("ScreenLock")?.Clone() ?? new ScreenLockConfig();
+                _editingTaskScheduler = _configManager?.GetModuleConfig<TaskSchedulerConfig>("TaskScheduler")?.Clone() ?? new TaskSchedulerConfig();
+
                 PathText.Text = ConfigService.FilePath;
                 RefreshDynamicTexts();
 
@@ -59,7 +66,7 @@ namespace CarroDesk.Views
                 }
 
                 // IdleMinutes -> ComboBox (editable)
-                string idleStr = _editing.IdleMinutes.ToString();
+                string idleStr = _editingScreenLock.IdleMinutes.ToString();
                 bool found = false;
                 for (int i = 0; i < IdleBox.Items.Count; i++)
                 {
@@ -74,16 +81,16 @@ namespace CarroDesk.Views
                 if (!found) { IdleBox.Text = idleStr; IdleBox.SelectedIndex = -1; }
                 else IdleBox.Text = idleStr;
 
-                ShowClockBox.IsChecked = _editing.ShowClock;
-                OpacitySlider.Value = _editing.OverlayOpacity;
-                UpdateOpacityText(_editing.OverlayOpacity);
+                ShowClockBox.IsChecked = _editingScreenLock.ShowClock;
+                OpacitySlider.Value = _editingScreenLock.OverlayOpacity;
+                UpdateOpacityText(_editingScreenLock.OverlayOpacity);
 
                 AutoStartBox.IsChecked = _editing.AutoStart;
-                UnlockOnResumeBox.IsChecked = _editing.UnlockOnResume;
-                TasksEnabledBox.IsChecked = _editing.TasksEnabled;
+                UnlockOnResumeBox.IsChecked = _editingScreenLock.UnlockOnResume;
+                TasksEnabledBox.IsChecked = _editingTaskScheduler.GlobalEnabled;
 
                 ExcludeList.ItemsSource = null;
-                var list = _editing.ExcludeProcesses != null ? ProcessHelper.NormalizeList(_editing.ExcludeProcesses) : new List<string>();
+                var list = _editingScreenLock.ExcludeProcesses != null ? ProcessHelper.NormalizeList(_editingScreenLock.ExcludeProcesses) : new List<string>();
                 ExcludeList.ItemsSource = list;
 
                 ValidateText.Text = "";
@@ -210,14 +217,17 @@ namespace CarroDesk.Views
             if (MessageBox.Show(Loc.T("Config.ResetDefaultsConfirm"), Loc.T("Config.ResetDefaultsTitle"), MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
                 return;
 
-            var def = new AppSettings();
-            IdleBox.Text = def.IdleMinutes.ToString();
-            ShowClockBox.IsChecked = def.ShowClock;
-            OpacitySlider.Value = def.OverlayOpacity;
-            UpdateOpacityText(def.OverlayOpacity);
-            AutoStartBox.IsChecked = def.AutoStart;
-            UnlockOnResumeBox.IsChecked = def.UnlockOnResume;
-            TasksEnabledBox.IsChecked = def.TasksEnabled;
+            var defHost = new AppSettings();
+            var defScreenLock = new ScreenLockConfig();
+            var defTaskScheduler = new TaskSchedulerConfig();
+
+            IdleBox.Text = defScreenLock.IdleMinutes.ToString();
+            ShowClockBox.IsChecked = defScreenLock.ShowClock;
+            OpacitySlider.Value = defScreenLock.OverlayOpacity;
+            UpdateOpacityText(defScreenLock.OverlayOpacity);
+            AutoStartBox.IsChecked = defHost.AutoStart;
+            UnlockOnResumeBox.IsChecked = defScreenLock.UnlockOnResume;
+            TasksEnabledBox.IsChecked = defTaskScheduler.GlobalEnabled;
             ExcludeList.ItemsSource = null;
             ExcludeList.ItemsSource = new List<string>();
             ValidateText.Text = Loc.T("Config.ResetDefaultsTooltip");
@@ -253,30 +263,33 @@ namespace CarroDesk.Views
             OnExcludeDeleteClick(sender, null);
         }
 
-        private AppSettings BuildCurrent()
+        private void SyncFromUI()
         {
-            var s = _editing != null ? _editing.Clone() : new AppSettings();
+            if (_editing == null) _editing = new AppSettings();
+            if (_editingScreenLock == null) _editingScreenLock = new ScreenLockConfig();
+            if (_editingTaskScheduler == null) _editingTaskScheduler = new TaskSchedulerConfig();
+
+            _editing.AutoStart = AutoStartBox.IsChecked == true;
+            _editing.Language = _editing.Language ?? "auto";
+
             string idleRaw = IdleBox.Text.Trim();
             if (idleRaw.Contains("-")) idleRaw = idleRaw.Split('-')[0].Trim();
-            int idle;
-            if (!int.TryParse(idleRaw, out idle)) idle = _editing != null ? _editing.IdleMinutes : 5;
-            s.IdleMinutes = idle;
-            s.ShowClock = ShowClockBox.IsChecked == true;
-            s.OverlayOpacity = Math.Round(OpacitySlider.Value, 2);
-            s.AutoStart = AutoStartBox.IsChecked == true;
-            s.UnlockOnResume = UnlockOnResumeBox.IsChecked == true;
-            s.TasksEnabled = TasksEnabledBox.IsChecked == true;
-            s.Language = _editing?.Language ?? "auto";
+            if (!int.TryParse(idleRaw, out int idle)) idle = _editingScreenLock.IdleMinutes;
+            _editingScreenLock.IdleMinutes = idle;
+            _editingScreenLock.ShowClock = ShowClockBox.IsChecked == true;
+            _editingScreenLock.OverlayOpacity = Math.Round(OpacitySlider.Value, 2);
+            _editingScreenLock.UnlockOnResume = UnlockOnResumeBox.IsChecked == true;
             var excl = ExcludeList.ItemsSource as List<string>;
-            s.ExcludeProcesses = ProcessHelper.NormalizeList(excl);
-            return s;
+            _editingScreenLock.ExcludeProcesses = ProcessHelper.NormalizeList(excl);
+
+            _editingTaskScheduler.GlobalEnabled = TasksEnabledBox.IsChecked == true;
         }
 
-        private string Validate(AppSettings s)
+        private string Validate()
         {
-            if (s.IdleMinutes < 0 || s.IdleMinutes > 24 * 60) return Loc.T("Config.ErrorIdleRange");
-            if (s.OverlayOpacity < 0.3 || s.OverlayOpacity > 1.0) return "透明度需在 0.3-1.0 之间";
-            foreach (var p in s.ExcludeProcesses)
+            if (_editingScreenLock.IdleMinutes < 0 || _editingScreenLock.IdleMinutes > 24 * 60) return Loc.T("Config.ErrorIdleRange");
+            if (_editingScreenLock.OverlayOpacity < 0.3 || _editingScreenLock.OverlayOpacity > 1.0) return "透明度需在 0.3-1.0 之间";
+            foreach (var p in _editingScreenLock.ExcludeProcesses)
             {
                 if (p.Length > 260) return "排除进程名过长: " + p;
                 if (p.IndexOfAny(new[] { '<', '>', ':', '\"', '|', '?', '*' }) >= 0) return "排除进程名含非法字符: " + p;
@@ -286,8 +299,8 @@ namespace CarroDesk.Views
 
         private void OnValidateClick(object sender, RoutedEventArgs e)
         {
-            var cur = BuildCurrent();
-            string err = Validate(cur);
+            SyncFromUI();
+            string err = Validate();
             if (err != null)
             {
                 ValidateText.Text = Loc.T("Config.ValidationFailed") + ": " + err;
@@ -314,8 +327,8 @@ namespace CarroDesk.Views
 
         private bool DoSave(bool apply)
         {
-            var cur = BuildCurrent();
-            string err = Validate(cur);
+            SyncFromUI();
+            string err = Validate();
             if (err != null)
             {
                 ValidateText.Text = Loc.T("Config.ValidationFailed") + ": " + err;
@@ -324,19 +337,23 @@ namespace CarroDesk.Views
             }
             try
             {
-                // apply to global config
-                var target = _configManager?.Current;
-                if (target != null)
+                if (_configManager != null)
                 {
-                    cur.CopyTo(target);
-                    _editing = target.Clone();
+                    var target = _configManager.Current;
+                    if (target != null)
+                    {
+                        _editing.CopyTo(target);
+                        _editing = target.Clone();
+                    }
+                    _configManager.SaveModuleConfig("ScreenLock", _editingScreenLock);
+                    _configManager.SaveModuleConfig("TaskScheduler", _editingTaskScheduler);
                     _configManager.Save();
                 }
                 ValidateText.Text = Loc.T("Common.Success");
 
                 if (apply)
                 {
-                    ApplyRuntime(cur);
+                    ApplyRuntime();
                 }
                 return true;
             }
@@ -347,7 +364,7 @@ namespace CarroDesk.Views
             }
         }
 
-        private void ApplyRuntime(AppSettings s)
+        private void ApplyRuntime()
         {
             // 规范 M9：Config 编辑器不越权直驱模块/Controller。
             // 仅在持久化后向 Host 发一次重载通知，由各模块 OnConfigReloaded 自行应用。

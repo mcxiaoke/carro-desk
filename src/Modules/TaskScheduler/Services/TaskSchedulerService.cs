@@ -23,6 +23,7 @@ namespace CarroDesk.Services.Tasks
         private readonly IConfigManager _configManager;
         private readonly INotificationService _notificationService;
         private readonly Action<string> _balloonNotifier;
+        private readonly IHotkeyService _hotkeyService;
 
         public bool GlobalEnabled => _globalEnabled;
         public bool IsGlobalEnabled => _globalEnabled;
@@ -32,12 +33,14 @@ namespace CarroDesk.Services.Tasks
             IIdleService idleService = null,
             IConfigManager configManager = null,
             INotificationService notificationService = null,
-            Action<string> balloonNotifier = null)
+            Action<string> balloonNotifier = null,
+            IHotkeyService hotkeyService = null)
         {
             _idleService = idleService;
             _configManager = configManager;
             _notificationService = notificationService;
             _balloonNotifier = balloonNotifier;
+            _hotkeyService = hotkeyService;
         }
 
         public void Start()
@@ -182,7 +185,7 @@ namespace CarroDesk.Services.Tasks
                 case TaskTriggerType.SessionUnlock: return new SessionEventTrigger(task);
                 case TaskTriggerType.Idle: return new IdleTrigger(task, _idleService);
                 case TaskTriggerType.Manual: return new ManualTrigger(task);
-                case TaskTriggerType.Hotkey: return new HotkeyTrigger(task);
+                case TaskTriggerType.Hotkey: return new HotkeyTrigger(task, _hotkeyService);
                 case TaskTriggerType.Watch: return new FileWatcherTrigger(task);
                 default: return new StartupTrigger(task);
             }

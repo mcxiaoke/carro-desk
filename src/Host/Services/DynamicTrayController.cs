@@ -265,69 +265,28 @@ namespace CarroDesk.Host.Services
         // ---- 构建 ----
         private object CreateVisual(TrayMenuItem node, IModule module)
         {
-            if (node == null)
-            {
-                return null;
-            }
-            if (node.IsSeparator)
-            {
-                return new Separator();
-            }
-
-            var menuItem = new MenuItem();
-            menuItem.DataContext = node;
+            if (node == null) return null;
             _nodeOwner[node] = module;
 
-            SetBinding(menuItem, MenuItem.HeaderProperty, "Header", node);
-            SetBinding(menuItem, MenuItem.IsCheckedProperty, "IsChecked", node, BindingMode.OneWay);
-            SetBinding(menuItem, MenuItem.IsEnabledProperty, "IsEnabled", node, BindingMode.OneWay);
-            SetBinding(menuItem, MenuItem.InputGestureTextProperty, "InputGestureText", node, BindingMode.OneWay);
-            SetBinding(menuItem, MenuItem.ToolTipProperty, "ToolTip", node, BindingMode.OneWay);
-            SetBinding(menuItem, MenuItem.VisibilityProperty, "IsVisible", node, BindingMode.OneWay,
-                new BooleanToVisibilityConverter());
-
-            menuItem.Command = node.Command;
-            menuItem.CommandParameter = node.CommandParameter;
-            if (node.Command == null)
+            var options = new MenuProjectionEngine.ProjectionOptions
             {
-                menuItem.Click += OnToggleClick;
-            }
-
-            foreach (var child in node.Children)
-            {
-                var childVisual = CreateVisual(child, module);
-                if (childVisual != null)
+                EnableHoverBehavior = false,
+                RequestRefresh = RequestRefresh,
+                ErrorHandler = (n, ex) =>
                 {
-                    menuItem.Items.Add(childVisual);
-                }
-            }
-
-            // 属性级绑定 + 结构级（Children 集合变化）整区间重建
-            node.Children.CollectionChanged += (s, e) => RequestRefresh();
-
-            // 按 spec §4.3：后台线程更新节点属性 Host 记错并忽略（绑定时封送由模块自行负责）
-            node.PropertyChanged += (s, pc) =>
-            {
-                if (_dispatcher != null && !_dispatcher.CheckAccess())
+                    IModule mod = null;
+                    if (!_nodeOwner.TryGetValue(n, out mod)) mod = module;
+                    TryLog(mod, "托盘菜单点击执行异常（ClickAction）", ex);
+                    try { _notify?.Invoke((n.Header ?? "托盘操作") + " 执行失败", "CarroDesk"); }
+                    catch { }
+                },
+                BackgroundPropertyWarn = (n, propName) =>
                 {
-                    TryLog(module, $"托盘节点属性在后台线程更新，已忽略（请模块自行 Dispatcher 封送），属性={pc.PropertyName}",
-                        null);
+                    TryLog(module, $"托盘节点属性在后台线程更新，已忽略（请模块自行 Dispatcher 封送），属性={propName}", null);
                 }
             };
 
-            return menuItem;
-        }
-
-        private static void SetBinding(FrameworkElement element, DependencyProperty dp, string path,
-            object source, BindingMode mode = BindingMode.OneWay, IValueConverter converter = null)
-        {
-            var binding = new Binding(path)
-            {
-                Source = source,
-                Mode = mode,
-                Converter = converter
-            };
-            element.SetBinding(dp, binding);
+            return MenuProjectionEngine.CreateVisual(node, options, _dispatcher);
         }
 
         private static void TrimEdgeSeparators(List<object> visuals)

@@ -43,13 +43,11 @@ namespace CarroDesk.Tests
         {
             var original = new AppSettings
             {
-                IdleMinutes = 15,
                 AutoStart = false,
                 PinSalt = "salt\\with\\backslashes\r\nand\"quotes\"",
                 PinHash = "hash\twith\ttabs",
                 Language = "zh-CN",
-                FloatingPanelHotkey = "Win+Alt+C",
-                ExcludeProcesses = new List<string> { "notepad.exe", "code.exe" }
+                FloatingPanelHotkey = "Win+Alt+C"
             };
 
             string json = JsonConvert.SerializeObject(original, Formatting.Indented);
@@ -59,21 +57,19 @@ namespace CarroDesk.Tests
 
             var restored = JsonConvert.DeserializeObject<AppSettings>(json);
             Assert.IsNotNull(restored);
-            Assert.AreEqual(original.IdleMinutes, restored.IdleMinutes);
             Assert.AreEqual(original.AutoStart, restored.AutoStart);
             Assert.AreEqual(original.PinSalt, restored.PinSalt);
             Assert.AreEqual(original.PinHash, restored.PinHash);
-            Assert.AreEqual(2, restored.ExcludeProcesses.Count);
-            Assert.AreEqual("notepad.exe", restored.ExcludeProcesses[0]);
-            Assert.AreEqual("code.exe", restored.ExcludeProcesses[1]);
+            Assert.AreEqual(original.Language, restored.Language);
+            Assert.AreEqual(original.FloatingPanelHotkey, restored.FloatingPanelHotkey);
         }
 
         [TestMethod]
-        public void AppSettings_ExcludeProcesses_SupportsArrayAndDelimitedString()
+        public void ScreenLockConfig_ExcludeProcesses_SupportsArrayAndDelimitedString()
         {
             // 1. 数组格式
             string arrayJson = "{ \"IdleMinutes\": 5, \"ExcludeProcesses\": [\"game.exe\", \"player.exe\"] }";
-            var s1 = JsonConvert.DeserializeObject<AppSettings>(arrayJson);
+            var s1 = JsonConvert.DeserializeObject<CarroDesk.Modules.ScreenLock.Models.ScreenLockConfig>(arrayJson);
             Assert.IsNotNull(s1);
             Assert.AreEqual(2, s1.ExcludeProcesses.Count);
             Assert.AreEqual("game.exe", s1.ExcludeProcesses[0]);
@@ -81,7 +77,7 @@ namespace CarroDesk.Tests
 
             // 2. 逗号/分号分隔字符串格式
             string stringJson = "{ \"IdleMinutes\": 5, \"ExcludeProcesses\": \"a.exe, b.exe; c.exe\" }";
-            var s2 = JsonConvert.DeserializeObject<AppSettings>(stringJson);
+            var s2 = JsonConvert.DeserializeObject<CarroDesk.Modules.ScreenLock.Models.ScreenLockConfig>(stringJson);
             Assert.IsNotNull(s2);
             Assert.AreEqual(3, s2.ExcludeProcesses.Count);
             Assert.AreEqual("a.exe", s2.ExcludeProcesses[0]);

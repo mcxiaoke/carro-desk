@@ -13,8 +13,6 @@ namespace CarroDesk.Modules.Awake
 {
     public class AwakeModule : ModuleBase<AwakeConfig>
     {
-        public static AwakeModule Instance { get; private set; }
-
         public override string Id => "Awake";
         public override string Name => Loc.T("Tray.AwakeTitle", "保持唤醒 (Awake)");
         public override string Description => Loc.T("Tray.AwakeDesc", "阻止计算机休眠或关闭屏幕");
@@ -22,7 +20,6 @@ namespace CarroDesk.Modules.Awake
         public override bool DefaultEnabled => true;
 
         public AwakeService Service { get; private set; }
-        public Action<string> NotificationCallback { get; set; }
 
         private IHotkeyService _hotkeys;
         private TrayMenuItem _trayRoot;
@@ -31,12 +28,6 @@ namespace CarroDesk.Modules.Awake
 
         public AwakeModule()
         {
-            Instance = this;
-        }
-
-        public override void RegisterConfig(IConfigRegistry registry)
-        {
-            registry?.RegisterDefault(Id, AwakeConfig.CreateDefault);
         }
 
         public override void Initialize(IModuleContext context)
@@ -464,7 +455,6 @@ namespace CarroDesk.Modules.Awake
         {
             try
             {
-                NotificationCallback?.Invoke(msg);
                 Context?.ShowNotification(msg, "CarroDesk");
             }
             catch { }

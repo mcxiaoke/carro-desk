@@ -31,7 +31,7 @@ namespace CarroDesk.Views
             IAudioService audioService = null,
             Action<string> notifier = null)
         {
-            _module = module ?? AppAutoMuteModule.Instance;
+            _module = module;
             _configManager = configManager;
             _audioService = audioService;
             _notifier = notifier;
@@ -222,14 +222,7 @@ namespace CarroDesk.Views
 
             _module?.OnConfigReloaded();
             string saveMsg = "后台智能静音配置已保存并生效";
-            if (_notifier != null)
-            {
-                _notifier(saveMsg);
-            }
-            else
-            {
-                _module?.NotificationCallback?.Invoke(saveMsg);
-            }
+            _notifier?.Invoke(saveMsg);
 
             DialogResult = true;
             Close();

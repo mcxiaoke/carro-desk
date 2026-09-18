@@ -565,68 +565,28 @@ namespace CarroDesk.Views
 
         private object CreateVisual(TrayMenuItem node)
         {
-            if (node == null) return null;
-            if (node.IsSeparator) return new Separator();
-
-            var menuItem = new MenuItem
+            var options = new MenuProjectionEngine.ProjectionOptions
             {
-                DataContext = node
-            };
-            AttachHoverBehavior(menuItem);
-
-            SetBinding(menuItem, MenuItem.HeaderProperty, "Header", node);
-            SetBinding(menuItem, MenuItem.IsCheckedProperty, "IsChecked", node, BindingMode.OneWay);
-            SetBinding(menuItem, MenuItem.IsEnabledProperty, "IsEnabled", node, BindingMode.OneWay);
-            SetBinding(menuItem, MenuItem.InputGestureTextProperty, "InputGestureText", node, BindingMode.OneWay);
-            SetBinding(menuItem, MenuItem.ToolTipProperty, "ToolTip", node, BindingMode.OneWay);
-            SetBinding(menuItem, MenuItem.VisibilityProperty, "IsVisible", node, BindingMode.OneWay, new BooleanToVisibilityConverter());
-
-            menuItem.Command = node.Command;
-            menuItem.CommandParameter = node.CommandParameter;
-
-            if (node.Command == null && node.ClickAction != null)
-            {
-                menuItem.Click += (s, e) =>
+                EnableHoverBehavior = true,
+                AfterClick = (n) =>
                 {
-                    try
-                    {
-                        node.ClickAction();
-                    }
-                    catch { }
-
                     CloseAllTopLevelSubmenus();
                     DismissIfNotPinned();
-                };
-            }
-
-            foreach (var child in node.Children)
-            {
-                var childVisual = CreateVisual(child);
-                if (childVisual != null)
+                },
+                RequestRefresh = () =>
                 {
-                    menuItem.Items.Add(childVisual);
+                    Dispatcher.BeginInvoke(new Action(RebuildMenu));
                 }
-            }
-
-            // 监听子项变化动态重构
-            node.Children.CollectionChanged += (s, e) =>
-            {
-                Dispatcher.BeginInvoke(new Action(RebuildMenu));
             };
-
-            return menuItem;
+            return MenuProjectionEngine.CreateVisual(node, options, Dispatcher);
         }
 
         private void AttachHoverBehavior(MenuItem mi)
         {
             if (mi == null) return;
-
             mi.MouseEnter += (s, e) =>
             {
-                // 关闭同级的其他展开项
                 CloseSiblingSubmenus(mi);
-
-                // 鼠标滑过时，若有子菜单立即自动展开，无需用户点击
                 if (mi.HasItems)
                 {
                     mi.IsSubmenuOpen = true;
@@ -636,25 +596,7 @@ namespace CarroDesk.Views
 
         private static void CloseSiblingSubmenus(MenuItem current)
         {
-            if (current == null) return;
-
-            ItemsControl parent = ItemsControl.ItemsControlFromItemContainer(current) ?? current.Parent as ItemsControl;
-            if (parent != null)
-            {
-                foreach (var item in parent.Items)
-                {
-                    MenuItem sibling = item as MenuItem;
-                    if (sibling == null && parent.ItemContainerGenerator != null)
-                    {
-                        sibling = parent.ItemContainerGenerator.ContainerFromItem(item) as MenuItem;
-                    }
-
-                    if (sibling != null && sibling != current && sibling.IsSubmenuOpen)
-                    {
-                        sibling.IsSubmenuOpen = false;
-                    }
-                }
-            }
+            MenuProjectionEngine.CloseSiblingSubmenus(current);
         }
 
         private void CloseAllTopLevelSubmenus()

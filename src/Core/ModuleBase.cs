@@ -87,10 +87,6 @@ namespace CarroDesk.Core
         {
         }
 
-        public virtual void RegisterConfig(IConfigRegistry registry)
-        {
-        }
-
         public virtual IEnumerable<TrayMenuItem> GetTrayMenuItems()
         {
             return System.Linq.Enumerable.Empty<TrayMenuItem>();

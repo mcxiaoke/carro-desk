@@ -14,8 +14,6 @@ namespace CarroDesk.Modules.TaskScheduler
 {
     public class TaskSchedulerModule : ModuleBase<TaskSchedulerConfig>
     {
-        public static TaskSchedulerModule Instance { get; private set; }
-
         public override string Id => "TaskScheduler";
         public override string Name => Loc.T("Tray.Tasks", "自动化计划任务");
         public override string Description => "支持 Cron/周期/定时/文件监听/会话切换等自动化脚本调度";
@@ -24,37 +22,8 @@ namespace CarroDesk.Modules.TaskScheduler
 
         public bool IsGlobalEnabled => Scheduler != null && Scheduler.IsGlobalEnabled;
 
-        private readonly ConfigService _configService;
-
-        public TaskSchedulerModule(ConfigService configService = null)
+        public TaskSchedulerModule()
         {
-            Instance = this;
-            _configService = configService;
-        }
-
-        public override void RegisterConfig(IConfigRegistry registry)
-        {
-            registry?.Register<TaskSchedulerConfig>(Id,
-                () =>
-                {
-                    var cfg = _configService?.Current;
-                    return new TaskSchedulerConfig
-                    {
-                        GlobalEnabled = cfg?.TasksEnabled ?? true,
-                        TasksFile = ConfigService.TaskFilePath
-                    };
-                },
-                c =>
-                {
-                    if (c == null) return;
-                    if (_configService?.Current != null)
-                    {
-                        _configService.Current.TasksEnabled = c.GlobalEnabled;
-                        _configService.Save();
-                    }
-                    Scheduler?.SetGlobalEnabled(c.GlobalEnabled);
-                    UpdateTrayHeader();
-                });
         }
 
         protected override void OnStart()
@@ -72,7 +41,8 @@ namespace CarroDesk.Modules.TaskScheduler
                     var idle = Context?.GetService<IIdleService>();
                     var cfgMgr = Context?.GetService<IConfigManager>();
                     var notif = Context?.GetService<INotificationService>();
-                    Scheduler = new TaskSchedulerService(idle, cfgMgr, notif, msg => Context?.ShowNotification(msg));
+                    var hotkeys = Context?.GetService<IHotkeyService>();
+                    Scheduler = new TaskSchedulerService(idle, cfgMgr, notif, msg => Context?.ShowNotification(msg), hotkeys);
                 }
                 Scheduler?.Start();
             }

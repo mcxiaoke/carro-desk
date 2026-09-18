@@ -4,5 +4,14 @@ namespace CarroDesk.Modules.TaskScheduler.Models
     {
         public bool GlobalEnabled { get; set; } = true;
         public string TasksFile { get; set; } = "tasks.json";
+
+        public TaskSchedulerConfig Clone()
+        {
+            return new TaskSchedulerConfig
+            {
+                GlobalEnabled = GlobalEnabled,
+                TasksFile = TasksFile
+            };
+        }
     }
 }

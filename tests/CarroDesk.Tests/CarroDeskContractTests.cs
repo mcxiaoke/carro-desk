@@ -101,8 +101,7 @@ namespace CarroDesk.Tests
         [TestMethod]
         public void ScreenLockModule_GetTrayMenuItems_ReturnsSingleRootItem_WithExpectedChildren()
         {
-            var configService = new ConfigService();
-            var module = new ScreenLockModule(configService);
+            var module = new ScreenLockModule();
 
             var items = module.GetTrayMenuItems()?.ToList();
             Assert.IsNotNull(items);

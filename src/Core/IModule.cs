@@ -30,7 +30,6 @@ namespace CarroDesk.Core
         void Stop();
         void OnConfigReloaded();
         void OnLanguageChanged();
-        void RegisterConfig(IConfigRegistry registry);
 
         IEnumerable<TrayMenuItem> GetTrayMenuItems();
     }

@@ -193,35 +193,34 @@ namespace CarroDesk.Tests
         }
 
         [TestMethod]
-        public void ConfigRegistry_AdaptersAndModules_RegistrationAndRoundTrip()
+        public void ModuleConfig_DirectSerialization_And_RoundTrip()
         {
             var configService = new CarroDesk.Services.ConfigService();
             configService.LoadOrCreate();
-            configService.Current.IdleMinutes = 7;
-            configService.Current.TasksEnabled = true;
 
             var configMgr = new ConfigManager(configService);
             var services = new ServiceContainer();
             services.AddSingleton<IConfigManager>(configMgr);
-            services.AddSingleton<IConfigRegistry>(configMgr);
 
             var manager = new ModuleManager();
-            var screenLock = new CarroDesk.Modules.ScreenLock.ScreenLockModule(configService);
-            var taskScheduler = new CarroDesk.Modules.TaskScheduler.TaskSchedulerModule(configService);
+            var screenLock = new CarroDesk.Modules.ScreenLock.ScreenLockModule();
+            var taskScheduler = new CarroDesk.Modules.TaskScheduler.TaskSchedulerModule();
 
             manager.RegisterModule(screenLock);
             manager.RegisterModule(taskScheduler);
 
             manager.InitializeAll(services);
 
-            // 1. 验证 ScreenLockConfig 动态读取
+            // 1. 验证 ScreenLockConfig 动态读取默认值
             var slConfig = configMgr.GetModuleConfig<CarroDesk.Modules.ScreenLock.Models.ScreenLockConfig>("ScreenLock");
-            Assert.AreEqual(7, slConfig.IdleMinutes);
+            Assert.AreEqual(5, slConfig.IdleMinutes);
 
-            // 2. 验证 ScreenLockConfig 动态更新写入底层 AppSettings
+            // 2. 验证 ScreenLockConfig 动态更新写入模块节，且不污染 Host AppSettings
             slConfig.IdleMinutes = 12;
             configMgr.SaveModuleConfig("ScreenLock", slConfig);
-            Assert.AreEqual(12, configService.Current.IdleMinutes);
+            var reloadedSl = configMgr.GetModuleConfig<CarroDesk.Modules.ScreenLock.Models.ScreenLockConfig>("ScreenLock");
+            Assert.AreEqual(12, reloadedSl.IdleMinutes);
+            Assert.IsNotNull(configService.GetModuleToken("ScreenLock"));
 
             // 3. 验证 TaskSchedulerConfig 动态读取与写入
             var tsConfig = configMgr.GetModuleConfig<CarroDesk.Modules.TaskScheduler.Models.TaskSchedulerConfig>("TaskScheduler");
@@ -229,7 +228,9 @@ namespace CarroDesk.Tests
 
             tsConfig.GlobalEnabled = false;
             configMgr.SaveModuleConfig("TaskScheduler", tsConfig);
-            Assert.IsFalse(configService.Current.TasksEnabled);
+            var reloadedTs = configMgr.GetModuleConfig<CarroDesk.Modules.TaskScheduler.Models.TaskSchedulerConfig>("TaskScheduler");
+            Assert.IsFalse(reloadedTs.GlobalEnabled);
+            Assert.IsNotNull(configService.GetModuleToken("TaskScheduler"));
         }
     }
 }
