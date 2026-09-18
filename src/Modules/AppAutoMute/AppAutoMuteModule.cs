@@ -181,25 +181,44 @@ namespace CarroDesk.Modules.AppAutoMute
 
         private void EvaluateForeground(string procName)
         {
-            if (string.IsNullOrEmpty(procName) || Config == null || Config.TargetApps == null || Config.TargetApps.Count == 0)
+            if (string.IsNullOrEmpty(procName) || Config == null) return;
+
+            bool isWhitelist = string.Equals(Config.Mode, "Whitelist", StringComparison.OrdinalIgnoreCase);
+
+            // 黑名单模式下，若 TargetApps 为空则无需静音任何应用
+            if (!isWhitelist && (Config.TargetApps == null || Config.TargetApps.Count == 0))
                 return;
 
-            bool isTarget = ProcessHelper.ContainsProcess(Config.TargetApps, procName);
-
-            if (isTarget)
+            if (isWhitelist)
             {
-                // 前台是目标应用：停止静音计时，启动恢复声音计时
-                _muteTimer.Stop();
+                // 白名单模式：任何进程切入当前前台，都必须解除静音恢复出声
                 _lastTargetProc = procName;
                 _unmuteTimer.Interval = TimeSpan.FromMilliseconds(Math.Max(50, Config.UnmuteDelayMs));
                 _unmuteTimer.Start();
+
+                // 同时启动静音计时器，延时静音切入后台的非白名单非前台进程
+                _muteTimer.Interval = TimeSpan.FromMilliseconds(Math.Max(50, Config.MuteDelayMs));
+                _muteTimer.Start();
             }
             else
             {
-                // 前台切出到其他非目标应用：停止恢复计时，启动静音计时
-                _unmuteTimer.Stop();
-                _muteTimer.Interval = TimeSpan.FromMilliseconds(Math.Max(50, Config.MuteDelayMs));
-                _muteTimer.Start();
+                // 黑名单模式
+                bool isTarget = ProcessHelper.ContainsProcess(Config.TargetApps, procName);
+                if (isTarget)
+                {
+                    // 前台是目标黑名单应用：停止静音计时，启动恢复声音计时
+                    _muteTimer.Stop();
+                    _lastTargetProc = procName;
+                    _unmuteTimer.Interval = TimeSpan.FromMilliseconds(Math.Max(50, Config.UnmuteDelayMs));
+                    _unmuteTimer.Start();
+                }
+                else
+                {
+                    // 前台切出到其他非黑名单应用：停止恢复计时，启动黑名单静音计时
+                    _unmuteTimer.Stop();
+                    _muteTimer.Interval = TimeSpan.FromMilliseconds(Math.Max(50, Config.MuteDelayMs));
+                    _muteTimer.Start();
+                }
             }
         }
 
@@ -208,20 +227,26 @@ namespace CarroDesk.Modules.AppAutoMute
             _muteTimer.Stop();
             if (!IsEnabledUser || Config == null) return;
 
-            string currentFore = _foregroundTracker.CurrentProcessName;
+            string currentFore = _foregroundTracker?.CurrentProcessName;
             bool isWhitelist = string.Equals(Config.Mode, "Whitelist", StringComparison.OrdinalIgnoreCase);
 
             if (isWhitelist)
             {
                 // 白名单模式：静音除白名单应用及当前前台应用之外的所有活跃音频进程
-                var activeProcs = _audioService.GetActiveAudioProcesses();
+                var activeProcs = _audioService?.GetActiveAudioProcesses() ?? new List<string>();
 
                 foreach (var proc in activeProcs)
                 {
                     if (!ProcessHelper.ContainsProcess(Config.TargetApps, proc) && !ProcessHelper.IsMatch(proc, currentFore))
                     {
-                        _audioService.SetProcessMute(proc, true);
+                        _audioService?.SetProcessMute(proc, true);
                     }
+                }
+
+                // 兜底保障：静音操作执行后，确保当前前台绝不会处于静音状态
+                if (!string.IsNullOrEmpty(currentFore))
+                {
+                    _audioService?.SetProcessMute(currentFore, false);
                 }
             }
             else

@@ -22,6 +22,7 @@
     <Compile Include="ModuleManagerTests.cs" />
     <Compile Include="TaskConditionEvaluatorTests.cs" />
     <Compile Include="SystemIdleServiceTests.cs" />
+    <Compile Include="AppAutoMuteModuleTests.cs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -404,9 +404,42 @@ namespace CarroDesk
             catch { }
         }
 
+        public static bool IsFatalException(Exception ex)
+        {
+            if (ex == null) return false;
+            return ex is OutOfMemoryException
+                || ex is StackOverflowException
+                || ex is AccessViolationException
+                || ex is AppDomainUnloadedException
+                || ex is BadImageFormatException
+                || ex is CannotUnloadAppDomainException
+                || ex is InvalidProgramException
+                || ex is System.Threading.ThreadAbortException;
+        }
+
         private void OnDispatcherException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
         {
-            LogError(e.Exception);
+            var ex = e.Exception;
+            LogError(ex);
+
+            if (IsFatalException(ex))
+            {
+                try
+                {
+                    var path = Path.Combine(ConfigService.DirPath, "fatal.log");
+                    File.AppendAllText(path, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [FATAL] {ex}{Environment.NewLine}");
+                }
+                catch { }
+                Environment.FailFast("Fatal unhandled exception encountered in CarroDesk.", ex);
+                return;
+            }
+
+            try
+            {
+                ShowBalloonPublic("操作发生异常，详情请查看日志");
+            }
+            catch { }
+
             e.Handled = true;
         }
 
