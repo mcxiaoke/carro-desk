@@ -61,6 +61,10 @@ namespace CarroDesk.Tests
             {
                 _onStop?.Invoke();
             }
+            public override IEnumerable<TrayMenuItem> GetTrayMenuItems()
+            {
+                return new[] { new TrayMenuItem { Id = _id + "_item", Header = _id } };
+            }
         }
 
         [TestMethod]
@@ -168,6 +172,64 @@ namespace CarroDesk.Tests
 
             Assert.AreEqual(ModuleStatus.Running, healthyMod.Status);
             Assert.IsTrue(healthyMod.IsRunning);
+        }
+
+        [TestMethod]
+        public void FaultIsolation_FaultedAndUninitializedModules_ExcludedFromTrayMenuItems()
+        {
+            var manager = new ModuleManager();
+            var faultyMod = new TestDummyModule("faulty", throwOnInit: true);
+            var healthyMod = new TestDummyModule("healthy");
+
+            manager.RegisterModule(faultyMod);
+            manager.RegisterModule(healthyMod);
+
+            var services = new ServiceContainer();
+            manager.InitializeAll(services);
+
+            var items = new List<TrayMenuItem>(manager.GetAllTrayMenuItems());
+            Assert.AreEqual(1, items.Count);
+            Assert.AreEqual("healthy_item", items[0].Id);
+        }
+
+        [TestMethod]
+        public void ConfigRegistry_AdaptersAndModules_RegistrationAndRoundTrip()
+        {
+            var configService = new CarroDesk.Services.ConfigService();
+            configService.LoadOrCreate();
+            configService.Current.IdleMinutes = 7;
+            configService.Current.TasksEnabled = true;
+
+            var configMgr = new ConfigManager(configService);
+            var services = new ServiceContainer();
+            services.AddSingleton<IConfigManager>(configMgr);
+            services.AddSingleton<IConfigRegistry>(configMgr);
+
+            var manager = new ModuleManager();
+            var screenLock = new CarroDesk.Modules.ScreenLock.ScreenLockModule(configService);
+            var taskScheduler = new CarroDesk.Modules.TaskScheduler.TaskSchedulerModule(configService);
+
+            manager.RegisterModule(screenLock);
+            manager.RegisterModule(taskScheduler);
+
+            manager.InitializeAll(services);
+
+            // 1. 验证 ScreenLockConfig 动态读取
+            var slConfig = configMgr.GetModuleConfig<CarroDesk.Modules.ScreenLock.Models.ScreenLockConfig>("ScreenLock");
+            Assert.AreEqual(7, slConfig.IdleMinutes);
+
+            // 2. 验证 ScreenLockConfig 动态更新写入底层 AppSettings
+            slConfig.IdleMinutes = 12;
+            configMgr.SaveModuleConfig("ScreenLock", slConfig);
+            Assert.AreEqual(12, configService.Current.IdleMinutes);
+
+            // 3. 验证 TaskSchedulerConfig 动态读取与写入
+            var tsConfig = configMgr.GetModuleConfig<CarroDesk.Modules.TaskScheduler.Models.TaskSchedulerConfig>("TaskScheduler");
+            Assert.IsTrue(tsConfig.GlobalEnabled);
+
+            tsConfig.GlobalEnabled = false;
+            configMgr.SaveModuleConfig("TaskScheduler", tsConfig);
+            Assert.IsFalse(configService.Current.TasksEnabled);
         }
     }
 }

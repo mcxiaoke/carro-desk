@@ -163,11 +163,27 @@ namespace CarroDesk.Services
                         var serializer = JsonSerializer.Create(SerializerSettings);
                         var s = obj.ToObject<AppSettings>(serializer) ?? new AppSettings();
 
-                        // 模块专属配置槽提取（兼容内嵌 JSON 字符串或直接内嵌对象）
-                        this.AudioSwitchJson = ExtractSubJson(obj["AudioSwitch"]);
-                        this.AppAutoMuteJson = ExtractSubJson(obj["AppAutoMute"]);
-                        this.MonitorProfileJson = ExtractSubJson(obj["MonitorProfile"]);
-                        this.AwakeJson = ExtractSubJson(obj["Awake"]);
+                        _moduleConfigs.Clear();
+                        foreach (var prop in obj.Properties())
+                        {
+                            if (IsCoreAppSetting(prop.Name)) continue;
+                            var val = prop.Value;
+                            if (val != null && val.Type == JTokenType.String)
+                            {
+                                string str = val.Value<string>();
+                                if (!string.IsNullOrWhiteSpace(str) && (str.TrimStart().StartsWith("{") || str.TrimStart().StartsWith("[")))
+                                {
+                                    try { val = JToken.Parse(str); } catch { }
+                                }
+                            }
+                            _moduleConfigs[prop.Name] = val;
+                        }
+
+                        // 模块专属配置槽提取（兼容向后属性访问）
+                        this.AudioSwitchJson = GetModuleRawJson("AudioSwitch");
+                        this.AppAutoMuteJson = GetModuleRawJson("AppAutoMute");
+                        this.MonitorProfileJson = GetModuleRawJson("MonitorProfile");
+                        this.AwakeJson = GetModuleRawJson("Awake");
 
                         return AppSettings.Merge(s);
                     }
@@ -189,11 +205,73 @@ namespace CarroDesk.Services
             return new AppSettings();
         }
 
-        private static string ExtractSubJson(JToken token)
+        private static bool IsCoreAppSetting(string name)
         {
-            if (token == null || token.Type == JTokenType.Null) return "";
-            if (token.Type == JTokenType.String) return token.Value<string>() ?? "";
-            return token.ToString(Formatting.None);
+            switch (name)
+            {
+                case "IdleMinutes":
+                case "AutoStart":
+                case "ShowClock":
+                case "OverlayOpacity":
+                case "PinSalt":
+                case "PinHash":
+                case "TasksEnabled":
+                case "UnlockOnResume":
+                case "Language":
+                case "ExcludeProcesses":
+                case "FloatingPanelHotkey":
+                case "FloatingPanelPosition":
+                case "FloatingPanelPinned":
+                case "FloatingPanelLocked":
+                case "FloatingPanelX":
+                case "FloatingPanelY":
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        private readonly Dictionary<string, JToken> _moduleConfigs = new Dictionary<string, JToken>(StringComparer.OrdinalIgnoreCase);
+
+        public JToken GetModuleToken(string moduleId)
+        {
+            if (string.IsNullOrEmpty(moduleId)) return null;
+            if (_moduleConfigs.TryGetValue(moduleId, out var token)) return token;
+
+            if (string.Equals(moduleId, "AudioSwitch", StringComparison.OrdinalIgnoreCase)) return TryParseToken(AudioSwitchJson);
+            if (string.Equals(moduleId, "AppAutoMute", StringComparison.OrdinalIgnoreCase)) return TryParseToken(AppAutoMuteJson);
+            if (string.Equals(moduleId, "MonitorProfile", StringComparison.OrdinalIgnoreCase)) return TryParseToken(MonitorProfileJson);
+            if (string.Equals(moduleId, "Awake", StringComparison.OrdinalIgnoreCase)) return TryParseToken(AwakeJson);
+
+            return null;
+        }
+
+        public void SetModuleToken(string moduleId, JToken token)
+        {
+            if (string.IsNullOrEmpty(moduleId)) return;
+            _moduleConfigs[moduleId] = token;
+
+            string raw = token != null ? token.ToString(Formatting.None) : "";
+            if (string.Equals(moduleId, "AudioSwitch", StringComparison.OrdinalIgnoreCase)) AudioSwitchJson = raw;
+            else if (string.Equals(moduleId, "AppAutoMute", StringComparison.OrdinalIgnoreCase)) AppAutoMuteJson = raw;
+            else if (string.Equals(moduleId, "MonitorProfile", StringComparison.OrdinalIgnoreCase)) MonitorProfileJson = raw;
+            else if (string.Equals(moduleId, "Awake", StringComparison.OrdinalIgnoreCase)) AwakeJson = raw;
+        }
+
+        private string GetModuleRawJson(string moduleId)
+        {
+            if (_moduleConfigs.TryGetValue(moduleId, out var token) && token != null)
+            {
+                if (token.Type == JTokenType.String) return token.Value<string>() ?? "";
+                return token.ToString(Formatting.None);
+            }
+            return "";
+        }
+
+        private static JToken TryParseToken(string json)
+        {
+            if (string.IsNullOrWhiteSpace(json)) return null;
+            try { return JToken.Parse(json); } catch { return null; }
         }
 
         public void Save()
@@ -204,11 +282,21 @@ namespace CarroDesk.Services
             var serializer = JsonSerializer.Create(SerializerSettings);
             var obj = JObject.FromObject(Current, serializer);
 
-            // 存入模块专属配置字符串槽
-            obj["AudioSwitch"] = this.AudioSwitchJson ?? "";
-            obj["AppAutoMute"] = this.AppAutoMuteJson ?? "";
-            obj["MonitorProfile"] = this.MonitorProfileJson ?? "";
-            obj["Awake"] = this.AwakeJson ?? "";
+            // 保持同步已有旧字符串槽
+            if (!string.IsNullOrEmpty(AudioSwitchJson) && !_moduleConfigs.ContainsKey("AudioSwitch"))
+                _moduleConfigs["AudioSwitch"] = TryParseToken(AudioSwitchJson) ?? (JToken)AudioSwitchJson;
+            if (!string.IsNullOrEmpty(AppAutoMuteJson) && !_moduleConfigs.ContainsKey("AppAutoMute"))
+                _moduleConfigs["AppAutoMute"] = TryParseToken(AppAutoMuteJson) ?? (JToken)AppAutoMuteJson;
+            if (!string.IsNullOrEmpty(MonitorProfileJson) && !_moduleConfigs.ContainsKey("MonitorProfile"))
+                _moduleConfigs["MonitorProfile"] = TryParseToken(MonitorProfileJson) ?? (JToken)MonitorProfileJson;
+            if (!string.IsNullOrEmpty(AwakeJson) && !_moduleConfigs.ContainsKey("Awake"))
+                _moduleConfigs["Awake"] = TryParseToken(AwakeJson) ?? (JToken)AwakeJson;
+
+            // 存入标准原生 JSON 对象
+            foreach (var kvp in _moduleConfigs)
+            {
+                if (kvp.Value != null) obj[kvp.Key] = kvp.Value;
+            }
 
             var json = obj.ToString(Formatting.Indented);
             AtomicFile.WriteAllText(FilePath, json, Encoding.UTF8);

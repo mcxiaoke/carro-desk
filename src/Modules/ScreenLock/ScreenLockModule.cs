@@ -38,10 +38,46 @@ namespace CarroDesk.Modules.ScreenLock
 
         public Action<string> BalloonNotifier { get; set; }
 
+        private readonly ConfigService _configService;
+
         public ScreenLockModule(ConfigService configService)
         {
             Instance = this;
+            _configService = configService;
             Controller = new LockController(configService);
+        }
+
+        public override void RegisterConfig(IConfigRegistry registry)
+        {
+            registry?.Register<ScreenLockConfig>(Id,
+                () =>
+                {
+                    var s = _configService?.Current ?? new CarroDesk.Models.AppSettings();
+                    return new ScreenLockConfig
+                    {
+                        IdleMinutes = s.IdleMinutes,
+                        PinHash = s.PinHash,
+                        PinSalt = s.PinSalt,
+                        ShowClock = s.ShowClock,
+                        OverlayOpacity = s.OverlayOpacity,
+                        ExcludeProcesses = s.ExcludeProcesses != null ? new List<string>(s.ExcludeProcesses) : new List<string>(),
+                        UnlockOnResume = s.UnlockOnResume,
+                        Enabled = true
+                    };
+                },
+                cfg =>
+                {
+                    if (cfg == null || _configService?.Current == null) return;
+                    var s = _configService.Current;
+                    s.IdleMinutes = cfg.IdleMinutes;
+                    s.PinHash = cfg.PinHash;
+                    s.PinSalt = cfg.PinSalt;
+                    s.ShowClock = cfg.ShowClock;
+                    s.OverlayOpacity = cfg.OverlayOpacity;
+                    s.ExcludeProcesses = cfg.ExcludeProcesses != null ? new List<string>(cfg.ExcludeProcesses) : new List<string>();
+                    s.UnlockOnResume = cfg.UnlockOnResume;
+                    _configService.Save();
+                });
         }
 
         protected override void OnStart()

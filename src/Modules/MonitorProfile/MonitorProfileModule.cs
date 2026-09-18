@@ -32,6 +32,11 @@ namespace CarroDesk.Modules.MonitorProfile
             Instance = this;
         }
 
+        public override void RegisterConfig(IConfigRegistry registry)
+        {
+            registry?.RegisterDefault(Id, MonitorProfileConfig.CreateDefault);
+        }
+
         public override void Initialize(IModuleContext context)
         {
             base.Initialize(context);

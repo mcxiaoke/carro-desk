@@ -49,6 +49,22 @@ namespace CarroDesk.Host.Services
         {
             _services = services ?? throw new ArgumentNullException(nameof(services));
             var logger = services.GetService<ILoggerService>();
+            var configRegistry = services.GetService<IConfigRegistry>();
+
+            if (configRegistry != null)
+            {
+                foreach (var module in Modules)
+                {
+                    try
+                    {
+                        module.RegisterConfig(configRegistry);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger?.LogError(module.Id, $"注册模块 '{module.Name}' 配置适配器失败", ex);
+                    }
+                }
+            }
 
             foreach (var module in Modules.Where(m => m.DefaultEnabled))
             {
@@ -70,7 +86,8 @@ namespace CarroDesk.Host.Services
             var logger = GetLogger();
             foreach (var module in Modules)
             {
-                if (module.Status == ModuleStatus.Faulted) continue; // 初始化失败者禁止启动
+                // 未完成初始化（例如 DefaultEnabled=false 维持在 Created）或初始化失败的模块禁止启动
+                if (module.Status != ModuleStatus.Initialized) continue;
                 try
                 {
                     module.Start();
@@ -142,6 +159,8 @@ namespace CarroDesk.Host.Services
             var logger = GetLogger();
             foreach (var module in Modules)
             {
+                // 未初始化或已损坏的模块不显示在托盘菜单中
+                if (module.Status != ModuleStatus.Initialized && module.Status != ModuleStatus.Running) continue;
                 foreach (var item in GetItemsGuarded(module, logger))
                 {
                     items.Add(item);

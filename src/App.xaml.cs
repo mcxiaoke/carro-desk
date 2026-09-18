@@ -75,6 +75,7 @@ namespace CarroDesk
 
             var configMgr = new ConfigManager(rawConfig);
             Services.AddSingleton<IConfigManager>(configMgr);
+            Services.AddSingleton<IConfigRegistry>(configMgr);
 
             // PIN 能力下沉 Host（规范 §3.5）：缺模块仍按"有 PIN 则验"兜底
             var hostPinService = new HostPinService(rawConfig);
@@ -144,7 +145,7 @@ namespace CarroDesk
             };
             Modules.RegisterModule(screenLockModule);
 
-            var taskSchedulerModule = new TaskSchedulerModule();
+            var taskSchedulerModule = new TaskSchedulerModule(rawConfig);
             Modules.RegisterModule(taskSchedulerModule);
             Services.AddSingleton<ITaskSchedulerService>(sp => taskSchedulerModule.Scheduler);
 

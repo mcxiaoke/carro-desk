@@ -34,6 +34,11 @@ namespace CarroDesk.Modules.Awake
             Instance = this;
         }
 
+        public override void RegisterConfig(IConfigRegistry registry)
+        {
+            registry?.RegisterDefault(Id, AwakeConfig.CreateDefault);
+        }
+
         public override void Initialize(IModuleContext context)
         {
             base.Initialize(context);

@@ -4,12 +4,38 @@ using CarroDesk.Core;
 using CarroDesk.Models;
 using CarroDesk.Services;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace CarroDesk.Host.Services
 {
-    public class ConfigManager : IConfigManager
+    public class ConfigManager : IConfigManager, IConfigRegistry
     {
+        private interface IConfigAdapter
+        {
+            object Get();
+            void Save(object config);
+        }
+
+        private class ConfigAdapter<T> : IConfigAdapter where T : class, new()
+        {
+            private readonly Func<T> _getter;
+            private readonly Action<T> _setter;
+
+            public ConfigAdapter(Func<T> getter, Action<T> setter)
+            {
+                _getter = getter;
+                _setter = setter;
+            }
+
+            public object Get() => _getter();
+            public void Save(object config) => _setter(config as T);
+        }
+
         private readonly ConfigService _underlying;
+        private readonly Dictionary<string, IConfigAdapter> _adapters =
+            new Dictionary<string, IConfigAdapter>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, Func<object>> _defaultFactories =
+            new Dictionary<string, Func<object>>(StringComparer.OrdinalIgnoreCase);
 
         public ConfigManager(ConfigService underlying)
         {
@@ -20,6 +46,18 @@ namespace CarroDesk.Host.Services
         public AppSettings Current => _underlying.Current;
 
         public event Action ConfigReloaded;
+
+        public void Register<TConfig>(string moduleId, Func<TConfig> getter, Action<TConfig> setter) where TConfig : class, new()
+        {
+            if (string.IsNullOrEmpty(moduleId) || getter == null || setter == null) return;
+            _adapters[moduleId] = new ConfigAdapter<TConfig>(getter, setter);
+        }
+
+        public void RegisterDefault<TConfig>(string moduleId, Func<TConfig> defaultFactory) where TConfig : class, new()
+        {
+            if (string.IsNullOrEmpty(moduleId) || defaultFactory == null) return;
+            _defaultFactories[moduleId] = () => defaultFactory();
+        }
 
         public void LoadOrCreate()
         {
@@ -39,159 +77,85 @@ namespace CarroDesk.Host.Services
 
         public T GetModuleConfig<T>(string moduleId) where T : class, new()
         {
-            // 模块专属强类型配置适配
-            if (string.Equals(moduleId, "ScreenLock", StringComparison.OrdinalIgnoreCase))
+            if (string.IsNullOrEmpty(moduleId)) return CreateInstance<T>(moduleId);
+
+            // 1. 优先走模块注册的强类型适配器
+            if (_adapters.TryGetValue(moduleId, out var adapter))
             {
-                if (typeof(T) == typeof(Modules.ScreenLock.Models.ScreenLockConfig))
+                var val = adapter.Get() as T;
+                if (val != null) return val;
+            }
+
+            // 2. 通用原生 JToken/JSON 配置解析
+            var token = _underlying.GetModuleToken(moduleId);
+            if (token != null && token.Type != JTokenType.Null)
+            {
+                try
                 {
-                    var slc = new Modules.ScreenLock.Models.ScreenLockConfig
+                    if (token is JObject jObj)
                     {
-                        IdleMinutes = _underlying.Current.IdleMinutes,
-                        PinHash = _underlying.Current.PinHash,
-                        PinSalt = _underlying.Current.PinSalt,
-                        ShowClock = _underlying.Current.ShowClock,
-                        OverlayOpacity = _underlying.Current.OverlayOpacity,
-                        ExcludeProcesses = _underlying.Current.ExcludeProcesses,
-                        UnlockOnResume = _underlying.Current.UnlockOnResume,
-                        Enabled = true
-                    };
-                    return slc as T;
-                }
-            }
-            else if (string.Equals(moduleId, "TaskScheduler", StringComparison.OrdinalIgnoreCase))
-            {
-                if (typeof(T) == typeof(Modules.TaskScheduler.Models.TaskSchedulerConfig))
-                {
-                    var tsc = new Modules.TaskScheduler.Models.TaskSchedulerConfig
+                        return jObj.ToObject<T>() ?? CreateInstance<T>(moduleId);
+                    }
+                    if (token.Type == JTokenType.String)
                     {
-                        GlobalEnabled = _underlying.Current.TasksEnabled,
-                        TasksFile = ConfigService.TaskFilePath
-                    };
-                    return tsc as T;
+                        string str = token.Value<string>();
+                        if (!string.IsNullOrWhiteSpace(str))
+                        {
+                            return JsonConvert.DeserializeObject<T>(str) ?? CreateInstance<T>(moduleId);
+                        }
+                    }
                 }
+                catch { }
             }
-            else if (string.Equals(moduleId, "AudioSwitch", StringComparison.OrdinalIgnoreCase))
+
+            return CreateInstance<T>(moduleId);
+        }
+
+        private T CreateInstance<T>(string moduleId) where T : class, new()
+        {
+            if (!string.IsNullOrEmpty(moduleId) && _defaultFactories.TryGetValue(moduleId, out var factory))
             {
-                if (typeof(T) == typeof(Modules.AudioSwitch.Models.AudioSwitchConfig))
+                try
                 {
-                    _audioSwitchConfig = DeserializeConfig<Modules.AudioSwitch.Models.AudioSwitchConfig>(_underlying.AudioSwitchJson);
-                    return _audioSwitchConfig as T;
+                    var res = factory() as T;
+                    if (res != null) return res;
                 }
+                catch { }
             }
-            else if (string.Equals(moduleId, "AppAutoMute", StringComparison.OrdinalIgnoreCase))
+
+            var method = typeof(T).GetMethod("CreateDefault", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static, null, Type.EmptyTypes, null);
+            if (method != null && method.ReturnType == typeof(T))
             {
-                if (typeof(T) == typeof(Modules.AppAutoMute.Models.AppAutoMuteConfig))
+                try
                 {
-                    _appAutoMuteConfig = DeserializeConfig<Modules.AppAutoMute.Models.AppAutoMuteConfig>(_underlying.AppAutoMuteJson);
-                    return _appAutoMuteConfig as T;
+                    var res = method.Invoke(null, null) as T;
+                    if (res != null) return res;
                 }
-            }
-            else if (string.Equals(moduleId, "MonitorProfile", StringComparison.OrdinalIgnoreCase))
-            {
-                if (typeof(T) == typeof(Modules.MonitorProfile.Models.MonitorProfileConfig))
-                {
-                    _monitorProfileConfig = string.IsNullOrWhiteSpace(_underlying.MonitorProfileJson)
-                        ? Modules.MonitorProfile.Models.MonitorProfileConfig.CreateDefault()
-                        : DeserializeConfig(_underlying.MonitorProfileJson, Modules.MonitorProfile.Models.MonitorProfileConfig.CreateDefault);
-                    return _monitorProfileConfig as T;
-                }
-            }
-            else if (string.Equals(moduleId, "Awake", StringComparison.OrdinalIgnoreCase))
-            {
-                if (typeof(T) == typeof(Modules.Awake.Models.AwakeConfig))
-                {
-                    _awakeConfig = string.IsNullOrWhiteSpace(_underlying.AwakeJson)
-                        ? Modules.Awake.Models.AwakeConfig.CreateDefault()
-                        : DeserializeConfig(_underlying.AwakeJson, Modules.Awake.Models.AwakeConfig.CreateDefault);
-                    return _awakeConfig as T;
-                }
+                catch { }
             }
 
             return new T();
         }
 
-        private Modules.AudioSwitch.Models.AudioSwitchConfig _audioSwitchConfig;
-        private Modules.AppAutoMute.Models.AppAutoMuteConfig _appAutoMuteConfig;
-        private Modules.MonitorProfile.Models.MonitorProfileConfig _monitorProfileConfig;
-        private Modules.Awake.Models.AwakeConfig _awakeConfig;
-
         public void SaveModuleConfig<T>(string moduleId, T config) where T : class
         {
-            if (string.Equals(moduleId, "ScreenLock", StringComparison.OrdinalIgnoreCase))
-            {
-                if (config is Modules.ScreenLock.Models.ScreenLockConfig slc)
-                {
-                    _underlying.Current.IdleMinutes = slc.IdleMinutes;
-                    _underlying.Current.PinHash = slc.PinHash;
-                    _underlying.Current.PinSalt = slc.PinSalt;
-                    _underlying.Current.ShowClock = slc.ShowClock;
-                    _underlying.Current.OverlayOpacity = slc.OverlayOpacity;
-                    _underlying.Current.ExcludeProcesses = slc.ExcludeProcesses;
-                    _underlying.Current.UnlockOnResume = slc.UnlockOnResume;
-                    _underlying.Save();
-                }
-            }
-            else if (string.Equals(moduleId, "TaskScheduler", StringComparison.OrdinalIgnoreCase))
-            {
-                if (config is Modules.TaskScheduler.Models.TaskSchedulerConfig tsc)
-                {
-                    _underlying.Current.TasksEnabled = tsc.GlobalEnabled;
-                    _underlying.Save();
-                }
-            }
-            else if (string.Equals(moduleId, "AudioSwitch", StringComparison.OrdinalIgnoreCase))
-            {
-                if (config is Modules.AudioSwitch.Models.AudioSwitchConfig asc)
-                {
-                    _audioSwitchConfig = asc;
-                    _underlying.AudioSwitchJson = JsonConvert.SerializeObject(asc, Formatting.None);
-                    _underlying.Save();
-                }
-            }
-            else if (string.Equals(moduleId, "AppAutoMute", StringComparison.OrdinalIgnoreCase))
-            {
-                if (config is Modules.AppAutoMute.Models.AppAutoMuteConfig aam)
-                {
-                    _appAutoMuteConfig = aam;
-                    _underlying.AppAutoMuteJson = JsonConvert.SerializeObject(aam, Formatting.None);
-                    _underlying.Save();
-                }
-            }
-            else if (string.Equals(moduleId, "MonitorProfile", StringComparison.OrdinalIgnoreCase))
-            {
-                if (config is Modules.MonitorProfile.Models.MonitorProfileConfig mpc)
-                {
-                    _monitorProfileConfig = mpc;
-                    _underlying.MonitorProfileJson = JsonConvert.SerializeObject(mpc, Formatting.None);
-                    _underlying.Save();
-                }
-            }
-            else if (string.Equals(moduleId, "Awake", StringComparison.OrdinalIgnoreCase))
-            {
-                if (config is Modules.Awake.Models.AwakeConfig awc)
-                {
-                    _awakeConfig = awc;
-                    _underlying.AwakeJson = JsonConvert.SerializeObject(awc, Formatting.None);
-                    _underlying.Save();
-                }
-            }
-        }
+            if (string.IsNullOrEmpty(moduleId) || config == null) return;
 
-        private static T DeserializeConfig<T>(string json, Func<T> defaultFactory = null) where T : class, new()
-        {
-            if (string.IsNullOrWhiteSpace(json))
+            // 1. 优先走模块注册的强类型适配器
+            if (_adapters.TryGetValue(moduleId, out var adapter))
             {
-                return defaultFactory != null ? defaultFactory() : new T();
+                adapter.Save(config);
+                return;
             }
 
+            // 2. 通用原生 JToken 保存
             try
             {
-                return JsonConvert.DeserializeObject<T>(json) ?? (defaultFactory != null ? defaultFactory() : new T());
+                var token = JToken.FromObject(config);
+                _underlying.SetModuleToken(moduleId, token);
+                _underlying.Save();
             }
-            catch
-            {
-                return defaultFactory != null ? defaultFactory() : new T();
-            }
+            catch { }
         }
     }
 }

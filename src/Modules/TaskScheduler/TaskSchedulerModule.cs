@@ -24,9 +24,37 @@ namespace CarroDesk.Modules.TaskScheduler
 
         public bool IsGlobalEnabled => Scheduler != null && Scheduler.IsGlobalEnabled;
 
-        public TaskSchedulerModule()
+        private readonly ConfigService _configService;
+
+        public TaskSchedulerModule(ConfigService configService = null)
         {
             Instance = this;
+            _configService = configService;
+        }
+
+        public override void RegisterConfig(IConfigRegistry registry)
+        {
+            registry?.Register<TaskSchedulerConfig>(Id,
+                () =>
+                {
+                    var cfg = _configService?.Current;
+                    return new TaskSchedulerConfig
+                    {
+                        GlobalEnabled = cfg?.TasksEnabled ?? true,
+                        TasksFile = ConfigService.TaskFilePath
+                    };
+                },
+                c =>
+                {
+                    if (c == null) return;
+                    if (_configService?.Current != null)
+                    {
+                        _configService.Current.TasksEnabled = c.GlobalEnabled;
+                        _configService.Save();
+                    }
+                    Scheduler?.SetGlobalEnabled(c.GlobalEnabled);
+                    UpdateTrayHeader();
+                });
         }
 
         protected override void OnStart()
@@ -108,7 +136,7 @@ namespace CarroDesk.Modules.TaskScheduler
         public void SetGlobalEnabled(bool enabled)
         {
             Scheduler?.SetGlobalEnabled(enabled);
-            if (Config != null)
+            if (Config != null && Config.GlobalEnabled != enabled)
             {
                 Config.GlobalEnabled = enabled;
                 var configMgr = Context?.GetService<IConfigManager>();
