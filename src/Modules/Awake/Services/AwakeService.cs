@@ -304,10 +304,23 @@ namespace CarroDesk.Modules.Awake.Services
                     if (string.IsNullOrEmpty(nameOnly)) continue;
 
                     var processes = Process.GetProcessesByName(nameOnly);
-                    if (processes != null && processes.Length > 0)
+                    try
                     {
-                        matchedProc = ProcessHelper.Normalize(procSetting);
-                        break;
+                        if (processes != null && processes.Length > 0)
+                        {
+                            matchedProc = ProcessHelper.Normalize(procSetting);
+                            break;
+                        }
+                    }
+                    finally
+                    {
+                        if (processes != null)
+                        {
+                            foreach (var p in processes)
+                            {
+                                try { p?.Dispose(); } catch { }
+                            }
+                        }
                     }
                 }
 

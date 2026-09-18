@@ -171,23 +171,26 @@ namespace CarroDesk.Services.Tasks
                 bool exited;
                 if (timeoutSec > 0)
                 {
-                    var cts = new CancellationTokenSource();
-                    var waitTask = Task.Run(() => proc.WaitForExit(), cts.Token);
-                    var delay = Task.Delay(timeoutSec * 1000, cts.Token);
-                    var completed = await Task.WhenAny(waitTask, delay).ConfigureAwait(false);
-                    exited = completed == waitTask;
-                    if (!exited)
+                    using (var cts = new CancellationTokenSource())
                     {
-                        TaskLogger.Warn(task.Name, "timeout after " + timeoutSec + "s, killing pid=" + pid);
-                        try { KillTree(proc); } catch { }
-                        // wait a bit for kill
-                        try { proc.WaitForExit(5000); } catch { }
-                        TaskLogger.Error(task.Name, "killed on timeout, duration=" + sw.Elapsed);
-                        return -1;
-                    }
-                    else
-                    {
-                        cts.Cancel();
+                        var waitTask = Task.Run(() => proc.WaitForExit(), cts.Token);
+                        var delay = Task.Delay(timeoutSec * 1000, cts.Token);
+                        var completed = await Task.WhenAny(waitTask, delay).ConfigureAwait(false);
+                        exited = completed == waitTask;
+                        if (!exited)
+                        {
+                            try { cts.Cancel(); } catch { }
+                            TaskLogger.Warn(task.Name, "timeout after " + timeoutSec + "s, killing pid=" + pid);
+                            try { KillTree(proc); } catch { }
+                            // wait a bit for kill
+                            try { proc.WaitForExit(5000); } catch { }
+                            TaskLogger.Error(task.Name, "killed on timeout, duration=" + sw.Elapsed);
+                            return -1;
+                        }
+                        else
+                        {
+                            try { cts.Cancel(); } catch { }
+                        }
                     }
                 }
                 else

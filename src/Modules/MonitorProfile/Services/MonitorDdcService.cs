@@ -556,9 +556,12 @@ namespace CarroDesk.Modules.MonitorProfile.Services
                 {
                     foreach (ManagementObject obj in results)
                     {
-                        obj.InvokeMethod("WmiSetBrightness", new object[] { (uint)1, (byte)brightness });
-                        Log($"WMI: 亮度已成功设置为 {brightness}");
-                        return true;
+                        using (obj)
+                        {
+                            obj.InvokeMethod("WmiSetBrightness", new object[] { (uint)1, (byte)brightness });
+                            Log($"WMI: 亮度已成功设置为 {brightness}");
+                            return true;
+                        }
                     }
                 }
                 return false;
@@ -580,8 +583,11 @@ namespace CarroDesk.Modules.MonitorProfile.Services
                 {
                     foreach (ManagementObject obj in results)
                     {
-                        brightness = Convert.ToInt32(obj["CurrentBrightness"]);
-                        return true;
+                        using (obj)
+                        {
+                            brightness = Convert.ToInt32(obj["CurrentBrightness"]);
+                            return true;
+                        }
                     }
                 }
                 return false;

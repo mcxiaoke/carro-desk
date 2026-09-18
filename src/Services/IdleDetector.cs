@@ -1,40 +1,13 @@
 using System;
 using System.Runtime.InteropServices;
-using System.Windows.Threading;
 
 namespace CarroDesk.Services
 {
-    public class IdleDetector : IDisposable
+    /// <summary>
+    /// 提供系统空闲时间底层探测能力。
+    /// </summary>
+    public static class IdleDetector
     {
-        private enum QUERY_USER_NOTIFICATION_STATE
-        {
-            QUNS_NOT_PRESENT = 1,
-            QUNS_BUSY = 2,
-            QUNS_RUNNING_D3D_FULL_SCREEN = 3,
-            QUNS_PRESENTATION_MODE = 4,
-            QUNS_ACCEPTS_NOTIFICATIONS = 5,
-            QUNS_QUIET_TIME = 6
-        }
-
-        [DllImport("shell32.dll")]
-        private static extern int SHQueryUserNotificationState(out QUERY_USER_NOTIFICATION_STATE state);
-
-        public static bool IsSystemBusy()
-        {
-            try
-            {
-                QUERY_USER_NOTIFICATION_STATE s;
-                if (SHQueryUserNotificationState(out s) != 0) return false;
-                return s == QUERY_USER_NOTIFICATION_STATE.QUNS_BUSY
-                    || s == QUERY_USER_NOTIFICATION_STATE.QUNS_RUNNING_D3D_FULL_SCREEN
-                    || s == QUERY_USER_NOTIFICATION_STATE.QUNS_PRESENTATION_MODE;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
         [StructLayout(LayoutKind.Sequential)]
         private struct LASTINPUTINFO
         {
@@ -45,110 +18,23 @@ namespace CarroDesk.Services
         [DllImport("user32.dll")]
         private static extern bool GetLastInputInfo(ref LASTINPUTINFO plii);
 
-        private const int IntervalMs = 1000;
-
-        private readonly DispatcherTimer _timer;
-        private bool _fired;
-        private bool _warned;
-        private double _effectiveMs;
-        private uint _lastRaw;
-
-        public TimeSpan Threshold { get; set; }
-        public TimeSpan WarnBefore { get; set; }
-        public Func<bool> ShouldSuspend { get; set; }
-        public event Action ThresholdReached;
-        public event Action Warning;
-
-        public IdleDetector()
-        {
-            Threshold = TimeSpan.FromMinutes(5);
-            WarnBefore = TimeSpan.FromSeconds(30);
-            _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(IntervalMs) };
-            _timer.Tick += OnTick;
-        }
-
-        public void Start()
-        {
-            _fired = false;
-            _warned = false;
-            _effectiveMs = 0;
-            _lastRaw = 0;
-            _timer.Start();
-        }
-
-        public void Stop()
-        {
-            _timer.Stop();
-        }
-
-        public void Reset()
-        {
-            _fired = false;
-            _warned = false;
-            _effectiveMs = 0;
-            _lastRaw = GetIdleMilliseconds();
-        }
-
-        public void Suspend()
-        {
-            _fired = true;
-        }
-
+        /// <summary>
+        /// 获取自最后一次物理键鼠输入以来的系统空闲毫秒数。
+        /// </summary>
         public static uint GetIdleMilliseconds()
         {
-            var info = new LASTINPUTINFO();
-            info.cbSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf(info);
-            if (!GetLastInputInfo(ref info)) return 0;
-            uint now = unchecked((uint)Environment.TickCount);
-            return unchecked(now - info.dwTime);
-        }
-
-        private void OnTick(object sender, EventArgs e)
-        {
-            if (_fired || Threshold <= TimeSpan.Zero) return;
-
-            uint raw = GetIdleMilliseconds();
-            // 判定是否有新物理输入：
-            // 1) raw < _lastRaw：当前空闲比上一次小，说明发生物理操作时间变近了
-            // 2) raw < IntervalMs * 2（即 < 2000ms）：说明近期两秒内刚有键鼠输入（保底防御，避免 _lastRaw 在挂起恢复时未能触发 raw < _lastRaw）
-            bool hasInput = (raw < _lastRaw) || (raw < IntervalMs * 2);
-            _lastRaw = raw;
-
-            bool suspended = ShouldSuspend != null && ShouldSuspend();
-            if (hasInput) _effectiveMs = raw;
-            else if (!suspended) _effectiveMs += IntervalMs;
-            if (suspended) return;
-
-            var idle = TimeSpan.FromMilliseconds(_effectiveMs);
-            if (idle >= Threshold)
+            try
             {
-                _fired = true;
-                var handler = ThresholdReached;
-                if (handler != null) handler();
-                return;
+                var info = new LASTINPUTINFO();
+                info.cbSize = (uint)Marshal.SizeOf(info);
+                if (!GetLastInputInfo(ref info)) return 0;
+                uint now = unchecked((uint)Environment.TickCount);
+                return unchecked(now - info.dwTime);
             }
-
-            if (WarnBefore > TimeSpan.Zero && Threshold > WarnBefore)
+            catch
             {
-                if (idle >= Threshold - WarnBefore)
-                {
-                    if (!_warned)
-                    {
-                        _warned = true;
-                        var handler = Warning;
-                        if (handler != null) handler();
-                    }
-                }
-                else
-                {
-                    _warned = false;
-                }
+                return 0;
             }
-        }
-
-        public void Dispose()
-        {
-            Stop();
         }
     }
 }
