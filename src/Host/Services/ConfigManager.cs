@@ -96,6 +96,16 @@ namespace CarroDesk.Host.Services
                     return _monitorProfileConfig as T;
                 }
             }
+            else if (string.Equals(moduleId, "Awake", StringComparison.OrdinalIgnoreCase))
+            {
+                if (typeof(T) == typeof(Modules.Awake.Models.AwakeConfig))
+                {
+                    _awakeConfig = string.IsNullOrWhiteSpace(_underlying.AwakeJson)
+                        ? Modules.Awake.Models.AwakeConfig.CreateDefault()
+                        : DeserializeConfig(_underlying.AwakeJson, Modules.Awake.Models.AwakeConfig.CreateDefault);
+                    return _awakeConfig as T;
+                }
+            }
 
             return new T();
         }
@@ -103,6 +113,7 @@ namespace CarroDesk.Host.Services
         private Modules.AudioSwitch.Models.AudioSwitchConfig _audioSwitchConfig;
         private Modules.AppAutoMute.Models.AppAutoMuteConfig _appAutoMuteConfig;
         private Modules.MonitorProfile.Models.MonitorProfileConfig _monitorProfileConfig;
+        private Modules.Awake.Models.AwakeConfig _awakeConfig;
 
         public void SaveModuleConfig<T>(string moduleId, T config) where T : class
         {
@@ -152,6 +163,15 @@ namespace CarroDesk.Host.Services
                 {
                     _monitorProfileConfig = mpc;
                     _underlying.MonitorProfileJson = JsonConvert.SerializeObject(mpc, Formatting.None);
+                    _underlying.Save();
+                }
+            }
+            else if (string.Equals(moduleId, "Awake", StringComparison.OrdinalIgnoreCase))
+            {
+                if (config is Modules.Awake.Models.AwakeConfig awc)
+                {
+                    _awakeConfig = awc;
+                    _underlying.AwakeJson = JsonConvert.SerializeObject(awc, Formatting.None);
                     _underlying.Save();
                 }
             }

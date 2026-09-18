@@ -71,6 +71,7 @@ namespace CarroDesk.Services
         public string AudioSwitchJson { get; set; } = "";
         public string AppAutoMuteJson { get; set; } = "";
         public string MonitorProfileJson { get; set; } = "";
+        public string AwakeJson { get; set; } = "";
 
         private static readonly JsonSerializerSettings SerializerSettings = new JsonSerializerSettings
         {
@@ -165,6 +166,7 @@ namespace CarroDesk.Services
                         this.AudioSwitchJson = ExtractSubJson(obj["AudioSwitch"]);
                         this.AppAutoMuteJson = ExtractSubJson(obj["AppAutoMute"]);
                         this.MonitorProfileJson = ExtractSubJson(obj["MonitorProfile"]);
+                        this.AwakeJson = ExtractSubJson(obj["Awake"]);
 
                         return AppSettings.Merge(s);
                     }
@@ -196,6 +198,7 @@ namespace CarroDesk.Services
             obj["AudioSwitch"] = this.AudioSwitchJson ?? "";
             obj["AppAutoMute"] = this.AppAutoMuteJson ?? "";
             obj["MonitorProfile"] = this.MonitorProfileJson ?? "";
+            obj["Awake"] = this.AwakeJson ?? "";
 
             var json = obj.ToString(Formatting.Indented);
             File.WriteAllText(FilePath, json, Encoding.UTF8);

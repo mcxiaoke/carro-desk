@@ -14,6 +14,7 @@
     <Compile Include="CarroDeskContractTests.cs" />
     <Compile Include="MonitorProfileTests.cs" />
     <Compile Include="JsonMigrationTests.cs" />
+    <Compile Include="AwakeModuleTests.cs" />
   </ItemGroup>
 
   <ItemGroup>

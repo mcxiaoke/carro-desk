@@ -14,6 +14,7 @@ using CarroDesk.Services;
 using CarroDesk.Services.Localization;
 using CarroDesk.Modules.AudioSwitch;
 using CarroDesk.Modules.AppAutoMute;
+using CarroDesk.Modules.Awake;
 using CarroDesk.Services.Tasks;
 using CarroDesk.Views;
 
@@ -30,6 +31,7 @@ namespace CarroDesk
         public static TaskSchedulerModule TaskSchedulerMod => TaskSchedulerModule.Instance;
         public static AppAutoMuteModule AppAutoMuteMod => AppAutoMuteModule.Instance;
         public static CarroDesk.Modules.MonitorProfile.MonitorProfileModule MonitorProfileMod => CarroDesk.Modules.MonitorProfile.MonitorProfileModule.Instance;
+        public static AwakeModule AwakeMod => AwakeModule.Instance;
 
         // 向后兼容各 View 的配置门面（全局 AppSettings，非模块专属）
         public static ConfigService Config => (Services?.GetService<IConfigManager>() as ConfigManager)?.Underlying;
@@ -163,6 +165,12 @@ namespace CarroDesk
                 NotificationCallback = ShowBalloon
             };
             Modules.RegisterModule(monitorProfileModule);
+
+            var awakeModule = new AwakeModule()
+            {
+                NotificationCallback = ShowBalloon
+            };
+            Modules.RegisterModule(awakeModule);
 
             // 5. 初始化并启动模块
             Modules.InitializeAll(Services);
