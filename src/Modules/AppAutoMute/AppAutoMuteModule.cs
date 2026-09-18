@@ -324,7 +324,9 @@ namespace CarroDesk.Modules.AppAutoMute
                 {
                     try
                     {
-                        var win = new CarroDesk.Views.AppAutoMuteSettingsWindow
+                        var cfgMgr = Context?.GetService<IConfigManager>();
+                        var audio = Context?.GetService<IAudioService>();
+                        var win = new CarroDesk.Views.AppAutoMuteSettingsWindow(this, cfgMgr, audio, NotificationCallback)
                         {
                             WindowStartupLocation = System.Windows.WindowStartupLocation.CenterScreen
                         };

@@ -11,6 +11,7 @@ using System.Windows.Media;
 using CarroDesk.Core;
 using CarroDesk.Core.Models;
 using CarroDesk.Host.Services;
+using CarroDesk.Models;
 using CarroDesk.Services;
 using CarroDesk.Services.Localization;
 
@@ -46,9 +47,36 @@ namespace CarroDesk.Views
             }
         }
 
-        public FloatingPanelWindow()
+        private readonly ConfigManager _configManager;
+        private readonly ModuleManager _moduleManager;
+        private readonly ServiceContainer _services;
+        private readonly Action _reloadConfig;
+        private readonly Action _promptExit;
+        private readonly Action _updateTrayText;
+
+        private AppSettings CurrentSettings => _configManager?.Current;
+
+        private void PersistSettings()
+        {
+            _configManager?.Save();
+        }
+
+        public FloatingPanelWindow(
+            ConfigManager configManager = null,
+            ModuleManager moduleManager = null,
+            ServiceContainer services = null,
+            Action reloadConfig = null,
+            Action promptExit = null,
+            Action updateTrayText = null)
         {
             _instance = this;
+            _configManager = configManager;
+            _moduleManager = moduleManager;
+            _services = services;
+            _reloadConfig = reloadConfig;
+            _promptExit = promptExit;
+            _updateTrayText = updateTrayText;
+
             InitializeComponent();
 
             HeaderBar.MouseLeftButtonDown += OnHeaderMouseLeftButtonDown;
@@ -69,7 +97,7 @@ namespace CarroDesk.Views
             };
 
             // 初始读取 Pin 与 Lock 状态
-            var cfg = App.Config?.Current;
+            var cfg = CurrentSettings;
             if (cfg != null)
             {
                 _isPinned = cfg.FloatingPanelPinned;
@@ -79,11 +107,17 @@ namespace CarroDesk.Views
             UpdateLockVisual();
         }
 
-        public static void Toggle()
+        public static void Toggle(
+            ConfigManager configManager = null,
+            ModuleManager moduleManager = null,
+            ServiceContainer services = null,
+            Action reloadConfig = null,
+            Action promptExit = null,
+            Action updateTrayText = null)
         {
             if (_instance == null)
             {
-                _instance = new FloatingPanelWindow();
+                _instance = new FloatingPanelWindow(configManager, moduleManager, services, reloadConfig, promptExit, updateTrayText);
             }
 
             if (_instance.IsVisible)
@@ -159,7 +193,7 @@ namespace CarroDesk.Views
 
         private void SaveCurrentPosition()
         {
-            var cfg = App.Config?.Current;
+            var cfg = CurrentSettings;
             if (cfg != null)
             {
                 cfg.FloatingPanelPosition = "Custom";
@@ -171,7 +205,7 @@ namespace CarroDesk.Views
 
         public void Reposition(string mode)
         {
-            var cfg = App.Config?.Current;
+            var cfg = CurrentSettings;
             if (cfg != null)
             {
                 cfg.FloatingPanelPosition = mode;
@@ -189,7 +223,7 @@ namespace CarroDesk.Views
             if (panelHeight < 100) panelHeight = 350; // 安全估算高度
 
             var workArea = SystemParameters.WorkArea;
-            var mode = App.Config?.Current?.FloatingPanelPosition ?? "Tray";
+            var mode = CurrentSettings?.FloatingPanelPosition ?? "Tray";
 
             double targetLeft;
             double targetTop;
@@ -207,7 +241,7 @@ namespace CarroDesk.Views
                     break;
 
                 case "Custom":
-                    var cfg = App.Config?.Current;
+                    var cfg = CurrentSettings;
                     if (cfg != null && cfg.FloatingPanelX >= 0 && cfg.FloatingPanelY >= 0)
                     {
                         targetLeft = Math.Max(workArea.Left, Math.Min(workArea.Right - panelWidth, cfg.FloatingPanelX));
@@ -284,7 +318,7 @@ namespace CarroDesk.Views
         private void OnPositionClick(object sender, RoutedEventArgs e)
         {
             var cm = new ContextMenu();
-            var currentMode = App.Config?.Current?.FloatingPanelPosition ?? "Tray";
+            var currentMode = CurrentSettings?.FloatingPanelPosition ?? "Tray";
 
             var itemTray = new MenuItem
             {
@@ -319,7 +353,7 @@ namespace CarroDesk.Views
             };
             itemCustom.Click += (s, ev) =>
             {
-                var cfg = App.Config?.Current;
+                var cfg = CurrentSettings;
                 if (cfg != null)
                 {
                     cfg.FloatingPanelPosition = "Custom";
@@ -342,12 +376,12 @@ namespace CarroDesk.Views
 
         private void SaveSettings()
         {
-            var cfg = App.Config?.Current;
+            var cfg = CurrentSettings;
             if (cfg != null)
             {
                 cfg.FloatingPanelPinned = _isPinned;
                 cfg.FloatingPanelLocked = _isLocked;
-                App.Config.Save();
+                PersistSettings();
             }
         }
 
@@ -360,7 +394,9 @@ namespace CarroDesk.Views
             ItemsHostMenu.Items.Clear();
 
             // ① 挂载各业务模块导出的标准二级根项
-            var modules = App.Modules != null ? App.Modules.Modules.OrderBy(m => m.Order) : Enumerable.Empty<IModule>();
+            var modules = _moduleManager != null 
+                ? _moduleManager.Modules.OrderBy(m => m.Order) 
+                : Enumerable.Empty<IModule>();
             bool hasModule = false;
             foreach (var module in modules)
             {
@@ -392,7 +428,7 @@ namespace CarroDesk.Views
 
         private void BuildHostItems()
         {
-            var config = App.Config?.Current;
+            var config = CurrentSettings;
 
             // 开机自启
             var autoStartItem = new MenuItem
@@ -403,12 +439,13 @@ namespace CarroDesk.Views
             AttachHoverBehavior(autoStartItem);
             autoStartItem.Click += (s, e) =>
             {
-                if (App.Config?.Current != null)
+                var cfg = CurrentSettings;
+                if (cfg != null)
                 {
-                    bool newState = !App.Config.Current.AutoStart;
-                    App.Config.Current.AutoStart = newState;
+                    bool newState = !cfg.AutoStart;
+                    cfg.AutoStart = newState;
                     AutoStartService.Sync(newState);
-                    App.Config.Save();
+                    PersistSettings();
                     autoStartItem.IsChecked = newState;
                 }
                 CloseAllTopLevelSubmenus();
@@ -428,7 +465,8 @@ namespace CarroDesk.Views
                 DismissIfNotPinned();
                 try
                 {
-                    var win = new ConfigEditorWindow(App.Services?.GetService<IPinService>())
+                    var pinService = _services?.GetService<IPinService>();
+                    var win = new ConfigEditorWindow(pinService, _configManager, _reloadConfig)
                     {
                         WindowStartupLocation = WindowStartupLocation.CenterScreen
                     };
@@ -461,7 +499,7 @@ namespace CarroDesk.Views
             AttachHoverBehavior(reloadConfigItem);
             reloadConfigItem.Click += (s, e) =>
             {
-                App.CurrentApp?.ReloadConfig();
+                _reloadConfig?.Invoke();
                 RebuildMenu();
                 CloseAllTopLevelSubmenus();
                 DismissIfNotPinned();
@@ -506,21 +544,22 @@ namespace CarroDesk.Views
             exitItem.Click += (s, e) =>
             {
                 HidePanel();
-                App.CurrentApp?.PromptExit();
+                _promptExit?.Invoke();
             };
             ItemsHostMenu.Items.Add(exitItem);
         }
 
         private void SwitchLanguage(string lang)
         {
-            if (App.Config != null && App.Config.Current != null)
+            var cfg = CurrentSettings;
+            if (cfg != null)
             {
-                App.Config.Current.Language = lang;
-                App.Config.Save();
+                cfg.Language = lang;
+                PersistSettings();
             }
             I18nService.Instance.SetLanguage(lang);
             RebuildMenu();
-            App.CurrentApp?.UpdateTrayText();
+            _updateTrayText?.Invoke();
             DismissIfNotPinned();
         }
 

@@ -70,7 +70,9 @@ namespace CarroDesk.Modules.TaskScheduler
                 if (Scheduler == null)
                 {
                     var idle = Context?.GetService<IIdleService>();
-                    Scheduler = new TaskSchedulerService(idle);
+                    var cfgMgr = Context?.GetService<IConfigManager>();
+                    var notif = Context?.GetService<INotificationService>();
+                    Scheduler = new TaskSchedulerService(idle, cfgMgr, notif, msg => Context?.ShowNotification(msg));
                 }
                 Scheduler?.Start();
             }
@@ -264,7 +266,7 @@ namespace CarroDesk.Modules.TaskScheduler
                 {
                     try
                     {
-                        var win = new CarroDesk.Views.TaskEditorWindow
+                        var win = new CarroDesk.Views.TaskEditorWindow(Scheduler, () => RequestRefreshSelf())
                         {
                             WindowStartupLocation = System.Windows.WindowStartupLocation.CenterScreen
                         };

@@ -53,13 +53,17 @@ namespace CarroDesk.Views
         private DateTime _lastActivateAttempt = DateTime.MinValue;
         private bool _isClosing;
 
-        public LockWindow(ILockService lockService, ILockAppearance appearance, System.Windows.Forms.Screen screen, bool primary)
+        private readonly Func<bool> _isShuttingDown;
+        private bool IsAppShuttingDown => _isShuttingDown != null ? _isShuttingDown() : false;
+
+        public LockWindow(ILockService lockService, ILockAppearance appearance, System.Windows.Forms.Screen screen, bool primary, Func<bool> isShuttingDown = null)
         {
             InitializeComponent();
             _lockService = lockService;
             _appearance = appearance;
             _primary = primary;
             _bounds = screen.Bounds;
+            _isShuttingDown = isShuttingDown;
 
             Left = screen.Bounds.Left;
             Top = screen.Bounds.Top;
@@ -113,7 +117,7 @@ namespace CarroDesk.Views
         private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
         {
             const int WM_WINDOWPOSCHANGING = 0x0046;
-            if (msg == WM_WINDOWPOSCHANGING && !_isClosing && !App.IsShuttingDown)
+            if (msg == WM_WINDOWPOSCHANGING && !_isClosing && !IsAppShuttingDown)
             {
                 try
                 {
@@ -179,7 +183,7 @@ namespace CarroDesk.Views
 
         private void OnKeepAliveTick(object sender, EventArgs e)
         {
-            if (App.IsShuttingDown || _isClosing) return;
+            if (IsAppShuttingDown || _isClosing) return;
             var hwnd = new WindowInteropHelper(this).Handle;
             if (hwnd == IntPtr.Zero) return;
             if (!IsWindowVisible(hwnd) || IsIconic(hwnd)) return;
@@ -274,7 +278,7 @@ namespace CarroDesk.Views
 
         private void OnDeactivated(object sender, EventArgs e)
         {
-            if (!_primary || _isClosing || App.IsShuttingDown) return;
+            if (!_primary || _isClosing || IsAppShuttingDown) return;
             // 防抖：不立即 Activate，延迟 400ms 并节流，避免与 TOPMOST 浮层焦点抢占导致闪烁
             _deactivateTimer.Stop();
             _deactivateTimer.Start();
@@ -283,7 +287,7 @@ namespace CarroDesk.Views
         private void OnDeactivateTimerTick(object sender, EventArgs e)
         {
             _deactivateTimer.Stop();
-            if (_isClosing || App.IsShuttingDown) return;
+            if (_isClosing || IsAppShuttingDown) return;
             if (!_primary) return;
             // 节流 800ms，避免高频 Activate 造成任务栏/浮层闪烁
             if ((DateTime.Now - _lastActivateAttempt).TotalMilliseconds < 800) return;
@@ -347,7 +351,7 @@ namespace CarroDesk.Views
         private void OnClosing(object sender, System.ComponentModel.CancelEventArgs e)
         {
             // 如果不是通过 CloseSafe 授权解锁关闭且非程序退出，则拦截外部关闭请求
-            if (!_isClosing && !App.IsShuttingDown)
+            if (!_isClosing && !IsAppShuttingDown)
             {
                 e.Cancel = true;
                 return;

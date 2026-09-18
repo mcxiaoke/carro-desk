@@ -27,11 +27,8 @@ namespace CarroDesk
         public static ServiceContainer Services { get; private set; }
         public static ModuleManager Modules { get; private set; }
 
-        public static ScreenLockModule ScreenLockMod => ScreenLockModule.Instance;
-        public static TaskSchedulerModule TaskSchedulerMod => TaskSchedulerModule.Instance;
-        public static AppAutoMuteModule AppAutoMuteMod => AppAutoMuteModule.Instance;
-        public static CarroDesk.Modules.MonitorProfile.MonitorProfileModule MonitorProfileMod => CarroDesk.Modules.MonitorProfile.MonitorProfileModule.Instance;
-        public static AwakeModule AwakeMod => AwakeModule.Instance;
+        private ScreenLockModule _screenLockModule;
+        private ConfigManager _configManager;
 
         // 向后兼容各 View 的配置门面（全局 AppSettings，非模块专属）
         public static ConfigService Config => (Services?.GetService<IConfigManager>() as ConfigManager)?.Underlying;
@@ -44,8 +41,8 @@ namespace CarroDesk
         private int _floatingPanelHotkeyId;
 
         internal static App CurrentApp => Current as App;
-        internal DateTime PauseUntil => ScreenLockMod != null ? ScreenLockMod.PauseUntil : DateTime.MinValue;
-        internal bool IsPaused => ScreenLockMod != null && ScreenLockMod.IsPaused;
+        internal DateTime PauseUntil => _screenLockModule != null ? _screenLockModule.PauseUntil : DateTime.MinValue;
+        internal bool IsPaused => _screenLockModule != null && _screenLockModule.IsPaused;
         internal static TrayContextMenu TrayMenu => _trayMenu;
 
         protected override void OnStartup(StartupEventArgs e)
@@ -73,15 +70,16 @@ namespace CarroDesk
             var rawConfig = new ConfigService();
             rawConfig.LoadOrCreate();
 
-            var configMgr = new ConfigManager(rawConfig);
-            Services.AddSingleton<IConfigManager>(configMgr);
-            Services.AddSingleton<IConfigRegistry>(configMgr);
+            _configManager = new ConfigManager(rawConfig);
+            Services.AddSingleton<ConfigManager>(_configManager);
+            Services.AddSingleton<IConfigManager>(_configManager);
+            Services.AddSingleton<IConfigRegistry>(_configManager);
 
             // PIN 能力下沉 Host（规范 §3.5）：缺模块仍按"有 PIN 则验"兜底
             var hostPinService = new HostPinService(rawConfig);
             Services.AddSingleton<IPinService>(hostPinService);
 
-            I18nService.Instance.Init(configMgr.Current.Language);
+            I18nService.Instance.Init(_configManager.Current.Language);
             I18nService.Instance.LanguageChanged += () =>
             {
                 UpdateTrayText();
@@ -91,15 +89,15 @@ namespace CarroDesk
             Services.AddSingleton(I18nService.Instance);
 
             // 2. 首次运行安全向导
-            if (!configMgr.Current.HasPin())
+            if (!_configManager.Current.HasPin())
             {
                 var wizard = new FirstRunWindow();
                 if (wizard.ShowDialog() == true)
                 {
                     hostPinService.SetNewPin(wizard.NewPin);
-                    configMgr.Current.PinSalt = hostPinService.Salt;
-                    configMgr.Current.PinHash = hostPinService.Hash;
-                    configMgr.Save();
+                    _configManager.Current.PinSalt = hostPinService.Salt;
+                    _configManager.Current.PinHash = hostPinService.Hash;
+                    _configManager.Save();
                 }
                 else
                 {
@@ -108,7 +106,7 @@ namespace CarroDesk
                 }
             }
 
-            AutoStartService.Sync(configMgr.Current.AutoStart);
+            AutoStartService.Sync(_configManager.Current.AutoStart);
 
             // 3. 构建托盘
             CreateTrayIcon();
@@ -139,11 +137,12 @@ namespace CarroDesk
                 (msg, title) => ShowBalloon(msg));
             _trayController.Attach(_trayMenu);
 
-            var screenLockModule = new ScreenLockModule(rawConfig)
+            _screenLockModule = new ScreenLockModule(rawConfig)
             {
                 BalloonNotifier = ShowBalloon
             };
-            Modules.RegisterModule(screenLockModule);
+            _screenLockModule.Controller.IsShuttingDownProvider = () => IsShuttingDown;
+            Modules.RegisterModule(_screenLockModule);
 
             var taskSchedulerModule = new TaskSchedulerModule(rawConfig);
             Modules.RegisterModule(taskSchedulerModule);
@@ -177,7 +176,7 @@ namespace CarroDesk
             Modules.InitializeAll(Services);
             Modules.StartAll();
 
-            screenLockModule.Controller.Unlocked += () =>
+            _screenLockModule.Controller.Unlocked += () =>
             {
                 UpdateTrayText();
                 _trayController?.RequestRefresh();
@@ -192,7 +191,13 @@ namespace CarroDesk
         {
             Dispatcher.BeginInvoke(new Action(() =>
             {
-                CarroDesk.Views.FloatingPanelWindow.Toggle();
+                CarroDesk.Views.FloatingPanelWindow.Toggle(
+                    _configManager,
+                    Modules,
+                    Services,
+                    ReloadConfig,
+                    PromptExit,
+                    UpdateTrayText);
             }));
         }
 
@@ -210,7 +215,7 @@ namespace CarroDesk
                         ToggleFloatingPanel();
                     }, out _);
                 }
-                catch { }
+                catch { /* intentionally ignored: hotkey conflict or invalid sequence */ }
             }
         }
 
@@ -224,7 +229,7 @@ namespace CarroDesk
                     hotkeys?.Unregister("Host.FloatingPanel", _floatingPanelHotkeyId);
                     _floatingPanelHotkeyId = 0;
                 }
-                catch { }
+                catch { /* intentionally ignored: hotkey already unregistered */ }
             }
         }
 
@@ -236,7 +241,7 @@ namespace CarroDesk
             I18nService.Instance.SetLanguage(c.Language);
             Modules?.ReloadAll();
             AutoStartService.Sync(c.AutoStart);
-            try { ProcessExclusionService.InvalidateCache(); } catch { }
+            try { ProcessExclusionService.InvalidateCache(); } catch { /* intentionally ignored: cache invalidation */ }
             RegisterFloatingPanelHotkey();
             _trayController?.RequestRefresh();
             UpdateTrayText();
@@ -256,8 +261,8 @@ namespace CarroDesk
                 return;
             }
             var result = scheduler.Reload();
-            try { RefreshTaskMenu(); } catch { }
-            try { RefreshMenuChecks(); } catch { }
+            try { RefreshTaskMenu(); } catch { /* intentionally ignored: UI task refresh */ }
+            try { RefreshMenuChecks(); } catch { /* intentionally ignored: UI checks refresh */ }
             var msg = result.Errors == 0
                 ? Loc.T("Tray.BalloonTasksReloadedSuccess", result.Tasks)
                 : Loc.T("Tray.BalloonTasksReloadedErrors", result.Tasks, result.Errors);
@@ -274,7 +279,7 @@ namespace CarroDesk
             {
                 _trayController?.RequestRefresh();
             }
-            catch { }
+            catch { /* intentionally ignored: UI refresh during shutdown */ }
         }
 
         public static void ShowBalloonPublic(string text)
@@ -284,12 +289,18 @@ namespace CarroDesk
                 var app = Current as App;
                 if (app != null) app.Dispatcher.BeginInvoke(new Action(() => app.ShowBalloon(text)));
             }
-            catch { }
+            catch { /* intentionally ignored: dispatcher shutdown */ }
         }
 
         private void CreateTrayIcon()
         {
-            _trayMenu = new TrayContextMenu();
+            _trayMenu = new TrayContextMenu(
+                _configManager,
+                Services,
+                ToggleFloatingPanel,
+                ReloadConfig,
+                UpdateTrayText,
+                PromptExit);
 
             _tbIcon = new TaskbarIcon
             {
@@ -304,22 +315,22 @@ namespace CarroDesk
 
         internal void SetIdleMinutes(int minutes)
         {
-            ScreenLockMod?.SetIdleMinutes(minutes);
+            _screenLockModule?.SetIdleMinutes(minutes);
             UpdateTrayText();
             _trayController?.RequestRefresh();
         }
 
         internal void PauseFor(TimeSpan duration)
         {
-            ScreenLockMod?.PauseFor(duration);
+            _screenLockModule?.PauseFor(duration);
             UpdateTrayText();
             _trayController?.RequestRefresh();
-            ShowBalloon(Loc.T("Tray.BalloonPause", ScreenLockMod.PauseUntil));
+            ShowBalloon(Loc.T("Tray.BalloonPause", _screenLockModule != null ? _screenLockModule.PauseUntil : DateTime.MinValue));
         }
 
         internal void ResumeIdle()
         {
-            ScreenLockMod?.ResumeIdle();
+            _screenLockModule?.ResumeIdle();
             UpdateTrayText();
             _trayController?.RequestRefresh();
         }
@@ -336,7 +347,7 @@ namespace CarroDesk
             {
                 _tbIcon.ShowBalloonTip("CarroDesk", text, BalloonIcon.Info);
             }
-            catch { }
+            catch { /* intentionally ignored: tray notification tip failure */ }
         }
 
         private static System.Drawing.Icon LoadAppIcon()
@@ -363,7 +374,7 @@ namespace CarroDesk
                 // 不做四态聚合（§4.4/§M13）：ToolTipText 保持最简应用名，状态由各模块菜单项自述
                 _tbIcon.ToolTipText = "CarroDesk";
             }
-            catch { }
+            catch { /* intentionally ignored: tooltip text update */ }
         }
 
         internal void PromptExit()
@@ -402,7 +413,7 @@ namespace CarroDesk
             {
                 Current?.Dispatcher?.BeginInvoke(new Action(() => Current.Shutdown()));
             }
-            catch { }
+            catch { /* intentionally ignored: dispatcher already shutdown */ }
         }
 
         public static bool IsFatalException(Exception ex)
@@ -430,7 +441,7 @@ namespace CarroDesk
                     var path = Path.Combine(ConfigService.DirPath, "fatal.log");
                     File.AppendAllText(path, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [FATAL] {ex}{Environment.NewLine}");
                 }
-                catch { }
+                catch { /* intentionally ignored: emergency disk log error during crash */ }
                 Environment.FailFast("Fatal unhandled exception encountered in CarroDesk.", ex);
                 return;
             }
@@ -439,7 +450,7 @@ namespace CarroDesk
             {
                 ShowBalloonPublic("操作发生异常，详情请查看日志");
             }
-            catch { }
+            catch { /* intentionally ignored: non-fatal balloon tip display failure */ }
 
             e.Handled = true;
         }
@@ -473,16 +484,15 @@ namespace CarroDesk
                     File.AppendAllText(path, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [CRITICAL] {ex}{Environment.NewLine}");
                 }
             }
-            catch { }
+            catch { /* intentionally ignored: file write failure during emergency logging */ }
         }
 
         private void OnAppExit(object sender, ExitEventArgs e)
         {
             IsShuttingDown = true;
-            try { Modules?.StopAll(); } catch { }
-            try { Modules?.Dispose(); } catch { }
-            try { Services?.GetService<ForegroundTracker>()?.Dispose(); } catch { }
-            try { Services?.GetService<AudioService>()?.Dispose(); } catch { }
+            try { Modules?.StopAll(); } catch { /* intentionally ignored: best-effort stop during exit */ }
+            try { Modules?.Dispose(); } catch { /* intentionally ignored: best-effort module dispose */ }
+            try { Services?.Dispose(); } catch { /* intentionally ignored: service container dispose */ }
             try
             {
                 if (_tbIcon != null)
@@ -490,8 +500,8 @@ namespace CarroDesk
                     _tbIcon.Dispose();
                 }
             }
-            catch { }
-            try { _mutex?.ReleaseMutex(); } catch { }
+            catch { /* intentionally ignored: tray icon cleanup */ }
+            try { _mutex?.ReleaseMutex(); } catch { /* intentionally ignored: single instance mutex release */ }
         }
     }
 }

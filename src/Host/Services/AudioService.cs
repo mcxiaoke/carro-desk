@@ -22,7 +22,11 @@ namespace CarroDesk.Host.Services
             {
                 _deviceEnumerator = (IMMDeviceEnumerator)new MMDeviceEnumeratorComObject();
             }
-            catch { }
+            catch (Exception ex)
+            {
+                /* intentionally ignored: CoreAudio may be unavailable on headless, VM, or WinPE environments */
+                Debug.WriteLine($"[AudioService] Failed to initialize IMMDeviceEnumerator: {ex.Message}");
+            }
         }
 
         public void RaiseDevicesChanged()
@@ -62,7 +66,11 @@ namespace CarroDesk.Host.Services
                     Marshal.ReleaseComObject(collection);
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                /* intentionally ignored: CoreAudio device enumeration may fail if audio service is stopped */
+                Debug.WriteLine($"[AudioService] GetPlaybackDevices failed: {ex.Message}");
+            }
 
             return list;
         }
@@ -86,7 +94,11 @@ namespace CarroDesk.Host.Services
                     }
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                /* intentionally ignored: default audio endpoint may be missing if no audio device is connected */
+                Debug.WriteLine($"[AudioService] GetDefaultPlaybackDevice failed: {ex.Message}");
+            }
             return null;
         }
 
@@ -114,8 +126,10 @@ namespace CarroDesk.Host.Services
                     Marshal.ReleaseComObject(policyConfig);
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                /* intentionally ignored: PolicyConfig COM activation or method call can fail on unsupported Windows versions or non-standard sound devices */
+                Debug.WriteLine($"[AudioService] SetDefaultPlaybackDevice failed: {ex.Message}");
                 return false;
             }
         }
@@ -179,7 +193,11 @@ namespace CarroDesk.Host.Services
                                                                     procName = proc.ProcessName;
                                                                 }
                                                             }
-                                                            catch { }
+                                                            catch (Exception ex)
+                                                            {
+                                                                /* intentionally ignored: process may exit or access denied during iteration */
+                                                                Debug.WriteLine($"[AudioService] GetProcessById({pid}) failed: {ex.Message}");
+                                                            }
 
                                                             if (!string.IsNullOrEmpty(procName) && string.Equals(procName, targetName, StringComparison.OrdinalIgnoreCase))
                                                             {
@@ -218,7 +236,11 @@ namespace CarroDesk.Host.Services
                     }
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                /* intentionally ignored: audio session enumeration failed (device removed or CoreAudio restart) */
+                Debug.WriteLine($"[AudioService] SetProcessMute failed: {ex.Message}");
+            }
 
             return anyModified;
         }
@@ -232,7 +254,11 @@ namespace CarroDesk.Host.Services
                 {
                     SetProcessMute(name, false);
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    /* intentionally ignored: individual process unmute failure should not abort batch */
+                    Debug.WriteLine($"[AudioService] UnmuteProcesses failed for '{name}': {ex.Message}");
+                }
             }
         }
 
@@ -258,7 +284,11 @@ namespace CarroDesk.Host.Services
                     }
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                /* intentionally ignored: property store read may fail if device was unplugged */
+                Debug.WriteLine($"[AudioService] GetDeviceFriendlyName failed: {ex.Message}");
+            }
             return null;
         }
 
@@ -305,7 +335,11 @@ namespace CarroDesk.Host.Services
                                                                     }
                                                                 }
                                                             }
-                                                            catch { }
+                                                            catch (Exception ex)
+                                                            {
+                                                                /* intentionally ignored: process exited or access denied during active process iteration */
+                                                                Debug.WriteLine($"[AudioService] Active session GetProcessById({pid}) failed: {ex.Message}");
+                                                            }
                                                         }
                                                     }
                                                 }
@@ -334,7 +368,11 @@ namespace CarroDesk.Host.Services
                     }
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                /* intentionally ignored: audio session iteration failed (device disconnected) */
+                Debug.WriteLine($"[AudioService] GetActiveAudioProcesses failed: {ex.Message}");
+            }
 
             return new List<string>(result);
         }
@@ -343,7 +381,15 @@ namespace CarroDesk.Host.Services
         {
             if (_deviceEnumerator != null)
             {
-                try { Marshal.ReleaseComObject(_deviceEnumerator); } catch { }
+                try
+                {
+                    Marshal.ReleaseComObject(_deviceEnumerator);
+                }
+                catch (Exception ex)
+                {
+                    /* intentionally ignored: COM cleanup on dispose */
+                    Debug.WriteLine($"[AudioService] Dispose failed releasing enumerator: {ex.Message}");
+                }
                 _deviceEnumerator = null;
             }
         }

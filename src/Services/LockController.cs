@@ -43,7 +43,7 @@ namespace CarroDesk.Services
                     _lockWindows.Clear();
                     foreach (Screen screen in Screen.AllScreens)
                     {
-                        var win = new LockWindow(this, this, screen, screen.Primary);
+                        var win = new LockWindow(this, this, screen, screen.Primary, IsShuttingDownProvider);
                         _lockWindows.Add(win);
                         win.Show();
                         win.ActivateIfNeeded();
@@ -75,6 +75,8 @@ namespace CarroDesk.Services
             }
         }
 
+        public Func<bool> IsShuttingDownProvider { get; set; }
+
         public void Lock()
         {
             if (_locked || !_pinService.IsConfigured) return;
@@ -83,7 +85,7 @@ namespace CarroDesk.Services
 
             foreach (Screen screen in Screen.AllScreens)
             {
-                var win = new LockWindow(this, this, screen, screen.Primary);
+                var win = new LockWindow(this, this, screen, screen.Primary, IsShuttingDownProvider);
                 _lockWindows.Add(win);
                 win.Show();
                 win.ActivateIfNeeded();

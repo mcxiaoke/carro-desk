@@ -15,9 +15,13 @@ namespace CarroDesk.Views
     {
         private List<TaskDefinition> _tasks = new List<TaskDefinition>();
         private bool _isUpdating = false;
+        private readonly ITaskSchedulerService _scheduler;
+        private readonly Action _onReloadCompleted;
 
-        public TaskEditorWindow()
+        public TaskEditorWindow(ITaskSchedulerService scheduler = null, Action onReloadCompleted = null)
         {
+            _scheduler = scheduler;
+            _onReloadCompleted = onReloadCompleted;
             InitializeComponent();
             Loaded += OnLoaded;
             I18nService.Instance.LanguageChanged += OnLanguageChanged;
@@ -780,14 +784,13 @@ namespace CarroDesk.Views
             if (!SaveTasksInternal()) return;
             try
             {
-                var scheduler = CarroDesk.App.Services?.GetService<ITaskSchedulerService>();
-                var app = Application.Current as CarroDesk.App;
-                if (app != null && scheduler != null)
+                var scheduler = _scheduler;
+                if (scheduler != null)
                 {
                     var res = scheduler.Reload();
                     string msg = res.Errors == 0 ? Loc.T("Tasks.ReloadSuccess", res.Tasks) : Loc.T("Tasks.ReloadWithErrors", res.Errors);
                     MessageBox.Show(msg, Loc.T("Tray.ReloadTasks", "重载任务"), MessageBoxButton.OK, MessageBoxImage.Information);
-                    try { app.Dispatcher.Invoke(new Action(() => app.RefreshTaskMenu())); } catch { }
+                    try { _onReloadCompleted?.Invoke(); } catch { }
                 }
             }
             catch (Exception ex)

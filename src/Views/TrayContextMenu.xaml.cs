@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
+using CarroDesk.Core;
 using CarroDesk.Host.Services;
 using CarroDesk.Services;
 using CarroDesk.Services.Localization;
@@ -22,8 +23,28 @@ namespace CarroDesk.Views
         public Separator SlotAnchorTop => PluginSlotAnchorTop;
         public Separator SlotAnchorBottom => PluginSlotAnchorBottom;
 
-        public TrayContextMenu()
+        private readonly ConfigManager _configManager;
+        private readonly ServiceContainer _services;
+        private readonly Action _toggleFloatingPanel;
+        private readonly Action _reloadConfig;
+        private readonly Action _updateTrayText;
+        private readonly Action _promptExit;
+
+        public TrayContextMenu(
+            ConfigManager configManager = null,
+            ServiceContainer services = null,
+            Action toggleFloatingPanel = null,
+            Action reloadConfig = null,
+            Action updateTrayText = null,
+            Action promptExit = null)
         {
+            _configManager = configManager;
+            _services = services;
+            _toggleFloatingPanel = toggleFloatingPanel;
+            _reloadConfig = reloadConfig;
+            _updateTrayText = updateTrayText;
+            _promptExit = promptExit;
+
             InitializeComponent();
             Opened += (s, e) =>
             {
@@ -49,7 +70,7 @@ namespace CarroDesk.Views
         {
             try
             {
-                var config = App.Config?.Current;
+                var config = _configManager?.Current;
                 if (config == null) return;
 
                 if (AutoStartItem != null)
@@ -67,17 +88,18 @@ namespace CarroDesk.Views
 
         private void OnFloatingPanelClick(object sender, RoutedEventArgs e)
         {
-            App.CurrentApp?.ToggleFloatingPanel();
+            _toggleFloatingPanel?.Invoke();
         }
 
         private void OnAutoStartClick(object sender, RoutedEventArgs e)
         {
-            if (App.Config?.Current != null)
+            var config = _configManager?.Current;
+            if (config != null)
             {
-                bool newState = !App.Config.Current.AutoStart;
-                App.Config.Current.AutoStart = newState;
+                bool newState = !config.AutoStart;
+                config.AutoStart = newState;
                 AutoStartService.Sync(newState);
-                App.Config.Save();
+                _configManager?.Save();
                 RefreshHostChecks();
             }
         }
@@ -86,7 +108,8 @@ namespace CarroDesk.Views
         {
             try
             {
-                var win = new ConfigEditorWindow(App.Services?.GetService<IPinService>())
+                var pinService = _services?.GetService<IPinService>();
+                var win = new ConfigEditorWindow(pinService, _configManager, _reloadConfig)
                 {
                     WindowStartupLocation = WindowStartupLocation.CenterScreen
                 };
@@ -107,7 +130,7 @@ namespace CarroDesk.Views
 
         private void OnReloadConfigClick(object sender, RoutedEventArgs e)
         {
-            App.CurrentApp?.ReloadConfig();
+            _reloadConfig?.Invoke();
         }
 
         private void OnLanguageSelectClick(object sender, RoutedEventArgs e)
@@ -115,20 +138,21 @@ namespace CarroDesk.Views
             if (sender is MenuItem mi && mi.Tag != null)
             {
                 string lang = mi.Tag.ToString();
-                if (App.Config != null && App.Config.Current != null)
+                var config = _configManager?.Current;
+                if (config != null)
                 {
-                    App.Config.Current.Language = lang;
-                    App.Config.Save();
+                    config.Language = lang;
+                    _configManager?.Save();
                 }
                 I18nService.Instance.SetLanguage(lang);
                 RefreshTray();
-                App.CurrentApp?.UpdateTrayText();
+                _updateTrayText?.Invoke();
             }
         }
 
         private void OnExitClick(object sender, RoutedEventArgs e)
         {
-            App.CurrentApp?.PromptExit();
+            _promptExit?.Invoke();
         }
     }
 }

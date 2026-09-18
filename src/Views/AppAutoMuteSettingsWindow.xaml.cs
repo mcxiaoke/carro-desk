@@ -8,6 +8,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using CarroDesk.Core;
 using CarroDesk.Host.Services;
+using CarroDesk.Modules.AppAutoMute;
 using CarroDesk.Modules.AppAutoMute.Models;
 using CarroDesk;
 using CarroDesk.Models;
@@ -19,9 +20,22 @@ namespace CarroDesk.Views
     public partial class AppAutoMuteSettingsWindow : Window
     {
         private readonly ObservableCollection<string> _targetApps = new ObservableCollection<string>();
+        private readonly AppAutoMuteModule _module;
+        private readonly IConfigManager _configManager;
+        private readonly IAudioService _audioService;
+        private readonly Action<string> _notifier;
 
-        public AppAutoMuteSettingsWindow()
+        public AppAutoMuteSettingsWindow(
+            AppAutoMuteModule module = null,
+            IConfigManager configManager = null,
+            IAudioService audioService = null,
+            Action<string> notifier = null)
         {
+            _module = module ?? AppAutoMuteModule.Instance;
+            _configManager = configManager;
+            _audioService = audioService;
+            _notifier = notifier;
+
             InitializeComponent();
             LstTargetApps.ItemsSource = _targetApps;
             LoadCurrentSettings();
@@ -30,7 +44,7 @@ namespace CarroDesk.Views
 
         private void LoadCurrentSettings()
         {
-            var config = App.AppAutoMuteMod?.Config ?? new AppAutoMuteConfig();
+            var config = _module?.Config ?? (_configManager != null ? _configManager.GetModuleConfig<AppAutoMuteConfig>("AppAutoMute") : new AppAutoMuteConfig());
 
             ChkEnabled.IsChecked = config.Enabled;
             TxtHotkey.Text = config.Hotkey ?? "Ctrl+Win+S";
@@ -67,7 +81,7 @@ namespace CarroDesk.Views
             try
             {
                 // 1. 优先获取当前正在发生音频输出的进程
-                var audioService = App.Services?.GetService<AudioService>();
+                var audioService = _audioService;
                 if (audioService != null)
                 {
                     var audioProcs = audioService.GetActiveAudioProcesses();
@@ -191,8 +205,8 @@ namespace CarroDesk.Views
                 }
             }
 
-            var configMgr = App.Services?.GetService<IConfigManager>();
-            var config = App.AppAutoMuteMod?.Config ?? new AppAutoMuteConfig();
+            var configMgr = _configManager;
+            var config = _module?.Config ?? (configMgr != null ? configMgr.GetModuleConfig<AppAutoMuteConfig>("AppAutoMute") : new AppAutoMuteConfig());
 
             config.Enabled = ChkEnabled.IsChecked == true;
             config.Hotkey = hotkey;
@@ -206,8 +220,16 @@ namespace CarroDesk.Views
                 configMgr.SaveModuleConfig("AppAutoMute", config);
             }
 
-            App.AppAutoMuteMod?.OnConfigReloaded();
-            App.ShowBalloonPublic("后台智能静音配置已保存并生效");
+            _module?.OnConfigReloaded();
+            string saveMsg = "后台智能静音配置已保存并生效";
+            if (_notifier != null)
+            {
+                _notifier(saveMsg);
+            }
+            else
+            {
+                _module?.NotificationCallback?.Invoke(saveMsg);
+            }
 
             DialogResult = true;
             Close();

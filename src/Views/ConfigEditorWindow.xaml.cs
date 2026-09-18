@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using CarroDesk.Core;
+using CarroDesk.Host.Services;
 using CarroDesk.Models;
 using CarroDesk.Services;
 using CarroDesk.Services.Localization;
@@ -14,11 +16,15 @@ namespace CarroDesk.Views
         private AppSettings _editing;
         private bool _isInitializing = false;
         private readonly IPinService _pinService;
+        private readonly ConfigManager _configManager;
+        private readonly Action _onApplied;
 
-        public ConfigEditorWindow(IPinService pinService)
+        public ConfigEditorWindow(IPinService pinService, ConfigManager configManager = null, Action onApplied = null)
         {
             InitializeComponent();
             _pinService = pinService;
+            _configManager = configManager;
+            _onApplied = onApplied;
             Loaded += OnLoaded;
         }
 
@@ -32,7 +38,7 @@ namespace CarroDesk.Views
             try
             {
                 _isInitializing = true;
-                var cur = App.Config.Current;
+                var cur = _configManager?.Current ?? new AppSettings();
                 _editing = cur.Clone();
 
                 PathText.Text = ConfigService.FilePath;
@@ -319,10 +325,13 @@ namespace CarroDesk.Views
             try
             {
                 // apply to global config
-                cur.CopyTo(App.Config.Current);
-                // also update editing copy (for pin)
-                _editing = App.Config.Current.Clone();
-                App.Config.Save();
+                var target = _configManager?.Current;
+                if (target != null)
+                {
+                    cur.CopyTo(target);
+                    _editing = target.Clone();
+                    _configManager.Save();
+                }
                 ValidateText.Text = Loc.T("Common.Success");
 
                 if (apply)
@@ -344,8 +353,7 @@ namespace CarroDesk.Views
             // 仅在持久化后向 Host 发一次重载通知，由各模块 OnConfigReloaded 自行应用。
             try
             {
-                var app = Application.Current as App;
-                app?.Dispatcher.Invoke(new Action(() => app.ReloadConfig()));
+                _onApplied?.Invoke();
             }
             catch { }
         }

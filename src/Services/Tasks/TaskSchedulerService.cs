@@ -6,6 +6,7 @@ using System.Windows.Threading;
 using Microsoft.Win32;
 using CarroDesk.Core;
 using CarroDesk.Models;
+using CarroDesk.Modules.TaskScheduler.Models;
 using CarroDesk.Services.Tasks.Triggers;
 
 namespace CarroDesk.Services.Tasks
@@ -19,39 +20,38 @@ namespace CarroDesk.Services.Tasks
         private bool _started;
         private bool _globalEnabled = true;
         private readonly IIdleService _idleService;
+        private readonly IConfigManager _configManager;
+        private readonly INotificationService _notificationService;
+        private readonly Action<string> _balloonNotifier;
 
-        public IReadOnlyList<TaskDefinition> Tasks
-        {
-            get { lock (_lock) return _tasks.AsReadOnly(); }
-        }
+        public bool GlobalEnabled => _globalEnabled;
+        public bool IsGlobalEnabled => _globalEnabled;
+        public IReadOnlyList<TaskDefinition> Tasks => _tasks.AsReadOnly();
 
-        public bool IsGlobalEnabled
-        {
-            get { lock (_lock) return _globalEnabled; }
-        }
-
-        public TaskSchedulerService(IIdleService idleService)
+        public TaskSchedulerService(
+            IIdleService idleService = null,
+            IConfigManager configManager = null,
+            INotificationService notificationService = null,
+            Action<string> balloonNotifier = null)
         {
             _idleService = idleService;
+            _configManager = configManager;
+            _notificationService = notificationService;
+            _balloonNotifier = balloonNotifier;
         }
 
         public void Start()
         {
             if (_started) return;
             _started = true;
+            _globalEnabled = GetCurrentTasksEnabled() ?? true;
 
-            try
-            {
-                // prefer AppSettings value if Config.Current exists
-                var cur = GetCurrentTasksEnabled();
-                if (cur.HasValue) _globalEnabled = cur.Value;
-            }
-            catch { }
-            try { SystemEvents.PowerModeChanged += OnPowerModeChanged; } catch { }
-            var result = TaskConfigService.LoadOrCreate();
-            try { ScriptResolver.EnsureScriptsDir(); } catch { }
+            TaskLoadResult result = null;
+            try { result = TaskConfigService.Load(); } catch { result = new TaskLoadResult(); }
+            if (result == null) result = new TaskLoadResult();
+
             Apply(result);
-            // log
+
             TaskLogger.Info("system", "TaskScheduler started, tasks=" + _tasks.Count + ", errors=" + result.Errors.Count + ", globalEnabled=" + _globalEnabled);
             foreach (var e in result.Errors) TaskLogger.Warn("system", e);
             if (result.FileCreated) TaskLogger.Info("system", "tasks.json created at " + TaskConfigService.FilePath);
@@ -61,10 +61,11 @@ namespace CarroDesk.Services.Tasks
         {
             try
             {
-                // use reflection to avoid circular dep if Config not yet init, but we can try direct
-                // App.Config may be null at this point
-                var cfg = CarroDesk.App.Config;
-                if (cfg != null && cfg.Current != null) return cfg.Current.TasksEnabled;
+                if (_configManager != null)
+                {
+                    var cfg = _configManager.GetModuleConfig<TaskSchedulerConfig>("TaskScheduler");
+                    return cfg?.GlobalEnabled;
+                }
             }
             catch { }
             return null;
@@ -91,11 +92,14 @@ namespace CarroDesk.Services.Tasks
             // persist to config.json if possible
             try
             {
-                var cfg = CarroDesk.App.Config;
-                if (cfg != null && cfg.Current != null)
+                if (_configManager != null)
                 {
-                    cfg.Current.TasksEnabled = enabled;
-                    cfg.Save();
+                    var cfg = _configManager.GetModuleConfig<TaskSchedulerConfig>("TaskScheduler") ?? new TaskSchedulerConfig();
+                    if (cfg.GlobalEnabled != enabled)
+                    {
+                        cfg.GlobalEnabled = enabled;
+                        _configManager.SaveModuleConfig("TaskScheduler", cfg);
+                    }
                 }
             }
             catch { }
@@ -221,10 +225,17 @@ namespace CarroDesk.Services.Tasks
             {
                 if (task.Options != null && !task.Options.NotifyOnFailure) return;
                 if (code == 0) return;
-                // try show balloon via App
+                string msg = "任务失败 [" + task.Name + "] exit=" + code + "，详见 logs/task-" + task.Name + ".log";
                 try
                 {
-                    CarroDesk.App.ShowBalloonPublic("任务失败 [" + task.Name + "] exit=" + code + "，详见 logs/task-" + task.Name + ".log");
+                    if (_notificationService != null)
+                    {
+                        _notificationService.Show(msg, "CarroDesk");
+                    }
+                    else if (_balloonNotifier != null)
+                    {
+                        _balloonNotifier(msg);
+                    }
                 }
                 catch { }
             }

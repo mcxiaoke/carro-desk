@@ -1,8 +1,13 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Text.RegularExpressions;
 using System.Threading;
 using CarroDesk.Common;
+using CarroDesk.Core;
 using CarroDesk.Models;
+using CarroDesk.Modules.TaskScheduler.Models;
+using CarroDesk.Services.Tasks;
 using CarroDesk.Services.Tasks.Triggers;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -88,6 +93,91 @@ namespace CarroDesk.Tests
 
             // 3. 超过 500ms 后，同一文件再次触发应放行
             Assert.IsFalse(trigger.ShouldDebounce("C:\\test\\file1.txt", now.AddMilliseconds(600)));
+        }
+
+        private class FakeConfigManager : IConfigManager
+        {
+            public Dictionary<string, object> Store = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            public event Action ConfigReloaded;
+
+            public T GetModuleConfig<T>(string moduleId) where T : class, new()
+            {
+                if (Store.TryGetValue(moduleId, out var val) && val is T typed) return typed;
+                var created = new T();
+                Store[moduleId] = created;
+                return created;
+            }
+
+            public void SaveModuleConfig<T>(string moduleId, T config) where T : class
+            {
+                Store[moduleId] = config;
+            }
+
+            public void Reload() => ConfigReloaded?.Invoke();
+        }
+
+        private class FakeNotificationService : INotificationService
+        {
+            public List<string> Messages = new List<string>();
+            public void Show(string message, string title = "CarroDesk")
+            {
+                Messages.Add(message);
+            }
+        }
+
+        [TestMethod]
+        public void TaskSchedulerService_CanRunStandaloneWithoutAppStaticFacade()
+        {
+            // 验收标准 P1-2：TaskSchedulerService 零 App. 引用且可脱离 App 单测
+            var fakeCfg = new FakeConfigManager();
+            var fakeNotif = new FakeNotificationService();
+            string balloonMsg = null;
+
+            using (var scheduler = new TaskSchedulerService(
+                idleService: null,
+                configManager: fakeCfg,
+                notificationService: fakeNotif,
+                balloonNotifier: msg => balloonMsg = msg))
+            {
+                scheduler.Start();
+                Assert.IsTrue(scheduler.IsGlobalEnabled);
+
+                scheduler.SetGlobalEnabled(false);
+                Assert.IsFalse(scheduler.IsGlobalEnabled);
+
+                var savedCfg = fakeCfg.GetModuleConfig<TaskSchedulerConfig>("TaskScheduler");
+                Assert.IsFalse(savedCfg.GlobalEnabled);
+
+                scheduler.SetGlobalEnabled(true);
+                Assert.IsTrue(scheduler.IsGlobalEnabled);
+                Assert.IsTrue(savedCfg.GlobalEnabled);
+            }
+        }
+
+        [TestMethod]
+        public void ViewLayer_HasNoStaticAppReferences()
+        {
+            // 验收标准 P1-2：grep "App\." src --include=*.cs 在视图层降至 0
+            string solutionRoot = AppDomain.CurrentDomain.BaseDirectory;
+            while (!string.IsNullOrEmpty(solutionRoot) && !File.Exists(Path.Combine(solutionRoot, "CarroDesk.sln")))
+            {
+                var parent = Directory.GetParent(solutionRoot);
+                if (parent == null) break;
+                solutionRoot = parent.FullName;
+            }
+
+            string viewsDir = Path.Combine(solutionRoot, "src", "Views");
+            if (Directory.Exists(viewsDir))
+            {
+                var csFiles = Directory.GetFiles(viewsDir, "*.cs", SearchOption.AllDirectories);
+                var regex = new Regex(@"\bApp\.(Config|Modules|Services|CurrentApp|ScreenLockMod|TaskSchedulerMod|AppAutoMuteMod|MonitorProfileMod|AwakeMod|IsShuttingDown)\b");
+                foreach (var file in csFiles)
+                {
+                    string text = File.ReadAllText(file);
+                    var matches = regex.Matches(text);
+                    Assert.AreEqual(0, matches.Count, $"视图文件 {Path.GetFileName(file)} 中不应存在 App.* 静态门面引用！匹配数: {matches.Count}");
+                }
+            }
         }
     }
 }
