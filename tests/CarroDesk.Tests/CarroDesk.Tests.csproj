@@ -15,6 +15,7 @@
     <Compile Include="MonitorProfileTests.cs" />
     <Compile Include="JsonMigrationTests.cs" />
     <Compile Include="AwakeModuleTests.cs" />
+    <Compile Include="ProcessHelperTests.cs" />
   </ItemGroup>
 
   <ItemGroup>

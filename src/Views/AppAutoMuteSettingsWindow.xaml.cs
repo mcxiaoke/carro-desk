@@ -11,6 +11,7 @@ using CarroDesk.Host.Services;
 using CarroDesk.Modules.AppAutoMute.Models;
 using CarroDesk;
 using CarroDesk.Models;
+using CarroDesk.Services;
 
 namespace CarroDesk.Views
 {
@@ -51,12 +52,9 @@ namespace CarroDesk.Views
             _targetApps.Clear();
             if (config.TargetApps != null)
             {
-                foreach (var app in config.TargetApps)
+                foreach (var app in ProcessHelper.NormalizeList(config.TargetApps))
                 {
-                    if (!string.IsNullOrWhiteSpace(app) && !_targetApps.Contains(app, StringComparer.OrdinalIgnoreCase))
-                    {
-                        _targetApps.Add(app.Trim());
-                    }
+                    _targetApps.Add(app);
                 }
             }
         }
@@ -74,7 +72,8 @@ namespace CarroDesk.Views
                     var audioProcs = audioService.GetActiveAudioProcesses();
                     foreach (var p in audioProcs)
                     {
-                        detected.Add(p);
+                        string norm = ProcessHelper.Normalize(p);
+                        if (!string.IsNullOrEmpty(norm)) detected.Add(norm);
                     }
                 }
             }
@@ -83,31 +82,15 @@ namespace CarroDesk.Views
             try
             {
                 // 2. 辅以系统带有主窗口的 GUI 进程
-                var procs = Process.GetProcesses();
-                foreach (var p in procs)
+                var winApps = ProcessHelper.GetRunningWindowProcesses();
+                foreach (var app in winApps)
                 {
-                    try
-                    {
-                        if (p.MainWindowHandle != IntPtr.Zero && !string.IsNullOrWhiteSpace(p.MainWindowTitle))
-                        {
-                            string name = p.ProcessName + ".exe";
-                            if (!string.Equals(name, "CarroDesk.exe", StringComparison.OrdinalIgnoreCase) &&
-                                !string.Equals(name, "explorer.exe", StringComparison.OrdinalIgnoreCase))
-                            {
-                                detected.Add(name);
-                            }
-                        }
-                    }
-                    catch { }
-                    finally
-                    {
-                        p.Dispose();
-                    }
+                    detected.Add(app.ProcessName);
                 }
             }
             catch { }
 
-            var sorted = detected.OrderBy(x => x).ToList();
+            var sorted = detected.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToList();
             CboRunningApps.ItemsSource = sorted;
             if (sorted.Count > 0)
             {
@@ -161,23 +144,29 @@ namespace CarroDesk.Views
 
         private void AddCustomApp()
         {
-            string app = TxtCustomApp.Text?.Trim();
-            if (!string.IsNullOrWhiteSpace(app))
+            string raw = TxtCustomApp.Text?.Trim();
+            if (string.IsNullOrWhiteSpace(raw)) return;
+
+            var parts = raw.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (var part in parts)
             {
-                if (!app.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                string norm = ProcessHelper.Normalize(part);
+                if (!string.IsNullOrEmpty(norm))
                 {
-                    app += ".exe";
+                    AddAppToList(norm);
                 }
-                AddAppToList(app);
-                TxtCustomApp.Clear();
             }
+            TxtCustomApp.Clear();
         }
 
         private void AddAppToList(string app)
         {
-            if (!_targetApps.Contains(app, StringComparer.OrdinalIgnoreCase))
+            string norm = ProcessHelper.Normalize(app);
+            if (string.IsNullOrEmpty(norm)) return;
+
+            if (!_targetApps.Any(x => ProcessHelper.IsMatch(x, norm)))
             {
-                _targetApps.Add(app);
+                _targetApps.Add(norm);
             }
         }
 

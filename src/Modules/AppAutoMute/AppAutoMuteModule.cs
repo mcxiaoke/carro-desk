@@ -5,6 +5,7 @@ using System.Windows.Threading;
 using CarroDesk.Core;
 using CarroDesk.Core.Models;
 using CarroDesk.Modules.AppAutoMute.Models;
+using CarroDesk.Services;
 using CarroDesk.Services.Localization;
 
 namespace CarroDesk.Modules.AppAutoMute
@@ -183,7 +184,7 @@ namespace CarroDesk.Modules.AppAutoMute
             if (string.IsNullOrEmpty(procName) || Config == null || Config.TargetApps == null || Config.TargetApps.Count == 0)
                 return;
 
-            bool isTarget = Config.TargetApps.Any(app => string.Equals(app, procName, StringComparison.OrdinalIgnoreCase));
+            bool isTarget = ProcessHelper.ContainsProcess(Config.TargetApps, procName);
 
             if (isTarget)
             {
@@ -214,11 +215,10 @@ namespace CarroDesk.Modules.AppAutoMute
             {
                 // 白名单模式：静音除白名单应用及当前前台应用之外的所有活跃音频进程
                 var activeProcs = _audioService.GetActiveAudioProcesses();
-                var whitelist = new HashSet<string>(Config.TargetApps ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
 
                 foreach (var proc in activeProcs)
                 {
-                    if (!whitelist.Contains(proc) && !string.Equals(proc, currentFore, StringComparison.OrdinalIgnoreCase))
+                    if (!ProcessHelper.ContainsProcess(Config.TargetApps, proc) && !ProcessHelper.IsMatch(proc, currentFore))
                     {
                         _audioService.SetProcessMute(proc, true);
                     }
@@ -230,7 +230,7 @@ namespace CarroDesk.Modules.AppAutoMute
                 if (Config.TargetApps == null) return;
                 foreach (var app in Config.TargetApps)
                 {
-                    if (!string.Equals(app, currentFore, StringComparison.OrdinalIgnoreCase))
+                    if (!ProcessHelper.IsMatch(app, currentFore))
                     {
                         _audioService.SetProcessMute(app, true);
                     }

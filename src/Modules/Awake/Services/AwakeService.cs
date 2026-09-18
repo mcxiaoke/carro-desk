@@ -7,6 +7,7 @@ using System.Runtime.InteropServices;
 using System.Windows.Threading;
 using CarroDesk.Core;
 using CarroDesk.Modules.Awake.Models;
+using CarroDesk.Services;
 
 namespace CarroDesk.Modules.Awake.Services
 {
@@ -299,11 +300,13 @@ namespace CarroDesk.Modules.Awake.Services
                 foreach (var procSetting in _config.AutoAwakeProcesses)
                 {
                     if (string.IsNullOrWhiteSpace(procSetting)) continue;
-                    string nameOnly = Path.GetFileNameWithoutExtension(procSetting.Trim());
+                    string nameOnly = ProcessHelper.NormalizeNameOnly(procSetting);
+                    if (string.IsNullOrEmpty(nameOnly)) continue;
+
                     var processes = Process.GetProcessesByName(nameOnly);
                     if (processes != null && processes.Length > 0)
                     {
-                        matchedProc = nameOnly;
+                        matchedProc = ProcessHelper.Normalize(procSetting);
                         break;
                     }
                 }

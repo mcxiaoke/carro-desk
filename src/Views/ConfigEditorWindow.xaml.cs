@@ -77,7 +77,7 @@ namespace CarroDesk.Views
                 TasksEnabledBox.IsChecked = _editing.TasksEnabled;
 
                 ExcludeList.ItemsSource = null;
-                var list = _editing.ExcludeProcesses != null ? new List<string>(_editing.ExcludeProcesses) : new List<string>();
+                var list = _editing.ExcludeProcesses != null ? ProcessHelper.NormalizeList(_editing.ExcludeProcesses) : new List<string>();
                 ExcludeList.ItemsSource = list;
 
                 ValidateText.Text = "";
@@ -131,35 +131,17 @@ namespace CarroDesk.Views
             try
             {
                 var btn = sender as Button;
-                var procs = System.Diagnostics.Process.GetProcesses();
+                var runningApps = ProcessHelper.GetRunningWindowProcesses();
                 var menu = new ContextMenu();
-                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-                // 优先列出有主窗口的应用（日常前台应用与游戏）
-                var windowApps = procs.Where(p =>
+                foreach (var app in runningApps)
                 {
-                    try { return p.MainWindowHandle != IntPtr.Zero && !string.IsNullOrWhiteSpace(p.MainWindowTitle); }
-                    catch { return false; }
-                }).OrderBy(p => p.ProcessName).ToList();
-
-                foreach (var p in windowApps)
-                {
-                    try
+                    var item = new MenuItem { Header = app.DisplayText, Tag = app.ProcessName };
+                    item.Click += (s, ev) =>
                     {
-                        string name = p.ProcessName + ".exe";
-                        if (seen.Contains(name)) continue;
-                        seen.Add(name);
-
-                        string title = p.MainWindowTitle;
-                        if (title.Length > 25) title = title.Substring(0, 22) + "...";
-                        var item = new MenuItem { Header = string.Format("{0} ({1})", name, title), Tag = name };
-                        item.Click += (s, ev) =>
-                        {
-                            AddExcludeProcess(item.Tag.ToString());
-                        };
-                        menu.Items.Add(item);
-                    }
-                    catch { }
+                        AddExcludeProcess(item.Tag.ToString());
+                    };
+                    menu.Items.Add(item);
                 }
 
                 if (menu.Items.Count == 0)
@@ -182,11 +164,13 @@ namespace CarroDesk.Views
 
         private void AddExcludeProcess(string processName)
         {
-            if (string.IsNullOrWhiteSpace(processName)) return;
+            string norm = ProcessHelper.Normalize(processName);
+            if (string.IsNullOrEmpty(norm)) return;
+
             var list = (ExcludeList.ItemsSource as List<string>) ?? new List<string>();
-            if (!list.Any(x => string.Equals(x, processName, StringComparison.OrdinalIgnoreCase)))
+            if (!list.Any(x => ProcessHelper.IsMatch(x, norm)))
             {
-                list.Add(processName);
+                list.Add(norm);
                 ExcludeList.ItemsSource = null;
                 ExcludeList.ItemsSource = list;
             }
@@ -196,7 +180,7 @@ namespace CarroDesk.Views
         {
             string v = ExcludeInputBox.Text.Trim();
             if (string.IsNullOrEmpty(v)) return;
-            // allow comma separated
+            // allow comma or semicolon separated
             var parts = v.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries);
             foreach (var p in parts)
             {
@@ -278,7 +262,7 @@ namespace CarroDesk.Views
             s.TasksEnabled = TasksEnabledBox.IsChecked == true;
             s.Language = _editing.Language ?? "auto";
             var excl = ExcludeList.ItemsSource as List<string>;
-            s.ExcludeProcesses = excl != null ? new List<string>(excl) : new List<string>();
+            s.ExcludeProcesses = ProcessHelper.NormalizeList(excl);
             // keep pin
             s.PinSalt = _editing.PinSalt;
             s.PinHash = _editing.PinHash;

@@ -53,18 +53,7 @@ namespace CarroDesk.Services
 
         private static string Normalize(string raw)
         {
-            if (string.IsNullOrWhiteSpace(raw)) return null;
-            raw = raw.Trim().Trim('"', '\'');
-            raw = raw.Replace("/", "\\");
-            // if contains path, take file name
-            try { raw = Path.GetFileName(raw); } catch { }
-            if (string.IsNullOrEmpty(raw)) return null;
-            // strip .exe
-            if (raw.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
-                raw = raw.Substring(0, raw.Length - 4);
-            raw = raw.Trim();
-            if (raw.Length == 0) return null;
-            return raw.ToLowerInvariant();
+            return ProcessHelper.NormalizeNameOnly(raw);
         }
 
         private static bool CheckRunning(string[] normalizedExcludes)

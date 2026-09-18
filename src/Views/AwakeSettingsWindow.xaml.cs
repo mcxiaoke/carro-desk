@@ -9,6 +9,7 @@ using System.Windows.Media;
 using CarroDesk.Core;
 using CarroDesk.Modules.Awake;
 using CarroDesk.Modules.Awake.Models;
+using CarroDesk.Services;
 
 namespace CarroDesk.Views
 {
@@ -68,7 +69,7 @@ namespace CarroDesk.Views
             BatteryThresholdBox.Text = config.BatteryThreshold.ToString();
             HotkeyBox.Text = config.Hotkey ?? "Win+Shift+W";
 
-            _processes = config.AutoAwakeProcesses != null ? new List<string>(config.AutoAwakeProcesses) : new List<string>();
+            _processes = config.AutoAwakeProcesses != null ? ProcessHelper.NormalizeList(config.AutoAwakeProcesses) : new List<string>();
             ProcessListBox.ItemsSource = _processes;
         }
 
@@ -114,17 +115,7 @@ namespace CarroDesk.Views
         {
             try
             {
-                var procs = Process.GetProcesses()
-                    .Where(p =>
-                    {
-                        try { return !string.IsNullOrWhiteSpace(p.MainWindowTitle) && !string.IsNullOrWhiteSpace(p.ProcessName); }
-                        catch { return false; }
-                    })
-                    .OrderBy(p => p.ProcessName)
-                    .Select(p => p.ProcessName)
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .ToList();
-
+                var procs = ProcessHelper.GetRunningWindowProcesses();
                 if (procs.Count == 0)
                 {
                     MessageBox.Show("未找到具有窗口的运行中应用程序。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -134,8 +125,8 @@ namespace CarroDesk.Views
                 var menu = new ContextMenu();
                 foreach (var p in procs)
                 {
-                    var item = new MenuItem { Header = p };
-                    item.Click += (s, ev) => AddProcess(p);
+                    var item = new MenuItem { Header = p.DisplayText, Tag = p.ProcessName };
+                    item.Click += (s, ev) => AddProcess(item.Tag.ToString());
                     menu.Items.Add(item);
                 }
 
@@ -168,11 +159,12 @@ namespace CarroDesk.Views
 
         private void AddProcess(string procName)
         {
-            if (string.IsNullOrWhiteSpace(procName)) return;
-            string clean = Path.GetFileNameWithoutExtension(procName.Trim());
-            if (!_processes.Any(p => string.Equals(p, clean, StringComparison.OrdinalIgnoreCase)))
+            string norm = ProcessHelper.Normalize(procName);
+            if (string.IsNullOrEmpty(norm)) return;
+
+            if (!_processes.Any(p => ProcessHelper.IsMatch(p, norm)))
             {
-                _processes.Add(clean);
+                _processes.Add(norm);
                 ProcessListBox.ItemsSource = null;
                 ProcessListBox.ItemsSource = _processes;
             }
@@ -226,7 +218,7 @@ namespace CarroDesk.Views
             config.BatteryThreshold = threshold;
             config.DefaultDurationMinutes = defaultMins;
             config.Hotkey = HotkeyBox.Text.Trim();
-            config.AutoAwakeProcesses = new List<string>(_processes);
+            config.AutoAwakeProcesses = ProcessHelper.NormalizeList(_processes);
 
             // 应用工作模式
             var service = _module.Service;
