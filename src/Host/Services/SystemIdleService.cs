@@ -25,11 +25,13 @@ namespace CarroDesk.Host.Services
         [DllImport("shell32.dll")]
         private static extern int SHQueryUserNotificationState(out int pqsns);
 
-        private const int QUNS_BUSY = 2;
-        private const int QUNS_RUNNING_D3D_FULL_SCREEN = 4;
-        private const int QUNS_PRESENTATION_MODE = 5;
-        private const int QUNS_ACCEPTS_NOTIFICATIONS = 6;
-        private const int QUNS_QUIET_TIME = 7;
+        public const int QUNS_NOT_PRESENT = 1;
+        public const int QUNS_BUSY = 2;
+        public const int QUNS_RUNNING_D3D_FULL_SCREEN = 3;
+        public const int QUNS_PRESENTATION_MODE = 4;
+        public const int QUNS_ACCEPTS_NOTIFICATIONS = 5;
+        public const int QUNS_QUIET_TIME = 6;
+        public const int QUNS_APP = 7;
 
         private readonly Timer _timer;
 
@@ -107,13 +109,18 @@ namespace CarroDesk.Host.Services
             }
         }
 
+        public static bool IsNotificationStateBusy(int state)
+        {
+            return state == QUNS_BUSY || state == QUNS_RUNNING_D3D_FULL_SCREEN || state == QUNS_PRESENTATION_MODE;
+        }
+
         private static bool QueryBusy()
         {
             try
             {
                 if (SHQueryUserNotificationState(out int state) == 0)
                 {
-                    return state == QUNS_BUSY || state == QUNS_RUNNING_D3D_FULL_SCREEN || state == QUNS_PRESENTATION_MODE;
+                    return IsNotificationStateBusy(state);
                 }
             }
             catch { }

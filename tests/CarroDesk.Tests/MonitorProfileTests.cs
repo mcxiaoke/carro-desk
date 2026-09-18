@@ -78,6 +78,43 @@ namespace CarroDesk.Tests
         }
 
         [TestMethod]
+        public void ProfileScheduleEngine_CrossMidnight_SelectsCorrectInterval()
+        {
+            var ddc = new MonitorDdcService();
+            using (var engine = new ProfileScheduleEngine(ddc, System.Windows.Threading.Dispatcher.CurrentDispatcher))
+            {
+                var cfg = new MonitorProfileConfig
+                {
+                    ActiveProfile = "Daily"
+                };
+                cfg.Profiles["Daily"] = new List<MonitorTimeSetting>
+                {
+                    new MonitorTimeSetting { Time = "07:00", Brightness = 65, Contrast = 70 },
+                    new MonitorTimeSetting { Time = "18:00", Brightness = 50, Contrast = 65 },
+                    new MonitorTimeSetting { Time = "22:30", Brightness = 35, Contrast = 55 }
+                };
+                engine.UpdateConfig(cfg);
+
+                // 跨午夜与早于第一档测试（应回退到前一天最后一段 22:30 档，即 35）
+                Assert.AreEqual(35, engine.GetActiveSettingForProfile("Daily", new TimeSpan(0, 0, 0)).Brightness);
+                Assert.AreEqual(35, engine.GetActiveSettingForProfile("Daily", new TimeSpan(6, 0, 0)).Brightness);
+                Assert.AreEqual(35, engine.GetActiveSettingForProfile("Daily", new TimeSpan(6, 59, 59)).Brightness);
+
+                // 日间第一档生效
+                Assert.AreEqual(65, engine.GetActiveSettingForProfile("Daily", new TimeSpan(7, 0, 0)).Brightness);
+                Assert.AreEqual(65, engine.GetActiveSettingForProfile("Daily", new TimeSpan(8, 0, 0)).Brightness);
+
+                // 傍晚档生效
+                Assert.AreEqual(50, engine.GetActiveSettingForProfile("Daily", new TimeSpan(18, 0, 0)).Brightness);
+                Assert.AreEqual(50, engine.GetActiveSettingForProfile("Daily", new TimeSpan(19, 0, 0)).Brightness);
+
+                // 夜间档生效
+                Assert.AreEqual(35, engine.GetActiveSettingForProfile("Daily", new TimeSpan(22, 30, 0)).Brightness);
+                Assert.AreEqual(35, engine.GetActiveSettingForProfile("Daily", new TimeSpan(23, 0, 0)).Brightness);
+            }
+        }
+
+        [TestMethod]
         public void MonitorProfileModule_Follows_OneModuleOneSubmenu_Contract()
         {
             var module = new MonitorProfileModule();

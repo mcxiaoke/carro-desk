@@ -126,6 +126,14 @@ namespace CarroDesk.Modules.MonitorProfile.Services
         /// </summary>
         public MonitorTimeSetting GetActiveSettingForProfile(string profileName)
         {
+            return GetActiveSettingForProfile(profileName, DateTime.Now.TimeOfDay);
+        }
+
+        /// <summary>
+        /// 根据指定时间点计算指定情境生效的时间段设置（供单测与内部调度使用）。
+        /// </summary>
+        public MonitorTimeSetting GetActiveSettingForProfile(string profileName, TimeSpan now)
+        {
             if (_config?.Profiles == null || !_config.Profiles.TryGetValue(profileName, out var settings))
                 return null;
 
@@ -133,10 +141,9 @@ namespace CarroDesk.Modules.MonitorProfile.Services
                 return null;
 
             var sorted = settings.OrderByDescending(s => s.ToTimeSpan()).ToList();
-            TimeSpan now = DateTime.Now.TimeOfDay;
 
-            // 寻找不大于当前时间的最近时间点；若早于第一个时间点，回退到前一天夜间（即列表最后一段）
-            return sorted.FirstOrDefault(s => now >= s.ToTimeSpan()) ?? sorted.Last();
+            // 寻找不大于当前时间的最近时间点；若早于当天第一个时间点，回退到前一天夜间（即降序列表第一项/时间最大项）
+            return sorted.FirstOrDefault(s => now >= s.ToTimeSpan()) ?? sorted.First();
         }
 
         /// <summary>

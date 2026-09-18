@@ -21,6 +21,7 @@
     <Compile Include="TemplateExpanderTests.cs" />
     <Compile Include="ModuleManagerTests.cs" />
     <Compile Include="TaskConditionEvaluatorTests.cs" />
+    <Compile Include="SystemIdleServiceTests.cs" />
   </ItemGroup>
 
   <ItemGroup>
