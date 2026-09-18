@@ -61,6 +61,7 @@
     "ScreenLockRoot": "屏幕保护",
     "TasksRoot": "自动化任务",
     "AudioSwitchRoot": "音频输出设备",
+    "ClipboardHistory": "剪贴板历史",
     "AutoMuteRoot": "应用后台静音",
     "AutoMuteToggle": "启用后台自动静音",
     "FloatingPanel": "桌面控制面板",
@@ -335,5 +336,12 @@
     "BadgeHotkey": "热键",
     "BadgeWatch": "监听",
     "BadgeUnknown": "未知"
+  },
+  "Clipboard": {
+    "Title": "剪贴板历史",
+    "OpenWindow": "打开剪贴板历史...",
+    "AutoRecord": "自动记录剪贴板",
+    "ClearAll": "清空历史记录",
+    "ClearConfirm": "确定要清空全部剪贴板历史记录吗？"
   }
 }

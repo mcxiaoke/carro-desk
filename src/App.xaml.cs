@@ -3,7 +3,6 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Forms;
 using CarroDesk.Core;
 using CarroDesk.Host.Services;
 using CarroDesk.Modules.ScreenLock;
@@ -15,6 +14,7 @@ using CarroDesk.Services.Localization;
 using CarroDesk.Modules.AudioSwitch;
 using CarroDesk.Modules.AppAutoMute;
 using CarroDesk.Modules.Awake;
+using CarroDesk.Modules.ClipboardHistory;
 using CarroDesk.Services.Tasks;
 using CarroDesk.Views;
 
@@ -155,6 +155,9 @@ namespace CarroDesk
 
             var awakeModule = new AwakeModule();
             Modules.RegisterModule(awakeModule);
+
+            var clipboardHistoryModule = new ClipboardHistoryModule();
+            Modules.RegisterModule(clipboardHistoryModule);
 
             // 5. 初始化并启动模块
             Modules.InitializeAll(Services);

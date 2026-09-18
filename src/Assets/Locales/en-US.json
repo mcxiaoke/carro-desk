@@ -61,6 +61,7 @@
     "ScreenLockRoot": "Screen Lock",
     "TasksRoot": "Task Scheduler",
     "AudioSwitchRoot": "Audio Devices",
+    "ClipboardHistory": "Clipboard History",
     "AutoMuteRoot": "Auto-Mute Apps",
     "AutoMuteToggle": "Enable Auto-Mute Background Apps",
     "FloatingPanel": "Desktop Control Panel",
@@ -335,5 +336,12 @@
     "BadgeHotkey": "Hotkey",
     "BadgeWatch": "Watch",
     "BadgeUnknown": "Unknown"
+  },
+  "Clipboard": {
+    "Title": "Clipboard History",
+    "OpenWindow": "Open Clipboard History...",
+    "AutoRecord": "Auto-record Clipboard",
+    "ClearAll": "Clear All History",
+    "ClearConfirm": "Are you sure you want to clear all clipboard history?"
   }
 }

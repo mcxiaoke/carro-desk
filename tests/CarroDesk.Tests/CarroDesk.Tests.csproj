@@ -24,6 +24,7 @@
     <Compile Include="SystemIdleServiceTests.cs" />
     <Compile Include="AppAutoMuteModuleTests.cs" />
     <Compile Include="ConfigAndTriggerTests.cs" />
+    <Compile Include="ClipboardHistoryModuleTests.cs" />
   </ItemGroup>
 
   <ItemGroup>

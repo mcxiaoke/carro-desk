@@ -41,5 +41,15 @@
   "TaskScheduler": {
     "GlobalEnabled": true,
     "TasksFile": "tasks.json"
+  },
+
+  // --- 剪贴板历史模块配置 (ClipboardHistory) ---
+  "ClipboardHistory": {
+    "Enabled": true,
+    "AutoRecord": true,
+    "Hotkey": "Win+Alt+V",
+    "MaxPreviewChars": 100,
+    "MaxItems": 1000,
+    "RetentionDays": 90
   }
 }
