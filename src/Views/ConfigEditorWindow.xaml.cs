@@ -249,23 +249,20 @@ namespace CarroDesk.Views
 
         private AppSettings BuildCurrent()
         {
-            var s = new AppSettings();
+            var s = _editing != null ? _editing.Clone() : new AppSettings();
             string idleRaw = IdleBox.Text.Trim();
             if (idleRaw.Contains("-")) idleRaw = idleRaw.Split('-')[0].Trim();
             int idle;
-            if (!int.TryParse(idleRaw, out idle)) idle = _editing.IdleMinutes;
+            if (!int.TryParse(idleRaw, out idle)) idle = _editing != null ? _editing.IdleMinutes : 5;
             s.IdleMinutes = idle;
             s.ShowClock = ShowClockBox.IsChecked == true;
             s.OverlayOpacity = Math.Round(OpacitySlider.Value, 2);
             s.AutoStart = AutoStartBox.IsChecked == true;
             s.UnlockOnResume = UnlockOnResumeBox.IsChecked == true;
             s.TasksEnabled = TasksEnabledBox.IsChecked == true;
-            s.Language = _editing.Language ?? "auto";
+            s.Language = _editing?.Language ?? "auto";
             var excl = ExcludeList.ItemsSource as List<string>;
             s.ExcludeProcesses = ProcessHelper.NormalizeList(excl);
-            // keep pin
-            s.PinSalt = _editing.PinSalt;
-            s.PinHash = _editing.PinHash;
             return s;
         }
 

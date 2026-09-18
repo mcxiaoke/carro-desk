@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using CarroDesk.Common;
 using CarroDesk.Models;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -112,6 +113,15 @@ namespace CarroDesk.Services.Tasks
             catch (Exception ex)
             {
                 result.Errors.Add("load exception: " + ex.Message);
+                try
+                {
+                    if (File.Exists(FilePath))
+                    {
+                        string corruptPath = Path.Combine(ConfigService.DirPath, $"tasks.corrupt-{DateTime.Now:yyyyMMddHHmmss}.json");
+                        File.Copy(FilePath, corruptPath, true);
+                    }
+                }
+                catch { }
             }
             return result;
         }
@@ -148,7 +158,7 @@ namespace CarroDesk.Services.Tasks
             }
 
             var json = jArray.ToString(Formatting.Indented);
-            File.WriteAllText(FilePath, json, Encoding.UTF8);
+            AtomicFile.WriteAllText(FilePath, json, Encoding.UTF8);
         }
 
         private static JObject SerializeTriggerToken(TaskTrigger tr)

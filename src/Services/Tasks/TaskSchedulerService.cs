@@ -128,23 +128,6 @@ namespace CarroDesk.Services.Tasks
             {
                 var cur = GetCurrentTasksEnabled();
                 if (cur.HasValue) _globalEnabled = cur.Value;
-                else
-                {
-                    // also try reload config file's TasksEnabled if not via App
-                    // fallback: read raw config json
-                    try
-                    {
-                        if (File.Exists(ConfigService.FilePath))
-                        {
-                            var txt = File.ReadAllText(ConfigService.FilePath);
-                            if (txt.Contains("\"TasksEnabled\": false") || txt.Contains("\"TasksEnabled\":false"))
-                                _globalEnabled = false;
-                            else if (txt.Contains("\"TasksEnabled\": true"))
-                                _globalEnabled = true;
-                        }
-                    }
-                    catch { }
-                }
             }
             catch { }
             Apply(result);
@@ -159,7 +142,6 @@ namespace CarroDesk.Services.Tasks
             lock (_lock)
             {
                 _tasks = result.Tasks ?? new List<TaskDefinition>();
-                _running.Clear();
             }
             if (!_globalEnabled)
             {

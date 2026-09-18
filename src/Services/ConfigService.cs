@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using CarroDesk.Common;
 using CarroDesk.Models;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -174,7 +175,16 @@ namespace CarroDesk.Services
             }
             catch
             {
-                // 若解析异常，安全回退到默认设置
+                // 若解析异常，安全备份损坏文件，避免直接被覆盖丢失
+                try
+                {
+                    if (File.Exists(FilePath))
+                    {
+                        string corruptPath = Path.Combine(DirPath, $"config.corrupt-{DateTime.Now:yyyyMMddHHmmss}.json");
+                        File.Copy(FilePath, corruptPath, true);
+                    }
+                }
+                catch { }
             }
             return new AppSettings();
         }
@@ -201,7 +211,7 @@ namespace CarroDesk.Services
             obj["Awake"] = this.AwakeJson ?? "";
 
             var json = obj.ToString(Formatting.Indented);
-            File.WriteAllText(FilePath, json, Encoding.UTF8);
+            AtomicFile.WriteAllText(FilePath, json, Encoding.UTF8);
         }
     }
 }

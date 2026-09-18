@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.IO;
 using CarroDesk.Models;
 
@@ -9,7 +10,7 @@ namespace CarroDesk.Services.Tasks.Triggers
         public TaskDefinition Task { get; private set; }
         public event Action<TaskDefinition, string> Fired;
         private FileSystemWatcher _watcher;
-        private DateTime _lastFired = DateTime.MinValue;
+        private readonly ConcurrentDictionary<string, DateTime> _fileDebounceMap = new ConcurrentDictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
 
         public FileWatcherTrigger(TaskDefinition task)
         {
@@ -87,12 +88,43 @@ namespace CarroDesk.Services.Tasks.Triggers
             }
         }
 
+        public bool ShouldDebounce(string fileKey, DateTime now)
+        {
+            if (string.IsNullOrEmpty(fileKey)) return false;
+
+            // 定期清理过期项（若字典缓存超过 100 项，剔除 10 秒前的记录）
+            if (_fileDebounceMap.Count > 100)
+            {
+                foreach (var pair in _fileDebounceMap)
+                {
+                    if ((now - pair.Value).TotalSeconds > 10)
+                    {
+                        DateTime dummy;
+                        _fileDebounceMap.TryRemove(pair.Key, out dummy);
+                    }
+                }
+            }
+
+            bool debounced = false;
+            _fileDebounceMap.AddOrUpdate(fileKey, now, (key, old) =>
+            {
+                if ((now - old).TotalMilliseconds < 500)
+                {
+                    debounced = true;
+                    return old;
+                }
+                return now;
+            });
+
+            return debounced;
+        }
+
         private void OnEvent(object sender, FileSystemEventArgs e)
         {
-            // debounce 500ms per file
             var now = DateTime.Now;
-            if ((now - _lastFired).TotalMilliseconds < 500) return;
-            _lastFired = now;
+            string key = e.FullPath ?? e.Name;
+            if (ShouldDebounce(key, now)) return;
+
             var h = Fired;
             if (h != null) h(Task, "watch:" + e.ChangeType + ":" + e.Name);
         }
@@ -100,8 +132,9 @@ namespace CarroDesk.Services.Tasks.Triggers
         private void OnRenamed(object sender, RenamedEventArgs e)
         {
             var now = DateTime.Now;
-            if ((now - _lastFired).TotalMilliseconds < 500) return;
-            _lastFired = now;
+            string key = e.FullPath ?? e.Name;
+            if (ShouldDebounce(key, now)) return;
+
             var h = Fired;
             if (h != null) h(Task, "watch:renamed:" + e.Name);
         }
@@ -110,6 +143,7 @@ namespace CarroDesk.Services.Tasks.Triggers
         {
             try
             {
+                _fileDebounceMap.Clear();
                 if (_watcher != null)
                 {
                     _watcher.EnableRaisingEvents = false;
