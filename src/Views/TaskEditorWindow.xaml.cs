@@ -798,10 +798,25 @@ namespace CarroDesk.Views
 
         private void OnCloseClick(object sender, RoutedEventArgs e) { Close(); }
 
+        private System.Windows.Threading.DispatcherTimer _cronDebounceTimer;
+
         private void CronBox_TextChanged(object sender, TextChangedEventArgs e)
         {
             if (_isUpdating) return;
-            UpdateCronHint();
+            if (_cronDebounceTimer == null)
+            {
+                _cronDebounceTimer = new System.Windows.Threading.DispatcherTimer
+                {
+                    Interval = TimeSpan.FromMilliseconds(300)
+                };
+                _cronDebounceTimer.Tick += (s, args) =>
+                {
+                    _cronDebounceTimer.Stop();
+                    UpdateCronHint();
+                };
+            }
+            _cronDebounceTimer.Stop();
+            _cronDebounceTimer.Start();
         }
 
         private void UpdateCronHint()

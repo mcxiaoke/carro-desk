@@ -1,5 +1,6 @@
 using System;
 using CarroDesk.Models;
+using CarroDesk.Services.Tasks;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace CarroDesk.Tests
@@ -135,6 +136,25 @@ namespace CarroDesk.Tests
             Assert.IsTrue(CronHelper.ExplainCron("30 9 * * 1-5").Contains("工作日"));
             Assert.IsTrue(CronHelper.ExplainCron("0 10 * * 0,6").Contains("周末"));
             Assert.IsFalse(string.IsNullOrEmpty(CronHelper.ExplainCron(null)));
+        }
+
+        [TestMethod]
+        public void GetNextOccurrence_HighPerformance_ExecutesRapidly()
+        {
+            var dt = new DateTime(2026, 1, 1, 0, 0, 0);
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            for (int i = 0; i < 500; i++)
+            {
+                var next = CronHelper.GetNextOccurrence("30 2 15 8 *", dt);
+                Assert.IsNotNull(next);
+                Assert.AreEqual(8, next.Value.Month);
+                Assert.AreEqual(15, next.Value.Day);
+                Assert.AreEqual(2, next.Value.Hour);
+                Assert.AreEqual(30, next.Value.Minute);
+            }
+            sw.Stop();
+            // 500 次跨大跨度月份跳跃求值耗时应小于 200ms
+            Assert.IsTrue(sw.ElapsedMilliseconds < 200, "500 次跳跃式 Cron 预测耗时: " + sw.ElapsedMilliseconds + "ms");
         }
     }
 }
