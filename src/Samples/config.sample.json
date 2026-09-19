@@ -1,55 +1,217 @@
-// CarroDesk 主配置示例
+// CarroDesk 模块化主配置文件样例 (config.sample.json)
 // 放置位置：
 //   便携模式（exe 同目录下存在 portable.ini）：<exe目录>\app_data\config.json
 //   漫游模式（默认）：%AppData%\CarroDesk\config.json
 // 首次启动若不存在会自动生成默认配置，可参考本样例修改。
-// 本文件由构建时自动复制到输出目录，仅作参考，不会被程序直接读取。
+// 本文件由构建时自动复制到输出目录，仅作参考，不会被程序直接覆盖。
 {
-  // --- 宿主配置 (Host) ---
-  // 开机自启（写入注册表 Run）
+  // ===================================================================
+  // 1. 宿主核心配置 (Host)
+  // ===================================================================
+
+  // 开机是否自启（写入当前用户的注册表 Run 键）
   "AutoStart": true,
 
-  // 界面语言（auto, zh-CN, en-US）
+  // 界面语言（"auto": 跟随系统语言；"zh-CN": 简体中文；"en-US": English）
   "Language": "auto",
 
-  // 悬浮面板热键与位置
+  // 桌面浮动快捷控制面板热键
   "FloatingPanelHotkey": "Win+Alt+C",
+
+  // 浮动面板初始位置模式（"Tray": 托盘上方；"Center": 居中；"TopRight": 右上角；"Custom": 记忆自定义拖拽坐标）
   "FloatingPanelPosition": "Tray",
+
+  // 浮动面板是否固定置顶在屏幕上（关闭时失焦不隐藏）
   "FloatingPanelPinned": false,
+
+  // 浮动面板是否锁定位置（防止误触拖拽移动）
   "FloatingPanelLocked": false,
 
-  // PIN 盐与哈希（首次设置 PIN 后由 HostPinService 自动生成与维护，无需手填）
+  // PIN 盐与哈希（首次通过引导向导设置 PIN 后由 HostPinService 自动计算与维护，无需手动填写）
   "PinSalt": "",
   "PinHash": "",
 
-  // --- 屏幕保护模块配置 (ScreenLock) ---
+  // ===================================================================
+  // 2. 屏幕保护与伪锁屏模块 (ScreenLock)
+  // ===================================================================
   "ScreenLock": {
     "Enabled": true,
-    // 空闲多久后锁屏（分钟），0 表示禁用自动锁屏，1-1440
+
+    // 空闲多久后自动锁屏（分钟），0 表示禁用自动锁屏，支持 1-1440
     "IdleMinutes": 5,
-    // 锁屏界面是否显示时钟
+
+    // 锁屏界面是否展示大字体时钟与日期
     "ShowClock": true,
-    // 锁屏遮罩透明度 0.3 - 1.0
-    "OverlayOpacity": 0.88,
-    // Windows 解锁后自动解除伪锁屏
+
+    // 锁屏遮罩不透明度 0.30 - 1.00（推荐 0.88-0.98；设为 1.00 则为完全不透光的纯黑遮罩）
+    "OverlayOpacity": 0.98,
+
+    // Windows 系统解锁（如 Win+L 登录恢复）后，是否自动解除本软件的伪锁屏
     "UnlockOnResume": true,
-    // 排除进程：列出的进程运行时暂停空闲计时，防止游戏/挂机被锁屏
-    "ExcludeProcesses": []
+
+    // 排除进程列表：当列出的进程正在运行时，自动暂停闲置锁屏计时（防止打游戏、视频渲染或全屏观影时被锁屏）
+    // 支持直接填写进程名（忽略大小写，带不带 .exe 均可）
+    "ExcludeProcesses": [
+      "eldenring.exe",
+      "GenshinImpact.exe",
+      "potplayer64.exe",
+      "Antigravity.exe"
+    ]
   },
 
-  // --- 任务调度模块配置 (TaskScheduler) ---
+  // ===================================================================
+  // 3. 任务调度与自动化模块 (TaskScheduler)
+  // ===================================================================
   "TaskScheduler": {
+    // 任务调度全局总开关（关闭后所有自动化定时、热键、文件监听任务暂停执行）
     "GlobalEnabled": true,
+
+    // 任务配置文件路径（默认 tasks.json，与 config.json 同目录；详见 tasks.sample.json）
     "TasksFile": "tasks.json"
   },
 
-  // --- 剪贴板历史模块配置 (ClipboardHistory) ---
+  // ===================================================================
+  // 4. 剪贴板历史与收藏模块 (ClipboardHistory)
+  // ===================================================================
   "ClipboardHistory": {
     "Enabled": true,
+
+    // 是否自动监听并记录剪贴板复制内容
     "AutoRecord": true,
+
+    // 呼出剪贴板历史面板的全局快捷键
     "Hotkey": "Win+Alt+V",
+
+    // 列表项中预览文本的最大字符数（超过该长度自动省略截断）
     "MaxPreviewChars": 100,
+
+    // 历史记录最大保留条数（超过阈值将自动清理最早未收藏的条目）
     "MaxItems": 1000,
+
+    // 历史记录最长保留天数（天）
     "RetentionDays": 90
+  },
+
+  // ===================================================================
+  // 5. 音频输出设备切换模块 (AudioSwitch)
+  // ===================================================================
+  "AudioSwitch": {
+    "Enabled": true,
+
+    // 一键在扬声器与耳机之间来回切换的全局快捷键
+    "Hotkey": "Ctrl+`",
+
+    // 扬声器/音箱设备的名称匹配关键字（用于智能识别设备）
+    "SpeakerPattern": "扬声器",
+
+    // 耳机/耳麦设备的名称匹配关键字（用于智能识别设备）
+    "HeadphonePattern": "耳机",
+
+    // 切换输出设备后是否播放简短提示音
+    "PlayNotificationSound": true
+  },
+
+  // ===================================================================
+  // 6. 应用后台自动静音模块 (AppAutoMute)
+  // ===================================================================
+  "AppAutoMute": {
+    "Enabled": true,
+
+    // 快速开关自动静音功能的全局快捷键
+    "Hotkey": "Ctrl+Win+S",
+
+    // 窗口失去焦点（切换到后台）后，延迟静音的毫秒数（防切屏误判）
+    "MuteDelayMs": 1000,
+
+    // 窗口重新获取焦点（切回前台）后，延迟恢复声音的毫秒数
+    "UnmuteDelayMs": 500,
+
+    // 工作模式："Blacklist"（黑名单模式：仅静音下方 TargetApps 里的应用）
+    //           "Whitelist"（白名单模式：除下方 TargetApps 里的应用外全部静音）
+    "Mode": "Blacklist",
+
+    // 目标应用程序进程名列表
+    "TargetApps": [
+      "chrome.exe",
+      "QQMusic.exe",
+      "cloudmusic.exe"
+    ]
+  },
+
+  // ===================================================================
+  // 7. 屏幕亮度与色彩模式配置文件 (MonitorProfile)
+  // ===================================================================
+  "MonitorProfile": {
+    "Enabled": true,
+
+    // 是否开启随时间自动切换亮度和对比度的定时计划
+    "AutoSchedule": true,
+
+    // 当前选用的色彩与亮度配置文件名称（如 "Daily", "Game", "Night"）
+    "ActiveProfile": "Daily",
+
+    // 手动快捷键调整亮度时的单次步进幅度（%）
+    "BrightnessStep": 5,
+
+    // 亮度与时间计划映射
+    "Profiles": {
+      "Daily": [
+        { "Time": "07:00", "Brightness": 65, "Contrast": 75 },
+        { "Time": "18:00", "Brightness": 55, "Contrast": 70 },
+        { "Time": "22:30", "Brightness": 30, "Contrast": 50 }
+      ],
+      "Game": [
+        { "Time": "07:00", "Brightness": 80, "Contrast": 80 },
+        { "Time": "19:00", "Brightness": 65, "Contrast": 75 }
+      ],
+      "Night": [
+        { "Time": "00:00", "Brightness": 30, "Contrast": 60 },
+        { "Time": "21:00", "Brightness": 25, "Contrast": 55 }
+      ]
+    },
+
+    // 快捷键映射
+    "Hotkeys": {
+      "SwitchToDailyMode": "Ctrl+Shift+D",
+      "SwitchToGameMode": "Ctrl+Shift+G",
+      "SwitchToNightMode": "Ctrl+Shift+N",
+      "ManualRefresh": "",
+      "IncreaseBrightness": "Ctrl+Alt+Up",
+      "DecreaseBrightness": "Ctrl+Alt+Down"
+    }
+  },
+
+  // ===================================================================
+  // 8. 系统防休眠唤醒守护模块 (Awake)
+  // ===================================================================
+  "Awake": {
+    "Enabled": true,
+
+    // 唤醒模式：0=Passive (仅按进程被动唤醒), 1=Indefinite (无限期保持唤醒), 2=Timed (限时倒计时唤醒)
+    "Mode": 0,
+
+    // 唤醒时是否同时保持屏幕常亮（true: 保持屏幕亮起；false: 仅阻止系统休眠，允许显示器按系统设置关屏省电）
+    "KeepDisplayOn": true,
+
+    // 定时唤醒默认倒计时（分钟）
+    "DefaultDurationMinutes": 60,
+
+    // 全局快速开关/切换唤醒状态的热键
+    "Hotkey": "Win+Shift+W",
+
+    // 使用笔记本电池供电时是否自动暂停保持唤醒（保护电池）
+    "DisableOnBattery": true,
+
+    // 电池电量百分比低于此阈值时强制暂停唤醒
+    "BatteryThreshold": 20,
+
+    // 常用限时倒计时快速预设选项（分钟）
+    "CustomPresets": [ 15, 30, 60, 120, 240 ],
+
+    // 检测到以下进程在后台运行时自动保持系统唤醒（如挂机编译、长任务渲染或转码工具）
+    "AutoAwakeProcesses": [
+      "ffmpeg.exe",
+      "blender.exe"
+    ]
   }
 }

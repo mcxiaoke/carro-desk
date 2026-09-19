@@ -175,7 +175,7 @@
                             <CheckBox x:Name="ShowClockBox" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Content="{loc:Loc Config.ShowClockDesc}" VerticalAlignment="Center" Margin="0,6,0,0"/>
 
                             <TextBlock Grid.Row="3" Text="{loc:Loc Config.OpacityLabel}" VerticalAlignment="Center" Margin="0,6,10,0" Foreground="#FF444444"/>
-                            <Slider x:Name="OpacitySlider" Grid.Row="3" Grid.Column="1" Minimum="0.3" Maximum="1.0" TickFrequency="0.05" IsSnapToTickEnabled="True" Value="0.88" Margin="0,6,0,0" VerticalAlignment="Center" ValueChanged="OpacitySlider_ValueChanged"/>
+                            <Slider x:Name="OpacitySlider" Grid.Row="3" Grid.Column="1" Minimum="0.3" Maximum="1.0" TickFrequency="0.01" SmallChange="0.01" LargeChange="0.05" IsSnapToTickEnabled="True" Value="0.88" Margin="0,6,0,0" VerticalAlignment="Center" ValueChanged="OpacitySlider_ValueChanged"/>
                             <TextBlock x:Name="OpacityText" Grid.Row="3" Grid.Column="2" Text="88%" VerticalAlignment="Center" Foreground="#FF555555" Margin="8,6,0,0"/>
 
                             <TextBlock Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2" Text="{loc:Loc Config.OpacityHint}" Foreground="#FF888888" FontSize="11" Margin="0,2,0,0"/>

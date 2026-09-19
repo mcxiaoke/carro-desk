@@ -1,15 +1,28 @@
-// ScreenLock AutoRun tasks - place alongside config.json
-// docs: docs/AUTORUN-DESIGN.md / docs/USAGE.md
-// 放置位置：与 config.json 同目录，重命名为 tasks.json 后生效
-// 首次启动若 tasks.json 不存在，会自动从本样例复制生成
-// 本文件由构建时自动复制到输出目录，仅作参考
-// Trigger types: startup | interval | daily | cron | sessionLock | sessionUnlock | idle | manual | hotkey | watch
-// Scripts without path are resolved from: <DirPath>/scripts/  (portable: <exe>/app_data/scripts/, roaming: %AppData%/ScreenLock/scripts/)
-// Supported: .ps1/.bat/.cmd/.vbs (hidden), .js -> node, .py/.pyw -> python (auto from PATH, hidden)
-// Manual tasks appear in tray -> Tasks -> Manual Run (click to execute)
-// Hotkey: Ctrl+Alt+Shift+Win + A-Z/0-9/F1-24 ; Watch: file watcher with debounce 500ms
+// CarroDesk 自动化任务配置文件样例 (tasks.sample.json)
+// 文档参考：docs/AUTORUN-DESIGN.md
+// 放置位置：与 config.json 处于同一目录下，命名为 tasks.json 时自动加载生效。
+// 首次启动若 tasks.json 不存在，会自动从本样例复制生成。
+// 本文件由构建时自动复制到输出目录，仅作参考。
+//
+// 支持的触发器类型 (trigger.type):
+//   - startup: 开机登录后延迟执行
+//   - interval: 周期性间隔执行（支持秒数如 3600 或字符串如 "1h30m"）
+//   - daily: 每天固定时间点执行（如 "03:00"）
+//   - cron: 标准 5 段 Cron 表达式调度（分 时 日 月 周）
+//   - sessionLock: 系统会话锁定时执行（如 Win+L）
+//   - sessionUnlock: 系统会话解锁后执行
+//   - idle: 系统进入空闲状态时执行
+//   - manual: 手动任务（在托盘图标的“任务调度 -> 手动运行”菜单中点击执行）
+//   - hotkey: 全局自定义热键触发（如 "Ctrl+Alt+S"）
+//   - watch: 文件夹变动监听触发（文件新增/修改/删除时自动运行，自带 500ms 防抖）
+//
+// 脚本路径解析机制：
+//   若未指定绝对路径，默认从脚本目录解析：
+//   - 便携模式: <exe目录>\app_data\scripts\
+//   - 漫游模式: %AppData%\CarroDesk\scripts\
+// 支持类型: .ps1 / .bat / .cmd / .vbs (原生隐藏窗口运行); .js (自动调用 node); .py / .pyw (自动调用 python)
 [
-  // startup: run 10s after login - bare name loads from scripts/
+  // 样例 1: 开机延迟自启动任务（开机登录后等待 10 秒自动运行脚本）
   // {
   //   "name": "startup-notify",
   //   "enabled": true,
@@ -18,35 +31,35 @@
   //   "options": { "hidden": true, "timeoutSec": 60 }
   // },
 
-  // manual: click in tray Tasks -> Manual Run (Quick Launcher, replaces AHK tray)
+  // 样例 2: 快捷启动器 / 手动任务（展示在托盘“手动运行”菜单中，点击即可运行）
   // {
   //   "name": "quick-notepad",
   //   "trigger": { "type": "manual" },
   //   "action": { "file": "notepad.exe" }
   // },
 
-  // hotkey: global hotkey
+  // 样例 3: 全局热键快速执行任务
   // {
   //   "name": "hotkey-sync",
   //   "trigger": { "type": "hotkey", "hotkey": "Ctrl+Alt+S" },
   //   "action": { "file": "sync.py" }
   // },
 
-  // watch: file watcher
+  // 样例 4: 文件夹变动监听（检测到新下载 zip 自动解压并支持日期变量模板）
   // {
   //   "name": "watch-downloads",
   //   "trigger": { "type": "watch", "path": "%USERPROFILE%/Downloads", "filter": "*.zip", "event": "created" },
   //   "action": { "file": "unzip.js", "args": "{{task}} {{yyyyMMdd}}" }
   // },
 
-  // interval: every 60s (or "1h30m")
+  // 样例 5: 周期性心跳 / 同步任务（每 1 小时执行一次）
   // {
   //   "name": "heartbeat",
   //   "trigger": { "type": "interval", "everySec": 3600 },
   //   "action": { "file": "sync.bat" }
   // },
 
-  // daily: at 03:00 every day
+  // 样例 6: 每日定时清理任务（每天凌晨 03:00 执行，最长超时 10 分钟）
   // {
   //   "name": "daily-clean",
   //   "trigger": { "type": "daily", "at": "03:00" },
@@ -54,7 +67,7 @@
   //   "options": { "timeoutSec": 600 }
   // },
 
-  // with condition and template
+  // 样例 7: 带执行条件的定时备份任务（仅在电脑空闲且接通交流电源时才执行）
   // {
   //   "name": "backup-logs",
   //   "trigger": { "type": "interval", "every": "1h" },

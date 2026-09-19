@@ -162,6 +162,7 @@ namespace CarroDesk.Views
 
             // 平滑淡入动效
             double targetOpacity = _appearance != null ? _appearance.OverlayOpacity : 0.88;
+            targetOpacity = Math.Max(0.1, Math.Min(1.0, targetOpacity));
             var fadeIn = new DoubleAnimation(0, targetOpacity, TimeSpan.FromMilliseconds(200));
             RootBorder.BeginAnimation(UIElement.OpacityProperty, fadeIn);
 

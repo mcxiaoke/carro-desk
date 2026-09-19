@@ -265,5 +265,93 @@ namespace CarroDesk.Tests
             // 切换回默认中文
             i18n.SetLanguage("zh-CN", notifyConfig: false);
         }
+
+        [TestMethod]
+        public void LegacyFlatConfig_MigratesToScreenLockAndTaskScheduler_AndCleansRootProps()
+        {
+            var configService = new ConfigService();
+            string configFile = Path.Combine(_tempDir, "config.json");
+
+            // 模拟包含旧扁平配置以及冲突未同步的 ScreenLock 节点
+            string legacyJson = @"{
+              ""AutoStart"": true,
+              ""PinSalt"": ""salt123"",
+              ""PinHash"": ""hash123"",
+              ""Language"": ""zh-CN"",
+              ""IdleMinutes"": 12,
+              ""ShowClock"": true,
+              ""OverlayOpacity"": 0.98,
+              ""TasksEnabled"": true,
+              ""UnlockOnResume"": true,
+              ""ExcludeProcesses"": [
+                ""Antigravity.exe"",
+                ""NTEGame.exe"",
+                ""TRAE SOLO CN.exe""
+              ],
+              ""AudioSwitch"": """",
+              ""AppAutoMute"": """",
+              ""ScreenLock"": {
+                ""Enabled"": true,
+                ""IdleMinutes"": 12,
+                ""ShowClock"": true,
+                ""OverlayOpacity"": 0.88,
+                ""ExcludeProcesses"": [],
+                ""UnlockOnResume"": true
+              }
+            }";
+
+            File.WriteAllText(configFile, legacyJson, Encoding.UTF8);
+
+            // 通过反射调用 ReadFile 并验证私有属性
+            var readFileMethod = typeof(ConfigService).GetMethod("ReadFile",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            Assert.IsNotNull(readFileMethod);
+
+            // 修改 FilePath 的机制需要通过反射或直接验证内部迁移方法
+            var rootObj = Newtonsoft.Json.Linq.JObject.Parse(legacyJson);
+            var migrateMethod = typeof(ConfigService).GetMethod("MigrateLegacyConfigs",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            Assert.IsNotNull(migrateMethod);
+
+            // 将属性载入 _moduleConfigs
+            var moduleConfigsField = typeof(ConfigService).GetField("_moduleConfigs",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            var moduleConfigs = (Dictionary<string, Newtonsoft.Json.Linq.JToken>)moduleConfigsField.GetValue(configService);
+            moduleConfigs.Clear();
+
+            var hostNamesField = typeof(ConfigService).GetField("HostSettingNames",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+            var hostNames = (HashSet<string>)hostNamesField.GetValue(null);
+
+            foreach (var prop in rootObj.Properties())
+            {
+                if (hostNames.Contains(prop.Name)) continue;
+                moduleConfigs[prop.Name] = prop.Value;
+            }
+
+            bool changed = (bool)migrateMethod.Invoke(configService, new object[] { rootObj });
+            Assert.IsTrue(changed, "必须检测到并执行迁移");
+
+            // 验证 ScreenLock 节点被正确覆盖合并
+            var configMgr = new ConfigManager(configService);
+            var slConfig = configMgr.GetModuleConfig<CarroDesk.Modules.ScreenLock.Models.ScreenLockConfig>("ScreenLock");
+            Assert.IsNotNull(slConfig);
+            Assert.AreEqual(0.98, slConfig.OverlayOpacity, 0.0001, "OverlayOpacity 必须迁移为根节点的 0.98");
+            Assert.AreEqual(3, slConfig.ExcludeProcesses.Count, "ExcludeProcesses 必须迁移为根节点的 3 项");
+            Assert.IsTrue(slConfig.ExcludeProcesses.Contains("Antigravity.exe"));
+
+            // 验证 TaskScheduler 被正确迁移
+            var tsConfig = configMgr.GetModuleConfig<CarroDesk.Modules.TaskScheduler.Models.TaskSchedulerConfig>("TaskScheduler");
+            Assert.IsNotNull(tsConfig);
+            Assert.IsTrue(tsConfig.GlobalEnabled, "GlobalEnabled 必须迁移为根节点 TasksEnabled 的 true");
+
+            // 验证根级旧 key 被彻底从 _moduleConfigs 移除
+            Assert.IsFalse(moduleConfigs.ContainsKey("IdleMinutes"));
+            Assert.IsFalse(moduleConfigs.ContainsKey("OverlayOpacity"));
+            Assert.IsFalse(moduleConfigs.ContainsKey("ExcludeProcesses"));
+            Assert.IsFalse(moduleConfigs.ContainsKey("TasksEnabled"));
+            Assert.IsFalse(moduleConfigs.ContainsKey("AudioSwitch"));
+            Assert.IsFalse(moduleConfigs.ContainsKey("AppAutoMute"));
+        }
     }
 }

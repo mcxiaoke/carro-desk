@@ -162,6 +162,8 @@ namespace CarroDesk.Services
                     {
                         var serializer = JsonSerializer.Create(SerializerSettings);
                         var s = obj.ToObject<AppSettings>(serializer) ?? new AppSettings();
+                        var merged = AppSettings.Merge(s);
+                        Current = merged;
 
                         _moduleConfigs.Clear();
                         foreach (var prop in obj.Properties())
@@ -179,7 +181,13 @@ namespace CarroDesk.Services
                             _moduleConfigs[prop.Name] = val;
                         }
 
-                        return AppSettings.Merge(s);
+                        bool migrated = MigrateLegacyConfigs(obj);
+                        if (migrated)
+                        {
+                            try { Save(); } catch { }
+                        }
+
+                        return merged;
                     }
                 }
             }
@@ -229,6 +237,140 @@ namespace CarroDesk.Services
 
             var json = obj.ToString(Formatting.Indented);
             AtomicFile.WriteAllText(FilePath, json, Encoding.UTF8);
+        }
+
+        private static readonly string[] LegacyScreenLockProps = new[]
+        {
+            "IdleMinutes", "ShowClock", "OverlayOpacity", "ExcludeProcesses", "UnlockOnResume"
+        };
+
+        private bool MigrateLegacyConfigs(JObject rootObj)
+        {
+            if (rootObj == null) return false;
+            bool changed = false;
+
+            // 1. 迁移 ScreenLock 历史扁平配置
+            bool hasLegacyScreenLock = LegacyScreenLockProps.Any(p => rootObj.Property(p) != null || _moduleConfigs.ContainsKey(p));
+            if (hasLegacyScreenLock)
+            {
+                JObject slObj = null;
+                if (_moduleConfigs.TryGetValue("ScreenLock", out var slToken) && slToken is JObject existingSl)
+                {
+                    slObj = existingSl;
+                }
+                else
+                {
+                    slObj = new JObject
+                    {
+                        ["Enabled"] = true,
+                        ["IdleMinutes"] = 5,
+                        ["ShowClock"] = true,
+                        ["OverlayOpacity"] = 0.88,
+                        ["ExcludeProcesses"] = new JArray(),
+                        ["UnlockOnResume"] = true
+                    };
+                    _moduleConfigs["ScreenLock"] = slObj;
+                    changed = true;
+                }
+
+                if (TryGetLegacyValue(rootObj, "IdleMinutes", out var idleVal))
+                {
+                    slObj["IdleMinutes"] = idleVal;
+                    changed = true;
+                }
+
+                if (TryGetLegacyValue(rootObj, "ShowClock", out var clockVal))
+                {
+                    slObj["ShowClock"] = clockVal;
+                    changed = true;
+                }
+
+                if (TryGetLegacyValue(rootObj, "OverlayOpacity", out var opacityVal))
+                {
+                    slObj["OverlayOpacity"] = opacityVal;
+                    changed = true;
+                }
+
+                if (TryGetLegacyValue(rootObj, "UnlockOnResume", out var resumeVal))
+                {
+                    slObj["UnlockOnResume"] = resumeVal;
+                    changed = true;
+                }
+
+                if (TryGetLegacyValue(rootObj, "ExcludeProcesses", out var exclVal))
+                {
+                    if (exclVal is JArray jarr)
+                    {
+                        if (jarr.Count > 0 || slObj["ExcludeProcesses"] == null)
+                        {
+                            slObj["ExcludeProcesses"] = jarr;
+                            changed = true;
+                        }
+                    }
+                    else if (exclVal.Type == JTokenType.String && !string.IsNullOrWhiteSpace(exclVal.Value<string>()))
+                    {
+                        slObj["ExcludeProcesses"] = exclVal;
+                        changed = true;
+                    }
+                }
+
+                foreach (var p in LegacyScreenLockProps)
+                {
+                    if (_moduleConfigs.Remove(p)) changed = true;
+                }
+            }
+
+            // 2. 迁移 TaskScheduler 历史 TasksEnabled 配置
+            if (TryGetLegacyValue(rootObj, "TasksEnabled", out var tasksEnabledVal))
+            {
+                JObject tsObj = null;
+                if (_moduleConfigs.TryGetValue("TaskScheduler", out var tsToken) && tsToken is JObject existingTs)
+                {
+                    tsObj = existingTs;
+                }
+                else
+                {
+                    tsObj = new JObject
+                    {
+                        ["GlobalEnabled"] = true,
+                        ["TasksFile"] = "tasks.json"
+                    };
+                    _moduleConfigs["TaskScheduler"] = tsObj;
+                }
+                tsObj["GlobalEnabled"] = tasksEnabledVal;
+                _moduleConfigs.Remove("TasksEnabled");
+                changed = true;
+            }
+
+            // 3. 清理无效的空字符串模块节点（如 "AudioSwitch": "", "AppAutoMute": ""）
+            var emptyModuleKeys = _moduleConfigs
+                .Where(kvp => kvp.Value != null && kvp.Value.Type == JTokenType.String && string.IsNullOrWhiteSpace(kvp.Value.Value<string>()))
+                .Select(kvp => kvp.Key)
+                .ToList();
+            foreach (var k in emptyModuleKeys)
+            {
+                _moduleConfigs.Remove(k);
+                changed = true;
+            }
+
+            return changed;
+        }
+
+        private bool TryGetLegacyValue(JObject rootObj, string propName, out JToken val)
+        {
+            val = null;
+            if (_moduleConfigs.TryGetValue(propName, out var token) && token != null && token.Type != JTokenType.Null)
+            {
+                val = token;
+                return true;
+            }
+            var p = rootObj.Property(propName);
+            if (p != null && p.Value != null && p.Value.Type != JTokenType.Null)
+            {
+                val = p.Value;
+                return true;
+            }
+            return false;
         }
     }
 }
