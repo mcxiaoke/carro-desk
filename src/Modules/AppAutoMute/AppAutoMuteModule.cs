@@ -270,17 +270,20 @@ namespace CarroDesk.Modules.AppAutoMute
             }
         }
 
-        private void UnmuteAllTargets()
+        public void UnmuteAllTargets()
         {
             if (Config != null && Config.TargetApps != null)
             {
-                _audioService.UnmuteProcesses(Config.TargetApps);
+                _audioService?.UnmuteProcesses(Config.TargetApps);
             }
             // 白名单模式下也解除当前所有活跃音频进程的静音
             if (Config != null && string.Equals(Config.Mode, "Whitelist", StringComparison.OrdinalIgnoreCase))
             {
-                var activeProcs = _audioService.GetActiveAudioProcesses();
-                _audioService.UnmuteProcesses(activeProcs);
+                var activeProcs = _audioService?.GetActiveAudioProcesses();
+                if (activeProcs != null)
+                {
+                    _audioService?.UnmuteProcesses(activeProcs);
+                }
             }
         }
 
@@ -308,9 +311,54 @@ namespace CarroDesk.Modules.AppAutoMute
             };
             root.Children.Add(_toggleItem);
 
+            // 2. 应急：一键恢复所有声音
+            root.Children.Add(new TrayMenuItem
+            {
+                Id = "appautomute_unmute_all",
+                Header = Loc.T("Tray.AutoMuteUnmuteAll", "🔊 恢复所有程序声音 (应急)"),
+                ToolTip = Loc.T("Tray.AutoMuteUnmuteAllTooltip", "立即解除所有应用程序静音状态"),
+                ClickAction = () =>
+                {
+                    UnmuteAllTargets();
+                    Context?.ShowNotification("已恢复所有应用程序声音");
+                }
+            });
+
+            // 3. 快捷添加前台程序
+            root.Children.Add(new TrayMenuItem
+            {
+                Id = "appautomute_add_current",
+                Header = Loc.T("Tray.AutoMuteAddCurrent", "➕ 将当前前台应用加入静音列表"),
+                ToolTip = Loc.T("Tray.AutoMuteAddCurrentTooltip", "将当前前台活动窗口应用添加到目标控制列表"),
+                ClickAction = () =>
+                {
+                    string current = _foregroundTracker?.CurrentProcessName;
+                    if (string.IsNullOrWhiteSpace(current))
+                    {
+                        Context?.ShowNotification("未能识别当前活动窗口进程");
+                        return;
+                    }
+                    string norm = ProcessHelper.Normalize(current);
+                    if (string.IsNullOrEmpty(norm)) return;
+
+                    if (Config.TargetApps == null) Config.TargetApps = new List<string>();
+                    if (!Config.TargetApps.Any(x => ProcessHelper.IsMatch(x, norm)))
+                    {
+                        Config.TargetApps.Add(norm);
+                        var configMgr = Context?.GetService<IConfigManager>();
+                        configMgr?.SaveModuleConfig(Id, Config);
+                        Context?.ShowNotification($"已将【{norm}】添加到后台静音列表");
+                    }
+                    else
+                    {
+                        Context?.ShowNotification($"【{norm}】已在列表中");
+                    }
+                }
+            });
+
             root.Children.Add(TrayMenuItem.Separator());
 
-            // 2. 独立设置入口
+            // 4. 独立设置入口
             root.Children.Add(new TrayMenuItem
             {
                 Id = "appautomute_settings",

@@ -193,6 +193,64 @@ namespace CarroDesk.Views
             }
         }
 
+        private void OnBrowseExeClick(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var ofd = new Microsoft.Win32.OpenFileDialog
+                {
+                    Filter = "可执行文件 (*.exe)|*.exe|所有文件 (*.*)|*.*",
+                    Title = "选择应用程序 (.exe)"
+                };
+                if (ofd.ShowDialog(this) == true)
+                {
+                    string fileName = System.IO.Path.GetFileNameWithoutExtension(ofd.FileName);
+                    TxtCustomApp.Text = fileName;
+                    AddAppToList(fileName);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, "选择文件失败: " + ex.Message, "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        private void OnClearAppsClick(object sender, RoutedEventArgs e)
+        {
+            if (_targetApps.Count == 0) return;
+            var res = MessageBox.Show(this, "确定要清空受控程序列表吗？", "确认清空", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (res == MessageBoxResult.Yes)
+            {
+                _targetApps.Clear();
+            }
+        }
+
+        private void OnUnmuteAllClick(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                _module?.UnmuteAllTargets();
+                if (_audioService != null)
+                {
+                    if (_targetApps.Count > 0)
+                    {
+                        _audioService.UnmuteProcesses(_targetApps);
+                    }
+                    var activeProcs = _audioService.GetActiveAudioProcesses();
+                    if (activeProcs != null && activeProcs.Count > 0)
+                    {
+                        _audioService.UnmuteProcesses(activeProcs);
+                    }
+                }
+                TxtNotice.Text = "已立即恢复所有声音";
+                _notifier?.Invoke("已恢复所有应用程序声音");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, "恢复声音失败: " + ex.Message, "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
         private void OnSaveClick(object sender, RoutedEventArgs e)
         {
             string hotkey = TxtHotkey.Text?.Trim() ?? string.Empty;

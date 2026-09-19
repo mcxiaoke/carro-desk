@@ -35,6 +35,16 @@ namespace CarroDesk.Tests
             var root = items[0];
             Assert.AreEqual("appautomute_root", root.Id);
             Assert.IsTrue(root.Children.Count >= 3);
+            Assert.IsTrue(root.Children.Any(c => c.Id == "appautomute_unmute_all"), "二级菜单应包含应急恢复所有声音项");
+            Assert.IsTrue(root.Children.Any(c => c.Id == "appautomute_add_current"), "二级菜单应包含将当前应用加入列表项");
+        }
+
+        [TestMethod]
+        public void AppAutoMuteModule_UnmuteAllTargets_SafeWhenUninitialized()
+        {
+            var module = new AppAutoMuteModule();
+            // 未启动或未初始化服务时调用不应抛异常
+            module.UnmuteAllTargets();
         }
 
         [TestMethod]
