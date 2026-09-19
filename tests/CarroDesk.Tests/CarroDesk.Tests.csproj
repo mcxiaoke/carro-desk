@@ -12,6 +12,9 @@
 
   <ItemGroup>
     <Compile Include="TestEnvironment.cs" />
+    <Compile Include="CommandLineTests.cs" />
+    <Compile Include="ComInteropTests.cs" />
+    <Compile Include="TaskRunnerTests.cs" />
     <Compile Include="CarroDeskContractTests.cs" />
     <Compile Include="MonitorProfileTests.cs" />
     <Compile Include="JsonMigrationTests.cs" />

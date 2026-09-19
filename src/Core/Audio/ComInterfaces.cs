@@ -52,29 +52,54 @@ namespace CarroDesk.Core.Audio
             new PropertyKey(new Guid("A45C254E-DF1C-4EFD-8020-67D146A850E0"), 14);
     }
 
-    [StructLayout(LayoutKind.Explicit)]
+    /// <summary>
+    /// 原生 PROPVARIANT。
+    ///
+    /// 真实尺寸为 x86 = 16 字节 / x64 = 24 字节：头部 8 字节（VARTYPE + 3×wReserved），
+    /// 其后 union 的最大成员是计数数组（CAC / CALPWSTR 等），x86 = 8 字节、x64 = 16 字节
+    /// （4 字节长度 + 4 字节对齐填充 + 8 字节指针）。
+    ///
+    /// 原实现只声明到 <c>pwszVal</c>（x86 = 12B / x64 = 16B），而
+    /// <c>IPropertyStore.GetValue</c> 会按原生尺寸整体写回，导致每次读取音频设备名
+    /// 都越界写 4/8 字节。这里显式补齐到 24 字节：偏大是安全的（原生写得比我们分配的少），
+    /// 偏小才会破坏内存。
+    /// </summary>
+    [StructLayout(LayoutKind.Explicit, Size = 24)]
     public struct PropVariant
     {
         [FieldOffset(0)] public short vt;
         [FieldOffset(2)] public short wReserved1;
         [FieldOffset(4)] public short wReserved2;
         [FieldOffset(6)] public short wReserved3;
-        [FieldOffset(8)] public IntPtr pwszVal;
+
+        // 以下字段共享 union 起始偏移 8，按 vt 判定后择一使用
+        [FieldOffset(8)] public IntPtr pwszVal;   // VT_LPWSTR / VT_BSTR / 各类指针型成员
+        [FieldOffset(8)] public long llVal;       // VT_I8 / VT_UI8 / VT_CY / VT_DATE 等 8 字节成员
+        [FieldOffset(8)] public double dblVal;    // VT_R8
+        [FieldOffset(16)] public long tail;       // x64 计数数组的第二个字段，纯占位以撑足 24 字节
+
+        private const short VtBstr = 8;
+        private const short VtLpwstr = 31;
 
         [DllImport("ole32.dll")]
         public static extern int PropVariantClear(ref PropVariant pvar);
 
         public string GetString()
         {
-            if (vt == 31 && pwszVal != IntPtr.Zero) // VT_LPWSTR = 31
+            // VT_LPWSTR 与 VT_BSTR 在内存中都是指向 UTF-16 的指针，仅归属规则不同
+            if (vt == VtLpwstr || vt == VtBstr)
             {
-                return Marshal.PtrToStringUni(pwszVal);
+                return pwszVal != IntPtr.Zero ? Marshal.PtrToStringUni(pwszVal) : null;
             }
             return null;
         }
 
+        /// <summary>释放 union 中的分配型数据。仅应对由原生代码填充过的实例调用。</summary>
         public void Clear()
         {
+            // VT_EMPTY 无分配内容，跳过即可；其余类型一律交给 PropVariantClear，
+            // 由它按 vt 自行判定释放方式（BSTR 走 OleAut32、LPWSTR 走 CoTaskMem）。
+            if (vt == 0) return;
             PropVariantClear(ref this);
         }
     }
