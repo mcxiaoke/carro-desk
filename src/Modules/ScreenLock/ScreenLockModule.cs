@@ -478,7 +478,7 @@ namespace CarroDesk.Modules.ScreenLock
             minutes = 0;
             var dlg = new Window
             {
-                Title = "自定义暂停闲时锁屏",
+                Title = Loc.T("Tray.PauseCustom", "自定义暂停分钟数..."),
                 Width = 360,
                 Height = 160,
                 WindowStartupLocation = WindowStartupLocation.CenterScreen,
@@ -514,8 +514,8 @@ namespace CarroDesk.Modules.ScreenLock
                 HorizontalAlignment = HorizontalAlignment.Right,
                 Margin = new Thickness(0, 12, 0, 0)
             };
-            var btnOk = new Button { Content = "确定", Width = 70, Height = 28, IsDefault = true, Margin = new Thickness(0, 0, 8, 0) };
-            var btnCancel = new Button { Content = "取消", Width = 70, Height = 28, IsCancel = true };
+            var btnOk = new Button { Content = Loc.T("Common.Ok", "确定"), Width = 70, Height = 28, IsDefault = true, Margin = new Thickness(0, 0, 8, 0) };
+            var btnCancel = new Button { Content = Loc.T("Common.Cancel", "取消"), Width = 70, Height = 28, IsCancel = true };
 
             btnOk.Click += (s, e) => { dlg.DialogResult = true; dlg.Close(); };
             btnCancel.Click += (s, e) => { dlg.DialogResult = false; dlg.Close(); };

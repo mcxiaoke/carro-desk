@@ -116,6 +116,7 @@ namespace CarroDesk.Modules.AudioSwitch
             if (success)
             {
                 UpdateCurrentDevice();
+                RequestRefreshSelf();
 
                 if (Config != null && Config.PlayNotificationSound)
                 {
@@ -129,7 +130,7 @@ namespace CarroDesk.Modules.AudioSwitch
                     if (devName.IndexOf(Config.HeadphonePattern ?? "耳机", StringComparison.OrdinalIgnoreCase) >= 0) icon = "🎧";
                     else if (devName.IndexOf(Config.SpeakerPattern ?? "扬声器", StringComparison.OrdinalIgnoreCase) >= 0) icon = "🔊";
                 }
-                string msg = $"已切换音频输出至: {icon} {devName}";
+                string msg = Loc.T("Tray.AudioSwitchSwitched", "已切换音频输出至: {0} {1}", icon, devName);
                 Context?.ShowNotification(msg);
                 return true;
             }
@@ -348,7 +349,7 @@ namespace CarroDesk.Modules.AudioSwitch
             root.Children.Add(new TrayMenuItem
             {
                 Id = "audioswitch_fast_toggle",
-                Header = "快捷切换",
+                Header = Loc.T("Tray.FastToggle", "快捷切换"),
                 InputGestureText = Config?.Hotkey ?? "Ctrl+`",
                 ClickAction = () => { ToggleAudioDevice(); RequestRefreshSelf(); }
             });
@@ -363,7 +364,7 @@ namespace CarroDesk.Modules.AudioSwitch
                 string icon = GetDeviceIcon(name);
                 string devId = d.Id;
                 bool isExcluded = IsDeviceExcluded(d);
-                string header = isExcluded ? $"{icon} {name} (已排除)" : $"{icon} {name}";
+                string header = isExcluded ? $"{icon} {name} " + Loc.T("Tray.AudioSwitchExcluded", "(已排除)") : $"{icon} {name}";
                 root.Children.Add(new TrayMenuItem
                 {
                     Id = "audioswitch_dev_" + devId,

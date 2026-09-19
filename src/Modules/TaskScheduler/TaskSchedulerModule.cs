@@ -150,7 +150,7 @@ namespace CarroDesk.Modules.TaskScheduler
                 {
                     bool enabled = !IsGlobalEnabled;
                     SetGlobalEnabled(enabled);
-                    NotifySelf(enabled ? "任务调度已启用" : "任务调度已禁用");
+                    NotifySelf(enabled ? Loc.T("Tray.TasksEnabledMsg", "任务调度已启用") : Loc.T("Tray.TasksDisabledMsg", "任务调度已禁用"));
                 }
             });
 
@@ -254,7 +254,7 @@ namespace CarroDesk.Modules.TaskScheduler
             root.Children.Add(new TrayMenuItem
             {
                 Id = "task_scheduler_logs",
-                Header = "打开任务日志目录...",
+                Header = Loc.T("Tray.OpenTaskLogsDir", "打开任务日志目录..."),
                 ClickAction = () =>
                 {
                     try

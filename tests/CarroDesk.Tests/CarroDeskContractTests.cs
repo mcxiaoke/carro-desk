@@ -7,10 +7,12 @@ using CarroDesk.Core.Models;
 using CarroDesk.Host.Services;
 using CarroDesk.Modules.AppAutoMute;
 using CarroDesk.Modules.AudioSwitch;
+using CarroDesk.Modules.ClipboardHistory.Models;
 using CarroDesk.Modules.ScreenLock;
 using CarroDesk.Modules.TaskScheduler;
 using CarroDesk.Models;
 using CarroDesk.Services;
+using CarroDesk.Services.Localization;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace CarroDesk.Tests
@@ -211,6 +213,78 @@ namespace CarroDesk.Tests
             Assert.IsTrue(clone.FloatingPanelLocked);
             Assert.AreEqual(500, clone.FloatingPanelX);
             Assert.AreEqual(300, clone.FloatingPanelY);
+        }
+
+        [TestMethod]
+        public void ClipboardItem_BuildPreviewText_PreservesUpTo3Lines_AndTruncates()
+        {
+            string raw = "Line 1\r\nLine 2\nLine 3\r\nLine 4\r\nLine 5";
+            string preview = ClipboardItem.BuildPreviewText(raw, 300);
+
+            var lines = preview.Split(new[] { Environment.NewLine, "\n" }, StringSplitOptions.None);
+            Assert.IsTrue(lines.Length <= 4); // 3 lines + trailing "..."
+            Assert.IsTrue(preview.Contains("Line 1"));
+            Assert.IsTrue(preview.Contains("Line 2"));
+            Assert.IsTrue(preview.Contains("Line 3"));
+            Assert.IsFalse(preview.Contains("Line 4"));
+            Assert.IsTrue(preview.EndsWith("..."));
+        }
+
+        [TestMethod]
+        public void Loc_T_Fallback_ReturnsDefaultValue_WhenKeyNotFound()
+        {
+            string nonExistentKey = "NonExistentKey_" + Guid.NewGuid().ToString("N");
+            string defaultValue = "这是一个兜底默认文本";
+
+            string result = Loc.T(nonExistentKey, defaultValue);
+            Assert.AreEqual(defaultValue, result, "当 key 不存在时，Loc.T 应严格返回 defaultValue 兜底，绝不可返回原始 key");
+        }
+
+        [TestMethod]
+        public void Locales_ScreenLockSettings_Key_Exists_In_Both_Languages()
+        {
+            Loc.SetLanguage("zh-CN");
+            string zh = Loc.T("Tray.ScreenLockSettings");
+            Assert.AreEqual("屏幕保护设置...", zh);
+
+            Loc.SetLanguage("en-US");
+            string en = Loc.T("Tray.ScreenLockSettings");
+            Assert.AreEqual("Screen Lock Settings...", en);
+
+            // 恢复回中文默认
+            Loc.SetLanguage("zh-CN");
+        }
+
+        [TestMethod]
+        public void Locales_AllSecondaryMenuSettings_Keys_Exist_In_Both_Languages()
+        {
+            var testKeys = new Dictionary<string, (string zh, string en)>
+            {
+                { "Tray.ScreenLockSettings", ("屏幕保护设置...", "Screen Lock Settings...") },
+                { "Tray.AudioSwitchSettings", ("音频切换设置...", "Audio Switch Settings...") },
+                { "Tray.AppAutoMuteSettings", ("后台静音设置...", "Auto-Mute Settings...") },
+                { "Tray.AwakeSettings", ("保持唤醒设置...", "Awake Settings...") },
+                { "Tray.MonitorProfileSettings", ("显示器配置与计划...", "Monitor Profiles & Schedule...") },
+                { "Tray.OpenTaskLogsDir", ("打开任务日志目录...", "Open Task Logs Directory...") },
+                { "Clipboard.OpenWindow", ("打开剪贴板历史...", "Open Clipboard History...") }
+            };
+
+            Loc.SetLanguage("zh-CN");
+            foreach (var kvp in testKeys)
+            {
+                string val = Loc.T(kvp.Key);
+                Assert.AreEqual(kvp.Value.zh, val, $"中文环境下 {kvp.Key} 未正确翻译");
+            }
+
+            Loc.SetLanguage("en-US");
+            foreach (var kvp in testKeys)
+            {
+                string val = Loc.T(kvp.Key);
+                Assert.AreEqual(kvp.Value.en, val, $"英文环境下 {kvp.Key} 未正确翻译");
+            }
+
+            // 恢复回中文默认
+            Loc.SetLanguage("zh-CN");
         }
 
         private sealed class StubLogger : ILoggerService

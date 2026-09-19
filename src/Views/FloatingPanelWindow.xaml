@@ -166,7 +166,7 @@
 
                     <!-- 右侧：位置预设、锁定位置、停留桌面、收起 -->
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Cursor="Arrow">
-                        <Button x:Name="BtnPosition" Style="{StaticResource ToolButtonStyle}" ToolTip="设置面板位置" Click="OnPositionClick">
+                        <Button x:Name="BtnPosition" Style="{StaticResource ToolButtonStyle}" ToolTip="{loc:Loc Tray.PositionTooltip, Default='设置面板位置'}" Click="OnPositionClick">
                             <TextBlock Text="📍" FontSize="11"/>
                         </Button>
                         <Button x:Name="BtnLock" Style="{StaticResource ToolButtonStyle}" Click="OnLockClick" Margin="2,0,0,0">
@@ -175,7 +175,7 @@
                         <Button x:Name="BtnPin" Style="{StaticResource ToolButtonStyle}" Click="OnPinClick" Margin="2,0,0,0">
                             <TextBlock x:Name="TxtPin" Text="📌" FontSize="11" Foreground="#FF64748B"/>
                         </Button>
-                        <Button x:Name="BtnClose" Style="{StaticResource ToolButtonStyle}" ToolTip="收起 (Esc)" Click="OnCloseClick" Margin="2,0,0,0">
+                        <Button x:Name="BtnClose" Style="{StaticResource ToolButtonStyle}" ToolTip="{loc:Loc Tray.CloseTooltip, Default='收起 (Esc)'}" Click="OnCloseClick" Margin="2,0,0,0">
                             <TextBlock Text="✕" FontSize="11" Foreground="#FF64748B"/>
                         </Button>
                     </StackPanel>

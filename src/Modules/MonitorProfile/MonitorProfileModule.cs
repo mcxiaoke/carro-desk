@@ -218,7 +218,7 @@ namespace CarroDesk.Modules.MonitorProfile
             int curC = ScheduleEngine != null ? ScheduleEngine.CurrentContrast : -1;
             if (curB >= 0)
             {
-                _trayRoot.ToolTip = $"当前显示器配置: {Config?.ActiveProfile} (亮度: {curB}%, 对比度: {curC}%)";
+                _trayRoot.ToolTip = Loc.T("Tray.MonitorProfileTipFormat", "当前显示器配置: {0} (亮度: {1}%, 对比度: {2}%)", Config?.ActiveProfile, curB, curC);
             }
         }
 
@@ -266,7 +266,7 @@ namespace CarroDesk.Modules.MonitorProfile
             root.Children.Add(new TrayMenuItem
             {
                 Id = "monitor_bright_up",
-                Header = $"增加亮度 (+{step}%)",
+                Header = Loc.T("Tray.MonitorProfileIncrease", "增加亮度 (+{0}%)", step),
                 InputGestureText = cfg.Hotkeys?.IncreaseBrightness ?? "Ctrl+Shift+Up",
                 ClickAction = () => ScheduleEngine?.StepBrightness(step)
             });
@@ -274,7 +274,7 @@ namespace CarroDesk.Modules.MonitorProfile
             root.Children.Add(new TrayMenuItem
             {
                 Id = "monitor_bright_down",
-                Header = $"降低亮度 (-{step}%)",
+                Header = Loc.T("Tray.MonitorProfileDecrease", "降低亮度 (-{0}%)", step),
                 InputGestureText = cfg.Hotkeys?.DecreaseBrightness ?? "Ctrl+Shift+Down",
                 ClickAction = () => ScheduleEngine?.StepBrightness(-step)
             });
@@ -283,7 +283,7 @@ namespace CarroDesk.Modules.MonitorProfile
             var presetsNode = new TrayMenuItem
             {
                 Id = "monitor_bright_presets",
-                Header = "常用亮度预设"
+                Header = Loc.T("Tray.MonitorProfilePresets", "常用亮度预设")
             };
             int[] presetValues = new int[] { 100, 75, 50, 25 };
             foreach (var pv in presetValues)
@@ -304,7 +304,7 @@ namespace CarroDesk.Modules.MonitorProfile
             root.Children.Add(new TrayMenuItem
             {
                 Id = "monitor_auto_schedule",
-                Header = "启用时间段自动调节",
+                Header = Loc.T("Tray.MonitorProfileAutoSchedule", "启用时间段自动调节"),
                 IsChecked = cfg.AutoSchedule,
                 ClickAction = () =>
                 {
@@ -319,12 +319,12 @@ namespace CarroDesk.Modules.MonitorProfile
             root.Children.Add(new TrayMenuItem
             {
                 Id = "monitor_refresh_now",
-                Header = "重新探测并应用当前设置",
+                Header = Loc.T("Tray.MonitorProfileRefreshNow", "重新探测并应用当前设置"),
                 InputGestureText = cfg.Hotkeys?.ManualRefresh ?? "Ctrl+Shift+R",
                 ClickAction = () =>
                 {
                     ScheduleEngine?.ApplyCurrentSetting(force: true);
-                    Context?.ShowNotification("已重新校准并应用显示器设置");
+                    Context?.ShowNotification(Loc.T("Tray.MonitorProfileApplied", "已重新校准并应用显示器设置"));
                 }
             });
 
@@ -334,7 +334,7 @@ namespace CarroDesk.Modules.MonitorProfile
             root.Children.Add(new TrayMenuItem
             {
                 Id = "monitor_settings_window",
-                Header = "显示器配置与计划...",
+                Header = Loc.T("Tray.MonitorProfileSettings", "显示器配置与计划..."),
                 ClickAction = () =>
                 {
                     try

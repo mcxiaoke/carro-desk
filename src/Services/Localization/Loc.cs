@@ -10,6 +10,11 @@ namespace CarroDesk.Services.Localization
             return I18nService.Instance.Get(key);
         }
 
+        public static string T(string key, string defaultValue)
+        {
+            return I18nService.Instance.Get(key, defaultValue);
+        }
+
         public static string T(string key, params object[] args)
         {
             return I18nService.Instance.Format(key, args);

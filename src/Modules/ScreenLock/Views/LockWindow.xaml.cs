@@ -354,7 +354,7 @@ namespace CarroDesk.Views
             }
             catch (Exception ex)
             {
-                MessageBox.Show(this, "调用系统锁屏失败: " + ex.Message, "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(this, Loc.T("Lock.SystemLockFailed", ex.Message), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 
