@@ -15,6 +15,7 @@
     <Compile Include="CommandLineTests.cs" />
     <Compile Include="ComInteropTests.cs" />
     <Compile Include="ClipboardStorageTests.cs" />
+    <Compile Include="CoreServiceTests.cs" />
     <Compile Include="ScreenLockWindowTests.cs" />
     <Compile Include="TaskRunnerTests.cs" />
     <Compile Include="CarroDeskContractTests.cs" />

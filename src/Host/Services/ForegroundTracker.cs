@@ -70,13 +70,20 @@ namespace CarroDesk.Host.Services
 
             // SetWinEventHook(WINEVENT_OUTOFCONTEXT) 的回调由 user32 在安装线程的消息泵内直接调用。
             // 订阅者（AppAutoMute / Awake 等）一旦抛异常，异常会沿 native 回调帧逸出，
-            // 不保证被 DispatcherUnhandledException 捕获，可能直接终止进程；
-            // 因此这里必须逐订阅者隔离，任何单点失败都不能击穿宿主。
+            // 不保证被 DispatcherUnhandledException 捕获，可能直接终止进程。
+            // 因此这里逐订阅者隔离：任何一个失败都不得击穿宿主，也不得影响其它订阅者。
             var handler = ForegroundChanged;
             if (handler == null) return;
-            SafeInvoker.Run(LogModuleId,
-                () => handler(hWnd, procName),
-                (id, ex) => _logger?.LogError(id, "前台窗口变更订阅者抛出异常", ex));
+
+            var subscribers = handler.GetInvocationList();
+            for (int i = 0; i < subscribers.Length; i++)
+            {
+                var callback = subscribers[i] as Action<IntPtr, string>;
+                if (callback == null) continue;
+                SafeInvoker.Run(LogModuleId,
+                    () => callback(hWnd, procName),
+                    (id, ex) => _logger?.LogError(id, "前台窗口变更订阅者抛出异常", ex));
+            }
         }
 
         public void UpdateCurrent()
