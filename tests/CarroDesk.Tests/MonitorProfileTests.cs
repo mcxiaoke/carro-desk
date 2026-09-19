@@ -28,6 +28,20 @@ namespace CarroDesk.Tests
         }
 
         [TestMethod]
+        public void MonitorTimeSetting_PropertyChanged_NotifiesListeners()
+        {
+            var setting = new MonitorTimeSetting { Time = "08:00", Brightness = 50, Contrast = 60 };
+            var changedProps = new List<string>();
+            setting.PropertyChanged += (s, e) => changedProps.Add(e.PropertyName);
+
+            setting.Time = "09:00";
+            setting.Brightness = 80;
+            setting.Contrast = 75;
+
+            CollectionAssert.AreEqual(new[] { "Time", "Brightness", "Contrast" }, changedProps);
+        }
+
+        [TestMethod]
         public void MonitorProfileConfig_CreateDefault_HasExpectedStructure()
         {
             var cfg = MonitorProfileConfig.CreateDefault();

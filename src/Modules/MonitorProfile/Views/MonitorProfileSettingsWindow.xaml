@@ -144,6 +144,14 @@
                     <TextBlock Text="情境模式列表" FontWeight="Bold" FontSize="13" Foreground="#FF1F2937" Margin="2,2,0,8"/>
 
                     <ListBox x:Name="LstModes" Grid.Row="1" BorderThickness="1" BorderBrush="#FFE5E7EB" SelectionChanged="LstModes_SelectionChanged">
+                        <ListBox.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="设为当前模式" Click="BtnSetActive_Click"/>
+                                <MenuItem Header="重命名模式..." Click="BtnRenameMode_Click"/>
+                                <Separator/>
+                                <MenuItem Header="删除模式" Click="BtnDeleteMode_Click"/>
+                            </ContextMenu>
+                        </ListBox.ContextMenu>
                         <ListBox.ItemTemplate>
                             <DataTemplate>
                                 <DockPanel Margin="2,3">
@@ -160,9 +168,11 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-                            <Button x:Name="BtnAddMode" Content="新建..." Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,3,0" Click="BtnAddMode_Click"/>
-                            <Button x:Name="BtnDeleteMode" Grid.Column="1" Content="删除" Style="{StaticResource SecondaryButtonStyle}" Margin="3,0,0,0" Click="BtnDeleteMode_Click"/>
+                            <Button x:Name="BtnAddMode" Content="新建" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,2,0" Click="BtnAddMode_Click"/>
+                            <Button x:Name="BtnRenameMode" Grid.Column="1" Content="重命名" Style="{StaticResource SecondaryButtonStyle}" Margin="2,0,2,0" Click="BtnRenameMode_Click"/>
+                            <Button x:Name="BtnDeleteMode" Grid.Column="2" Content="删除" Style="{StaticResource SecondaryButtonStyle}" Margin="2,0,0,0" Click="BtnDeleteMode_Click"/>
                         </Grid>
                     </StackPanel>
                 </Grid>
@@ -182,11 +192,13 @@
                             <DataGrid x:Name="GridTimeSettings" AutoGenerateColumns="False" CanUserAddRows="False"
                                       HeadersVisibility="Column" GridLinesVisibility="Horizontal"
                                       BorderThickness="1" BorderBrush="#FFE5E7EB" Background="White" Height="160"
-                                      RowHeight="28" SelectionMode="Single">
+                                      RowHeight="28" SelectionMode="Single"
+                                      SelectionChanged="GridTimeSettings_SelectionChanged"
+                                      MouseDoubleClick="GridTimeSettings_MouseDoubleClick">
                                 <DataGrid.Columns>
-                                    <DataGridTextColumn Header="时间点" Binding="{Binding Time}" Width="90"/>
-                                    <DataGridTextColumn Header="亮度 (0-100)" Binding="{Binding Brightness}" Width="100"/>
-                                    <DataGridTextColumn Header="对比度 (0-100)" Binding="{Binding Contrast}" Width="100"/>
+                                    <DataGridTextColumn Header="时间点" Binding="{Binding Time, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Width="90"/>
+                                    <DataGridTextColumn Header="亮度 (0-100)" Binding="{Binding Brightness, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Width="100"/>
+                                    <DataGridTextColumn Header="对比度 (0-100)" Binding="{Binding Contrast, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Width="100"/>
                                     <DataGridTemplateColumn Header="操作" Width="*">
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
@@ -197,29 +209,31 @@
                                 </DataGrid.Columns>
                             </DataGrid>
 
-                            <!-- 添加时间点输入栏 -->
+                            <!-- 添加/修改时间点输入栏 -->
                             <Border Background="#FFF9FAFB" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="6" Padding="8" Margin="0,8,0,0">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="80"/>
-                                        <ColumnDefinition Width="Auto"/>
                                         <ColumnDefinition Width="65"/>
                                         <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="65"/>
+                                        <ColumnDefinition Width="50"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="50"/>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Text="时间:" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="#FF4B5563"/>
+                                    <TextBlock Text="时间:" VerticalAlignment="Center" Margin="0,0,4,0" Foreground="#FF4B5563"/>
                                     <TextBox x:Name="TxtNewTime" Grid.Column="1" Text="12:00" Height="24" VerticalContentAlignment="Center" Padding="4,1"/>
 
-                                    <TextBlock Grid.Column="2" Text="亮度:" VerticalAlignment="Center" Margin="10,0,6,0" Foreground="#FF4B5563"/>
+                                    <TextBlock Grid.Column="2" Text="亮度:" VerticalAlignment="Center" Margin="6,0,4,0" Foreground="#FF4B5563"/>
                                     <TextBox x:Name="TxtNewBrightness" Grid.Column="3" Text="60" Height="24" VerticalContentAlignment="Center" Padding="4,1"/>
 
-                                    <TextBlock Grid.Column="4" Text="对比度:" VerticalAlignment="Center" Margin="10,0,6,0" Foreground="#FF4B5563"/>
+                                    <TextBlock Grid.Column="4" Text="对比度:" VerticalAlignment="Center" Margin="6,0,4,0" Foreground="#FF4B5563"/>
                                     <TextBox x:Name="TxtNewContrast" Grid.Column="5" Text="70" Height="24" VerticalContentAlignment="Center" Padding="4,1"/>
 
-                                    <Button Grid.Column="7" Content="+ 添加时间点" Style="{StaticResource SecondaryButtonStyle}" Click="BtnAddTimeSetting_Click"/>
+                                    <Button x:Name="BtnUpdateTimeSetting" Grid.Column="7" Content="更新选中" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,6,0" Click="BtnUpdateTimeSetting_Click" ToolTip="更新当前选中的时间点"/>
+                                    <Button Grid.Column="8" Content="+ 添加" Style="{StaticResource SecondaryButtonStyle}" Click="BtnAddTimeSetting_Click" ToolTip="添加为新时间点"/>
                                 </Grid>
                             </Border>
                         </StackPanel>

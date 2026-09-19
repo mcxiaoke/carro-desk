@@ -210,6 +210,124 @@ namespace CarroDesk.Views
             LstModes.SelectedItem = _modes.First();
         }
 
+        private void BtnRenameMode_Click(object sender, RoutedEventArgs e)
+        {
+            var selected = LstModes.SelectedItem as ModeItemViewModel;
+            if (selected == null)
+            {
+                MessageBox.Show("请先选择一个要重命名的方法模式。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            string oldName = selected.Name;
+            if (PromptInput(this, "重命名情境模式", $"请输入模式「{oldName}」的新名称：", oldName, out string newName))
+            {
+                newName = newName?.Trim();
+                if (string.IsNullOrWhiteSpace(newName))
+                {
+                    MessageBox.Show("模式名称不能为空。", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                if (string.Equals(oldName, newName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+
+                if (_modes.Any(m => string.Equals(m.Name, newName, StringComparison.OrdinalIgnoreCase)))
+                {
+                    MessageBox.Show($"已存在名为「{newName}」的模式，请使用其他名称。", "名称重复", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                // 迁移模式时间设置
+                if (_modeSettings.TryGetValue(oldName, out var settings))
+                {
+                    _modeSettings.Remove(oldName);
+                    _modeSettings[newName] = settings;
+                }
+
+                // 如果当前激活的是该模式，同步更新激活名称
+                if (string.Equals(_activeProfileName, oldName, StringComparison.OrdinalIgnoreCase))
+                {
+                    _activeProfileName = newName;
+                }
+
+                selected.Name = newName;
+                TxtCurrentModeTitle.Text = $"模式「{selected.Name}」的时间段设置";
+            }
+        }
+
+        public static bool PromptInput(Window owner, string title, string prompt, string defaultText, out string result)
+        {
+            result = defaultText;
+            var dlg = new Window
+            {
+                Title = title,
+                Width = 360,
+                Height = 160,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = owner,
+                ResizeMode = ResizeMode.NoResize,
+                Background = System.Windows.Media.Brushes.White,
+                FontFamily = new System.Windows.Media.FontFamily("Segoe UI, Microsoft YaHei UI")
+            };
+            var grid = new Grid { Margin = new Thickness(16) };
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            var lbl = new TextBlock
+            {
+                Text = prompt,
+                Margin = new Thickness(0, 0, 0, 8),
+                FontSize = 13,
+                Foreground = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString("#FF374151")
+            };
+            var txt = new TextBox
+            {
+                Text = defaultText,
+                Height = 28,
+                VerticalContentAlignment = VerticalAlignment.Center,
+                Padding = new Thickness(4, 0, 4, 0),
+                FontSize = 13
+            };
+            txt.SelectAll();
+
+            var btnPanel = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin = new Thickness(0, 12, 0, 0)
+            };
+            var btnOk = new Button { Content = "确定", Width = 70, Height = 28, IsDefault = true, Margin = new Thickness(0, 0, 8, 0) };
+            var btnCancel = new Button { Content = "取消", Width = 70, Height = 28, IsCancel = true };
+
+            btnOk.Click += (s, ev) => { dlg.DialogResult = true; dlg.Close(); };
+            btnCancel.Click += (s, ev) => { dlg.DialogResult = false; dlg.Close(); };
+
+            btnPanel.Children.Add(btnOk);
+            btnPanel.Children.Add(btnCancel);
+
+            Grid.SetRow(lbl, 0);
+            Grid.SetRow(txt, 1);
+            Grid.SetRow(btnPanel, 2);
+
+            grid.Children.Add(lbl);
+            grid.Children.Add(txt);
+            grid.Children.Add(btnPanel);
+
+            dlg.Content = grid;
+            dlg.Loaded += (s, ev) => txt.Focus();
+
+            if (dlg.ShowDialog() == true)
+            {
+                result = txt.Text.Trim();
+                return true;
+            }
+            return false;
+        }
+
         private void BtnAddTimeSetting_Click(object sender, RoutedEventArgs e)
         {
             var selected = LstModes.SelectedItem as ModeItemViewModel;
@@ -263,6 +381,76 @@ namespace CarroDesk.Views
                 }
                 list.Remove(setting);
             }
+        }
+
+        private void GridTimeSettings_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            var setting = GridTimeSettings.SelectedItem as MonitorTimeSetting;
+            if (setting != null)
+            {
+                TxtNewTime.Text = setting.Time;
+                TxtNewBrightness.Text = setting.Brightness.ToString();
+                TxtNewContrast.Text = setting.Contrast.ToString();
+            }
+        }
+
+        private void GridTimeSettings_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            var setting = GridTimeSettings.SelectedItem as MonitorTimeSetting;
+            if (setting != null)
+            {
+                TxtNewTime.Text = setting.Time;
+                TxtNewBrightness.Text = setting.Brightness.ToString();
+                TxtNewContrast.Text = setting.Contrast.ToString();
+                TxtNewBrightness.Focus();
+                TxtNewBrightness.SelectAll();
+            }
+        }
+
+        private void BtnUpdateTimeSetting_Click(object sender, RoutedEventArgs e)
+        {
+            var selectedMode = LstModes.SelectedItem as ModeItemViewModel;
+            if (selectedMode == null || !_modeSettings.ContainsKey(selectedMode.Name)) return;
+
+            var setting = GridTimeSettings.SelectedItem as MonitorTimeSetting;
+            if (setting == null)
+            {
+                MessageBox.Show("请先在列表中选中一个要更新的时间点行。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            string timeStr = TxtNewTime.Text.Trim();
+            if (!TimeSpan.TryParse(timeStr, out _))
+            {
+                MessageBox.Show("请输入正确的时间格式 (HH:mm)，例如 18:30", "格式错误", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            if (!int.TryParse(TxtNewBrightness.Text, out int b) || b < 0 || b > 100)
+            {
+                MessageBox.Show("亮度值必须在 0 到 100 之间。", "格式错误", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            if (!int.TryParse(TxtNewContrast.Text, out int c) || c < 0 || c > 100)
+            {
+                MessageBox.Show("对比度值必须在 0 到 100 之间。", "格式错误", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            setting.Time = timeStr;
+            setting.Brightness = b;
+            setting.Contrast = c;
+
+            // 重新按时间排序
+            var list = _modeSettings[selectedMode.Name];
+            var sorted = list.OrderBy(t => t.ToTimeSpan()).ToList();
+            list.Clear();
+            foreach (var item in sorted)
+            {
+                list.Add(item);
+            }
+            GridTimeSettings.SelectedItem = setting;
         }
 
         private void BtnResetDefaults_Click(object sender, RoutedEventArgs e)
