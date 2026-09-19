@@ -42,7 +42,7 @@ namespace CarroDesk.Modules.TaskScheduler
                     var cfgMgr = Context?.GetService<IConfigManager>();
                     var notif = Context?.GetService<INotificationService>();
                     var hotkeys = Context?.GetService<IHotkeyService>();
-                    Scheduler = new TaskSchedulerService(idle, cfgMgr, notif, msg => Context?.ShowNotification(msg), hotkeys);
+                    Scheduler = new TaskSchedulerService(idle, cfgMgr, notif, msg => Context?.ShowNotification(msg), hotkeys, Context?.Dispatcher);
                 }
                 Scheduler?.Start();
             }

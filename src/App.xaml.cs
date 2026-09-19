@@ -115,7 +115,7 @@ namespace CarroDesk
             Services.AddSingleton(audioService);
             Services.AddSingleton<IAudioService>(audioService);
 
-            var foregroundTracker = new ForegroundTracker();
+            var foregroundTracker = new ForegroundTracker(logger);
             Services.AddSingleton(foregroundTracker);
             Services.AddSingleton<IForegroundTracker>(foregroundTracker);
 
@@ -276,7 +276,8 @@ namespace CarroDesk
             try
             {
                 var app = Current as App;
-                if (app != null) app.Dispatcher.BeginInvoke(new Action(() => app.ShowBalloon(text)));
+                // 线程封送由 ShowBalloon 内部统一处理，此处不再重复 BeginInvoke
+                app?.ShowBalloon(text);
             }
             catch { /* intentionally ignored: dispatcher shutdown */ }
         }
@@ -331,6 +332,20 @@ namespace CarroDesk
 
         internal void ShowBalloon(string text)
         {
+            // 本方法会被线程池线程调用（任务执行完成、剪贴板落盘、音频服务回调等），
+            // 而 TaskbarIcon 是 WPF FrameworkElement，跨线程访问会抛
+            // InvalidOperationException 并被下面的 catch 吞掉，表现为"通知无故丢失"。
+            // 因此统一在这里回到 UI 线程，调用方无需关心自己身处哪条线程。
+            if (!Dispatcher.CheckAccess())
+            {
+                try
+                {
+                    Dispatcher.BeginInvoke(new Action(() => ShowBalloon(text)));
+                }
+                catch { /* intentionally ignored: dispatcher already shutting down */ }
+                return;
+            }
+
             if (_tbIcon == null) return;
             try
             {

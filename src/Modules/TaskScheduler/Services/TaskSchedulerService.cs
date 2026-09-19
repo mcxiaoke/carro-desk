@@ -24,6 +24,7 @@ namespace CarroDesk.Services.Tasks
         private readonly INotificationService _notificationService;
         private readonly Action<string> _balloonNotifier;
         private readonly IHotkeyService _hotkeyService;
+        private readonly Dispatcher _dispatcher;
 
         public bool GlobalEnabled => _globalEnabled;
         public bool IsGlobalEnabled => _globalEnabled;
@@ -34,13 +35,15 @@ namespace CarroDesk.Services.Tasks
             IConfigManager configManager = null,
             INotificationService notificationService = null,
             Action<string> balloonNotifier = null,
-            IHotkeyService hotkeyService = null)
+            IHotkeyService hotkeyService = null,
+            Dispatcher dispatcher = null)
         {
             _idleService = idleService;
             _configManager = configManager;
             _notificationService = notificationService;
             _balloonNotifier = balloonNotifier;
             _hotkeyService = hotkeyService;
+            _dispatcher = dispatcher;
         }
 
         public void Start()
@@ -54,6 +57,12 @@ namespace CarroDesk.Services.Tasks
             if (result == null) result = new TaskLoadResult();
 
             Apply(result);
+
+            // 休眠唤醒后需要补偿 Daily/Cron 的漏触发。此前只有 Stop() 里的 -=，
+            // 缺少这里的 +=，导致 OnPowerModeChanged 永不触发、补偿逻辑整体失效
+            // （笔记本合盖跨过定时点后任务永久漏执行且无任何日志）。
+            try { SystemEvents.PowerModeChanged += OnPowerModeChanged; }
+            catch (Exception ex) { TaskLogger.Warn("system", "subscribe PowerModeChanged failed: " + ex.Message); }
 
             TaskLogger.Info("system", "TaskScheduler started, tasks=" + _tasks.Count + ", errors=" + result.Errors.Count + ", globalEnabled=" + _globalEnabled);
             foreach (var e in result.Errors) TaskLogger.Warn("system", e);
@@ -354,8 +363,25 @@ namespace CarroDesk.Services.Tasks
         private void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
         {
             if (e.Mode != PowerModes.Resume) return;
+
+            // SystemEvents 在专用线程上触发本回调，而 DispatcherTimer 必须在已启动消息泵的
+            // UI 线程上创建：在 SystemEvents 线程上 new DispatcherTimer 会隐式创建该线程的
+            // Dispatcher（没有 Run 循环），Tick 永远不会触发。
+            var dispatcher = _dispatcher ?? System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher == null)
+            {
+                TaskLogger.Warn("system", "resume catch-up skipped: no dispatcher available");
+                return;
+            }
+            if (!dispatcher.CheckAccess())
+            {
+                try { dispatcher.BeginInvoke(new Action(() => OnPowerModeChanged(sender, e))); }
+                catch (Exception ex) { TaskLogger.Warn("system", "resume catch-up dispatch failed: " + ex.Message); }
+                return;
+            }
+
             // delay a bit for system to stabilize, then catch up daily/cron
-            var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+            var timer = new DispatcherTimer(DispatcherPriority.Normal, dispatcher) { Interval = TimeSpan.FromSeconds(5) };
             timer.Tick += (s, args) =>
             {
                 try { timer.Stop(); } catch { }
@@ -373,7 +399,7 @@ namespace CarroDesk.Services.Tasks
                     }
                     TaskLogger.Info("system", "resume catch-up checked");
                 }
-                catch { }
+                catch (Exception ex) { TaskLogger.Warn("system", "resume catch-up failed: " + ex.Message); }
             };
             timer.Start();
         }
