@@ -902,6 +902,115 @@ namespace CarroDesk.Views
             }
         }
 
+        private void OnItemEnabledToggleClick(object sender, RoutedEventArgs e)
+        {
+            if (sender is CheckBox cb && cb.DataContext is TaskDefinition task)
+            {
+                try
+                {
+                    TaskConfigService.Save(_tasks);
+                    _scheduler?.Reload();
+                    _onReloadCompleted?.Invoke();
+                    if (TaskList.SelectedItem == task)
+                    {
+                        EnabledBox.IsChecked = task.Enabled;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show("保存任务状态失败: " + ex.Message, "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+
+        private void OnMenuTestRunClick(object sender, RoutedEventArgs e)
+        {
+            OnTestRunClick(sender, e);
+        }
+
+        private void OnMenuViewLogClick(object sender, RoutedEventArgs e)
+        {
+            OnViewCurrentLogClick(sender, e);
+        }
+
+        private void OnOpenScriptsDirClick(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                string dir = Services.ConfigService.ScriptsDirPath;
+                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = dir,
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("打开脚本目录失败: " + ex.Message, "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void OnViewCurrentLogClick(object sender, RoutedEventArgs e)
+        {
+            var cur = TaskList.SelectedItem as TaskDefinition;
+            string taskName = cur?.Name ?? NameBox.Text.Trim();
+            if (string.IsNullOrWhiteSpace(taskName))
+            {
+                MessageBox.Show("请先选择一个任务", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            string logPath = TaskLogger.GetTaskLogPath(taskName);
+            if (!File.Exists(logPath))
+            {
+                string aggLog = TaskLogger.GetAggregateLogPath();
+                if (File.Exists(aggLog))
+                {
+                    OpenLogFile(aggLog);
+                    return;
+                }
+                MessageBox.Show($"该任务尚未生成运行日志文件：\n{logPath}", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            OpenLogFile(logPath);
+        }
+
+        private void OpenLogFile(string path)
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = path,
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("打开日志失败: " + ex.Message, "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void OnOpenLogDirClick(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                string dir = Services.ConfigService.LogsDirPath;
+                TaskLogger.EnsureLogDir();
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = dir,
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("打开日志目录失败: " + ex.Message, "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
         protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
         {
             base.OnClosing(e);

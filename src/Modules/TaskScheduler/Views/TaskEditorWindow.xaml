@@ -115,6 +115,14 @@
                 </Setter.Value>
             </Setter>
         </Style>
+        <!-- 任务列表项右键菜单 -->
+        <ContextMenu x:Key="TaskItemContextMenu">
+            <MenuItem Header="测试运行 (Test Run)" FontWeight="SemiBold" Click="OnMenuTestRunClick"/>
+            <MenuItem Header="查看该任务日志" Click="OnMenuViewLogClick"/>
+            <Separator/>
+            <MenuItem Header="复制任务" Click="OnDuplicateClick"/>
+            <MenuItem Header="删除任务" Click="OnDeleteClick"/>
+        </ContextMenu>
     </Window.Resources>
 
     <Grid>
@@ -143,13 +151,18 @@
                     
                     <Grid Grid.Row="1">
                         <ListBox x:Name="TaskList" BorderBrush="#FFE8E8E8" SelectionChanged="TaskList_SelectionChanged">
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="{x:Type ListBoxItem}">
+                                    <Setter Property="ContextMenu" Value="{StaticResource TaskItemContextMenu}"/>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
                                     <DockPanel Margin="2,3" LastChildFill="True">
                                         <Border DockPanel.Dock="Right" Background="{Binding TriggerBadgeBg}" CornerRadius="3" Padding="5,1" Margin="6,0,0,0" VerticalAlignment="Center">
                                             <TextBlock Text="{Binding TriggerBadgeText}" Foreground="{Binding TriggerBadgeFg}" FontSize="10" FontWeight="SemiBold"/>
                                         </Border>
-                                        <Ellipse Width="8" Height="8" Fill="{Binding StatusColor}" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                        <CheckBox IsChecked="{Binding Enabled, Mode=TwoWay}" Click="OnItemEnabledToggleClick" VerticalAlignment="Center" Margin="0,0,6,0" ToolTip="一键启用 / 禁用该任务"/>
                                         <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                                     </DockPanel>
                                 </DataTemplate>
@@ -274,6 +287,7 @@
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto" MinWidth="54"/>
                                 <ColumnDefinition Width="Auto" MinWidth="130"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
@@ -290,16 +304,17 @@
                             <ComboBox x:Name="ScriptQuickBox" Grid.Column="3" Height="26" Margin="4,3,0,3" ToolTip="{loc:Loc Tasks.ScriptQuickTooltip, Default='快速选择 scripts/ 目录中的脚本'}" SelectionChanged="ScriptQuickBox_SelectionChanged">
                                 <ComboBoxItem Content="{loc:Loc Tasks.ActionScriptQuick, Default='scripts/ 快速选择'}" IsEnabled="False"/>
                             </ComboBox>
+                            <Button Grid.Column="4" Content="📂 脚本目录" Height="26" Margin="4,3,0,3" Padding="8,1" Click="OnOpenScriptsDirClick" ToolTip="在系统文件管理器中打开 scripts 脚本存放目录"/>
 
                             <!-- 参数 -->
                             <TextBlock Text="{loc:Loc Tasks.ArgsLabel, Default='启动参数'}" Grid.Row="1" VerticalAlignment="Center" Foreground="#FF444444"/>
                             <TextBox x:Name="ArgsBox" Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Height="26" Margin="0,3" Padding="5,2" ToolTip="{loc:Loc Tasks.ArgsTooltip, Default='支持 {{date}} {{time}} {{timestamp}} 等模板变量'}"/>
-                            <ComboBox x:Name="TemplateQuickBox" Grid.Row="1" Grid.Column="3" Height="26" Margin="4,3,0,3" ToolTip="{loc:Loc Tasks.TemplateQuickTooltip, Default='插入常用模板变量'}" SelectionChanged="TemplateQuickBox_SelectionChanged">
+                            <ComboBox x:Name="TemplateQuickBox" Grid.Row="1" Grid.Column="3" Grid.ColumnSpan="2" Height="26" Margin="4,3,0,3" ToolTip="{loc:Loc Tasks.TemplateQuickTooltip, Default='插入常用模板变量'}" SelectionChanged="TemplateQuickBox_SelectionChanged">
                                 <ComboBoxItem Content="{loc:Loc Tasks.InsertTemplate, Default='插入模板...'}" IsEnabled="False" IsSelected="True"/>
                             </ComboBox>
 
                             <!-- 参数提示 -->
-                            <TextBlock Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" Text="{loc:Loc Tasks.TemplateDesc, Default='支持模板：{{date}} 当前日期 · {{time}} 时间 · {{timestamp}} 紧凑戳 · {{task}} 任务名'}" Foreground="#FF888888" FontSize="11" Margin="0,1,0,6"/>
+                            <TextBlock Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="4" Text="{loc:Loc Tasks.TemplateDesc, Default='支持模板：{{date}} 当前日期 · {{time}} 时间 · {{timestamp}} 紧凑戳 · {{task}} 任务名'}" Foreground="#FF888888" FontSize="11" Margin="0,1,0,6"/>
 
                             <!-- 工作目录 -->
                             <TextBlock Text="{loc:Loc Tasks.WorkDirLabel, Default='工作目录'}" Grid.Row="3" VerticalAlignment="Center" Foreground="#FF444444"/>
@@ -307,7 +322,7 @@
                             <Button Content="{loc:Loc Common.Browse, Default='浏览'}" Grid.Row="3" Grid.Column="2" Height="26" Margin="4,3,0,3" Padding="6,1" Click="OnBrowseDirClick"/>
 
                             <!-- 工作目录提示 -->
-                            <TextBlock Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="3" Text="{loc:Loc Tasks.WorkDirDesc, Default='裸文件名如 hello.js 自动在 scripts/ 中查找；留空则取文件所在目录'}" Foreground="#FF888888" FontSize="11" Margin="0,2,0,0"/>
+                            <TextBlock Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="4" Text="{loc:Loc Tasks.WorkDirDesc, Default='裸文件名如 hello.js 自动在 scripts/ 中查找；留空则取文件所在目录'}" Foreground="#FF888888" FontSize="11" Margin="0,2,0,0"/>
                         </Grid>
 
                         <Separator Margin="0,12,0,12"/>
@@ -363,7 +378,11 @@
         <!-- 底部固定底栏：贴底统一风格 -->
         <Border Grid.Row="1" Background="#FFF9F9F9" BorderBrush="#FFE2E5E8" BorderThickness="0,1,0,0" Padding="16,10">
             <DockPanel LastChildFill="False">
-                <Button Content="{loc:Loc Tasks.TestRun, Default='测试运行 (Test)'}" DockPanel.Dock="Left" Height="30" Padding="14,0" Click="OnTestRunClick" ToolTip="{loc:Loc Tasks.TestRunTooltip, Default='直接试跑当前任务配置并查看返回状态和日志'}"/>
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
+                    <Button Content="{loc:Loc Tasks.TestRun, Default='测试运行'}" Height="30" Padding="12,0" Margin="0,0,6,0" Click="OnTestRunClick" ToolTip="{loc:Loc Tasks.TestRunTooltip, Default='直接试跑当前任务配置并查看返回状态和日志'}"/>
+                    <Button Content="📄 查看当前日志" Height="30" Padding="10,0" Margin="0,0,6,0" Click="OnViewCurrentLogClick" ToolTip="打开当前选定任务的日志文件"/>
+                    <Button Content="📂 日志目录" Height="30" Padding="8,0" Click="OnOpenLogDirClick" ToolTip="在系统文件管理器中打开 logs 目录"/>
+                </StackPanel>
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
                     <Button Content="{loc:Loc Tasks.Validate, Default='校验'}" Height="30" MinWidth="68" Padding="12,0" Margin="0,0,8,0" Click="OnValidateClick"/>
                     <Button Content="{loc:Loc Tasks.SaveAndReload, Default='保存并生效'}" Style="{StaticResource PrimaryBtn}" Height="30" Padding="16,0" Margin="0,0,8,0" Click="OnSaveReloadClick"/>

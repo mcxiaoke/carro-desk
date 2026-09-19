@@ -156,31 +156,35 @@ namespace CarroDesk.Modules.TaskScheduler
 
             root.Children.Add(TrayMenuItem.Separator());
 
-            // 手动运行：动态枚举 manual 任务
+            // 手动运行：动态枚举任务（优先支持所有已启用的任务按需立即触发）
             var manual = new TrayMenuItem
             {
                 Id = "task_scheduler_manual",
                 Header = Loc.T("Tray.ManualRun", "手动运行")
             };
-            var manuals = Scheduler != null ? Scheduler.GetManualTasks() : null;
-            if (manuals == null || manuals.Count == 0)
+            var allTasks = Scheduler != null && Scheduler.Tasks != null
+                ? System.Linq.Enumerable.ToList(System.Linq.Enumerable.Where(Scheduler.Tasks, t => t.Enabled))
+                : new List<TaskDefinition>();
+
+            if (allTasks.Count == 0)
             {
                 manual.Children.Add(new TrayMenuItem
                 {
                     Id = "task_scheduler_manual_empty",
-                    Header = Loc.T("Tray.NoManualTasks", "暂无手动任务"),
+                    Header = Loc.T("Tray.NoManualTasks", "暂无可用任务"),
                     IsEnabled = false
                 });
             }
             else
             {
-                foreach (var t in manuals)
+                foreach (var t in allTasks)
                 {
                     string name = t.Name;
+                    string badge = t.TriggerBadgeText;
                     var mi = new TrayMenuItem
                     {
                         Id = "task_scheduler_manual_" + name,
-                        Header = name
+                        Header = t.Trigger != null && t.Trigger.Type == TaskTriggerType.Manual ? name : $"{name} [{badge}]"
                     };
                     if (t.Trigger != null && t.Trigger.Type == TaskTriggerType.Hotkey && !string.IsNullOrWhiteSpace(t.Trigger.Hotkey))
                     {
@@ -242,6 +246,26 @@ namespace CarroDesk.Modules.TaskScheduler
                         };
                         win.ShowDialog();
                         RequestRefreshSelf();
+                    }
+                    catch { }
+                }
+            });
+
+            root.Children.Add(new TrayMenuItem
+            {
+                Id = "task_scheduler_logs",
+                Header = "打开任务日志目录...",
+                ClickAction = () =>
+                {
+                    try
+                    {
+                        string dir = ConfigService.LogsDirPath;
+                        TaskLogger.EnsureLogDir();
+                        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                        {
+                            FileName = dir,
+                            UseShellExecute = true
+                        });
                     }
                     catch { }
                 }
