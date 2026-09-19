@@ -70,7 +70,7 @@ namespace CarroDesk
             var rawConfig = new ConfigService();
             rawConfig.LoadOrCreate();
 
-            _configManager = new ConfigManager(rawConfig);
+            _configManager = new ConfigManager(rawConfig, logger);
             Services.AddSingleton<ConfigManager>(_configManager);
             Services.AddSingleton<IConfigManager>(_configManager);
 

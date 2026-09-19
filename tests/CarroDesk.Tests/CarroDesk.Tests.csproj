@@ -11,6 +11,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="TestEnvironment.cs" />
     <Compile Include="CarroDeskContractTests.cs" />
     <Compile Include="MonitorProfileTests.cs" />
     <Compile Include="JsonMigrationTests.cs" />

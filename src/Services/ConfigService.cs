@@ -17,6 +17,17 @@ namespace CarroDesk.Services
             get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CarroDesk"); }
         }
 
+        /// <summary>
+        /// 数据目录覆盖（自动化测试 / CI 隔离用，优先级最高）。
+        /// 设为非空后，<see cref="DirPath"/> 及其派生的全部路径都指向该目录，
+        /// 避免测试运行污染用户真实的 %AppData%\CarroDesk 配置。
+        /// 生产代码不得设置此属性。
+        /// </summary>
+        public static string DataDirOverride { get; set; }
+
+        /// <summary>环境变量名：设置后覆盖数据目录（便携部署 / 自动化测试用）。</summary>
+        public const string DataDirEnvVarName = "CARRODESK_DATA_DIR";
+
         public static string PortableFlagPath
         {
             get { return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "portable.ini"); }
@@ -34,7 +45,28 @@ namespace CarroDesk.Services
 
         public static string DirPath
         {
-            get { return IsPortableMode ? PortableDataDirPath : AppDataDirPath; }
+            get
+            {
+                var overridden = ResolveDataDirOverride();
+                if (overridden != null) return overridden;
+                return IsPortableMode ? PortableDataDirPath : AppDataDirPath;
+            }
+        }
+
+        private static string ResolveDataDirOverride()
+        {
+            var explicitOverride = DataDirOverride;
+            if (!string.IsNullOrWhiteSpace(explicitOverride)) return explicitOverride;
+            try
+            {
+                var fromEnv = Environment.GetEnvironmentVariable(DataDirEnvVarName);
+                if (!string.IsNullOrWhiteSpace(fromEnv)) return fromEnv;
+            }
+            catch
+            {
+                // 环境变量读取失败时退回默认目录，不影响正常启动
+            }
+            return null;
         }
 
         public static string FilePath
@@ -69,6 +101,17 @@ namespace CarroDesk.Services
 
         public AppSettings Current { get; private set; }
 
+        /// <summary>
+        /// 串行化配置的内存态（Current / _moduleConfigs）与磁盘读写。
+        /// 本类是被宿主与多个模块跨线程共享的可变单例：
+        /// UI 线程（设置界面保存）、Dispatcher 线程（模块 OnConfigReloaded）、
+        /// 线程池线程（任务执行、剪贴板落盘）都会写入。
+        /// 缺少此锁时，Save() 遍历 _moduleConfigs 的过程中被 SetModuleToken 修改，
+        /// 会抛 "Collection was modified" 并被上层静默吞掉，表现为"保存成功但磁盘无变化"。
+        /// 注意：Monitor 可重入，因此 SaveCore/ReadFileCore 内部再次获取同一把锁是安全的。
+        /// </summary>
+        private readonly object _ioLock = new object();
+
         private static readonly HashSet<string> HostSettingNames = new HashSet<string>(
             typeof(AppSettings).GetProperties().Select(p => p.Name),
             StringComparer.OrdinalIgnoreCase
@@ -83,16 +126,19 @@ namespace CarroDesk.Services
 
         public void LoadOrCreate()
         {
-            if (!Directory.Exists(DirPath)) Directory.CreateDirectory(DirPath);
-            if (!File.Exists(FilePath))
+            lock (_ioLock)
             {
-                Current = new AppSettings();
-                Save();
+                if (!Directory.Exists(DirPath)) Directory.CreateDirectory(DirPath);
+                if (!File.Exists(FilePath))
+                {
+                    Current = new AppSettings();
+                    SaveCore();
+                    EnsureSampleCopied();
+                    return;
+                }
+                Current = ReadFile();
                 EnsureSampleCopied();
-                return;
             }
-            Current = ReadFile();
-            EnsureSampleCopied();
         }
 
         private static void EnsureSampleCopied()
@@ -120,19 +166,23 @@ namespace CarroDesk.Services
 
         public bool Reload()
         {
-            try
+            lock (_ioLock)
             {
-                if (!File.Exists(FilePath)) return false;
-                var settings = ReadFile();
-                Current = settings;
-                return true;
-            }
-            catch
-            {
-                return false;
+                try
+                {
+                    if (!File.Exists(FilePath)) return false;
+                    var settings = ReadFile();
+                    Current = settings;
+                    return true;
+                }
+                catch
+                {
+                    return false;
+                }
             }
         }
 
+        /// <summary>读取并解析配置文件。调用方必须已持有 <see cref="_ioLock"/>。</summary>
         private AppSettings ReadFile()
         {
             try
@@ -184,7 +234,7 @@ namespace CarroDesk.Services
                         bool migrated = MigrateLegacyConfigs(obj);
                         if (migrated)
                         {
-                            try { Save(); } catch { }
+                            try { SaveCore(); } catch { }
                         }
 
                         return merged;
@@ -212,16 +262,31 @@ namespace CarroDesk.Services
         public JToken GetModuleToken(string moduleId)
         {
             if (string.IsNullOrEmpty(moduleId)) return null;
-            return _moduleConfigs.TryGetValue(moduleId, out var token) ? token : null;
+            lock (_ioLock)
+            {
+                return _moduleConfigs.TryGetValue(moduleId, out var token) ? token : null;
+            }
         }
 
         public void SetModuleToken(string moduleId, JToken token)
         {
             if (string.IsNullOrEmpty(moduleId)) return;
-            _moduleConfigs[moduleId] = token;
+            lock (_ioLock)
+            {
+                _moduleConfigs[moduleId] = token;
+            }
         }
 
         public void Save()
+        {
+            lock (_ioLock)
+            {
+                SaveCore();
+            }
+        }
+
+        /// <summary>落盘实现。调用方必须已持有 <see cref="_ioLock"/>，以保证写入顺序与内存态一致。</summary>
+        private void SaveCore()
         {
             if (!Directory.Exists(DirPath)) Directory.CreateDirectory(DirPath);
             if (Current == null) Current = new AppSettings();
@@ -229,8 +294,8 @@ namespace CarroDesk.Services
             var serializer = JsonSerializer.Create(SerializerSettings);
             var obj = JObject.FromObject(Current, serializer);
 
-            // 存入标准原生 JSON 对象
-            foreach (var kvp in _moduleConfigs)
+            // 存入标准原生 JSON 对象（快照遍历，避免并发修改导致集合异常）
+            foreach (var kvp in _moduleConfigs.ToList())
             {
                 if (kvp.Value != null) obj[kvp.Key] = kvp.Value;
             }
