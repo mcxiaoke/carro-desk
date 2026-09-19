@@ -54,6 +54,12 @@ namespace CarroDesk.Modules.Awake.Services
         private int _processExitPendingSeconds = 0;
         private int _tickCount = 0;
 
+        /// <summary>
+        /// 用户在守护进程运行期间手动关闭保持唤醒后置位：
+        /// 本次进程会话内不再自动联动，直到守护进程全部退出才解除（见 CheckProcessTriggers）。
+        /// </summary>
+        private bool _userSuppressedProcessLink = false;
+
         public AwakeMode Mode => _mode;
         public bool KeepDisplayOn => _keepDisplayOn;
         public DateTime ExpireTime => _expireTime;
@@ -122,11 +128,26 @@ namespace CarroDesk.Modules.Awake.Services
             _expireTime = DateTime.MinValue;
             _isProcessTriggered = false;
             _activeProcessTrigger = string.Empty;
-            _isBatteryPaused = false;
             _processExitPendingSeconds = 0;
+
+            // 注意：这里不再重置 _isBatteryPaused——该标志归电池判定逻辑所有。
+            // 原先在此清零会让"暂停中"的状态被下一次 3 秒轮询立刻重新置起，产生状态抖动。
 
             ApplyExecutionState();
             StateChanged?.Invoke();
+        }
+
+        /// <summary>
+        /// 用户主动关闭保持唤醒（托盘/设置界面）。
+        ///
+        /// 与内部 <see cref="SetPassive"/> 的区别：若此时守护进程正在运行，
+        /// 记下"本次进程会话内不再自动联动"，否则 5 秒后 CheckProcessTriggers 会把
+        /// 用户刚刚的"关闭"直接反转回 Indefinite。该抑制在守护进程全部退出后自动解除。
+        /// </summary>
+        public void SetPassiveByUser()
+        {
+            _userSuppressedProcessLink = true;
+            SetPassive();
         }
 
         public void SetIndefinite()
@@ -359,17 +380,31 @@ namespace CarroDesk.Modules.Awake.Services
                     }
                     else if (_mode == AwakeMode.Passive)
                     {
-                        _isProcessTriggered = true;
-                        _activeProcessTrigger = matchedProc;
-                        _mode = AwakeMode.Indefinite;
-                        _expireTime = DateTime.MinValue;
-                        ApplyExecutionState();
-                        ProcessTriggered?.Invoke(true, matchedProc);
-                        StateChanged?.Invoke();
+                        if (_userSuppressedProcessLink)
+                        {
+                            // 用户已手动关闭，本次进程会话内不再自动开启（尊重用户意图）
+                            _logger?.LogInfo("Awake", $"目标进程 '{matchedProc}' 正在运行，但用户已手动关闭保持唤醒，本次会话内不再自动联动");
+                        }
+                        else
+                        {
+                            _isProcessTriggered = true;
+                            _activeProcessTrigger = matchedProc;
+                            _mode = AwakeMode.Indefinite;
+                            _expireTime = DateTime.MinValue;
+                            ApplyExecutionState();
+                            ProcessTriggered?.Invoke(true, matchedProc);
+                            StateChanged?.Invoke();
+                        }
                     }
                 }
                 else
                 {
+                    // 守护进程已全部退出：解除用户抑制，下次启动允许重新自动联动
+                    if (_userSuppressedProcessLink)
+                    {
+                        _userSuppressedProcessLink = false;
+                    }
+
                     // 目标进程当前未检测到
                     if (_isProcessTriggered && _mode == AwakeMode.Indefinite)
                     {

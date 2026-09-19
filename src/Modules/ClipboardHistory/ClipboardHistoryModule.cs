@@ -25,6 +25,9 @@ namespace CarroDesk.Modules.ClipboardHistory
         private ClipboardHistoryWindow _window;
         private int _hotkeyId;
 
+        /// <summary>模块自建存储（测试注入 service 时为 null），仅用于退出前 Flush。</summary>
+        private IClipboardHistoryStorage _ownedStorage;
+
         public ClipboardHistoryModule()
         {
         }
@@ -44,6 +47,9 @@ namespace CarroDesk.Modules.ClipboardHistory
             {
                 string storagePath = Path.Combine(ConfigService.DirPath, "data", "ClipboardHistory", "history.json");
                 var storage = new JsonClipboardHistoryStorage(storagePath);
+                // 保存模块自建的存储引用：其写入是后台合并落盘（不阻塞 UI），
+                // 退出前必须 Flush，否则最后一批剪贴板记录会丢失。
+                _ownedStorage = storage;
                 _service = new ClipboardHistoryService(storage);
             }
 
@@ -87,6 +93,22 @@ namespace CarroDesk.Modules.ClipboardHistory
                     _window = null;
                 }
             });
+
+            // 等待后台合并写入落盘
+            FlushStorage();
+        }
+
+        private void FlushStorage()
+        {
+            try
+            {
+                var disposable = _ownedStorage as JsonClipboardHistoryStorage;
+                if (disposable != null) disposable.Flush();
+            }
+            catch
+            {
+                // 落盘等待失败不应影响模块停止流程
+            }
         }
 
         public override void OnConfigReloaded()
@@ -246,6 +268,11 @@ namespace CarroDesk.Modules.ClipboardHistory
                 _listener.Dispose();
                 _listener = null;
             }
+
+            // base.Dispose() 会触发 Stop()，但 Stop 在未运行状态下会直接返回，
+            // 这里再兜底一次，确保后台合并写入一定落盘。
+            FlushStorage();
+
             base.Dispose();
         }
     }

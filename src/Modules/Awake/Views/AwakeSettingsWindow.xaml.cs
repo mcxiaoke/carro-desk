@@ -271,7 +271,7 @@ namespace CarroDesk.Views
                 if (RadioPassive.IsChecked == true)
                 {
                     config.Mode = AwakeMode.Passive;
-                    service.SetPassive();
+                    service.SetPassiveByUser();
                 }
                 else if (RadioIndefinite.IsChecked == true)
                 {

@@ -139,5 +139,46 @@ namespace CarroDesk.Tests
             Assert.AreEqual("blender", loadedConfig.AutoAwakeProcesses[0]);
             Assert.AreEqual("ffmpeg", loadedConfig.AutoAwakeProcesses[1]);
         }
+
+        /// <summary>
+        /// P1-9：守护进程运行期间用户手动"关闭"不得被自动联动反转。
+        /// 直接反射调用私有的 CheckProcessTriggers，避免依赖 1 秒定时器，测试更快也更确定。
+        /// </summary>
+        [TestMethod]
+        public void Awake_UserDisabledWhileGuardProcessRunning_IsNotAutoReverted()
+        {
+            // 用当前测试进程自身作为"守护进程正在运行"的来源，保证一定存在
+            string selfProcess = System.Diagnostics.Process.GetCurrentProcess().ProcessName;
+
+            var config = AwakeConfig.CreateDefault();
+            config.AutoAwakeProcesses = new System.Collections.Generic.List<string> { selfProcess };
+            config.AutoAwakeExitDelaySeconds = 0;
+
+            var service = new AwakeService(Dispatcher.CurrentDispatcher, null);
+            service.Initialize(config);
+
+            InvokeCheckProcessTriggers(service);
+            Assert.AreEqual(AwakeMode.Indefinite, service.Mode,
+                "守护进程正在运行时应自动开启保持唤醒");
+
+            service.SetPassiveByUser();
+            Assert.AreEqual(AwakeMode.Passive, service.Mode);
+
+            // 关键断言：下一个轮询周期不得把用户的"关闭"反转回 Indefinite
+            InvokeCheckProcessTriggers(service);
+            Assert.AreEqual(AwakeMode.Passive, service.Mode,
+                "用户的关闭操作被守护进程联动自动反转了");
+
+            service.Dispose();
+        }
+
+        private static void InvokeCheckProcessTriggers(AwakeService service)
+        {
+            var method = typeof(AwakeService).GetMethod(
+                "CheckProcessTriggers",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            Assert.IsNotNull(method, "未找到 CheckProcessTriggers，测试需随实现同步更新");
+            method.Invoke(service, null);
+        }
     }
 }

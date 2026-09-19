@@ -94,6 +94,19 @@ namespace CarroDesk.Modules.MonitorProfile.Services
         private int _pendingContrast = -1;
         private bool _isApplying = false;
 
+        /// <summary>
+        /// 物理显示器（DDC/CI over I2C）访问串行化锁。
+        ///
+        /// 原先只有防抖队列的 Async 入口受 _syncLock 保护，而
+        /// <see cref="SetBrightnessAndContrastSync"/> 会被 ProfileScheduleEngine 的
+        /// 后台线程直接调用，设置界面与 30s 轮询也会并发枚举物理显示器——
+        /// 多个线程在不同句柄上并发读写同一面板会相互干扰、加剧 I2C 超时并可能读到错误值。
+        ///
+        /// 约定：本锁与 _syncLock 不会同时持有（_syncLock 只在防抖字段读写时短暂持有，
+        /// 调用 Sync 前已释放），因此不存在锁序反转。
+        /// </summary>
+        private readonly object _ddcLock = new object();
+
         #endregion
 
         public MonitorDdcService(ILoggerService logger = null)
@@ -166,8 +179,17 @@ namespace CarroDesk.Modules.MonitorProfile.Services
 
         /// <summary>
         /// 同步设置所有显示器的亮度和对比度。
+        /// 通过 <see cref="_ddcLock"/> 与其它显示器访问路径互斥。
         /// </summary>
         public int SetBrightnessAndContrastSync(int brightness, int contrast)
+        {
+            lock (_ddcLock)
+            {
+                return SetBrightnessAndContrastCore(brightness, contrast);
+            }
+        }
+
+        private int SetBrightnessAndContrastCore(int brightness, int contrast)
         {
             brightness = Math.Max(0, Math.Min(100, brightness));
             contrast = Math.Max(0, Math.Min(100, contrast));
@@ -218,8 +240,17 @@ namespace CarroDesk.Modules.MonitorProfile.Services
 
         /// <summary>
         /// 获取主显示器当前亮度和对比度。
+        /// 通过 <see cref="_ddcLock"/> 与其它显示器访问路径互斥。
         /// </summary>
         public bool GetBrightnessAndContrast(out int brightness, out int contrast)
+        {
+            lock (_ddcLock)
+            {
+                return GetBrightnessAndContrastCore(out brightness, out contrast);
+            }
+        }
+
+        private bool GetBrightnessAndContrastCore(out int brightness, out int contrast)
         {
             brightness = 0;
             contrast = 0;
@@ -263,8 +294,17 @@ namespace CarroDesk.Modules.MonitorProfile.Services
 
         /// <summary>
         /// 获取当前系统检测到的所有显示器信息列表。
+        /// 通过 <see cref="_ddcLock"/> 与其它显示器访问路径互斥。
         /// </summary>
         public List<PhysicalMonitorInfo> GetMonitorsInfo()
+        {
+            lock (_ddcLock)
+            {
+                return GetMonitorsInfoCore();
+            }
+        }
+
+        private List<PhysicalMonitorInfo> GetMonitorsInfoCore()
         {
             var list = new List<PhysicalMonitorInfo>();
             var physicalMonitors = GetPhysicalMonitorInfos();
@@ -350,8 +390,17 @@ namespace CarroDesk.Modules.MonitorProfile.Services
 
         /// <summary>
         /// 检测显示器数量。
+        /// 通过 <see cref="_ddcLock"/> 与其它显示器访问路径互斥。
         /// </summary>
         public int DetectMonitorCount()
+        {
+            lock (_ddcLock)
+            {
+                return DetectMonitorCountCore();
+            }
+        }
+
+        private int DetectMonitorCountCore()
         {
             var handles = GetPhysicalMonitorHandles();
             try

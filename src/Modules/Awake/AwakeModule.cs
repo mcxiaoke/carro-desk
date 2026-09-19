@@ -146,7 +146,7 @@ namespace CarroDesk.Modules.Awake
             }
             else
             {
-                Service.SetPassive();
+                Service.SetPassiveByUser();
                 ShowNotify(Loc.T("Tray.AwakeNotifyPassive", "已关闭保持唤醒，恢复系统默认电源策略"));
             }
             SaveConfig();
@@ -331,7 +331,7 @@ namespace CarroDesk.Modules.Awake
                 IsChecked = currentMode == AwakeMode.Passive,
                 ClickAction = () =>
                 {
-                    Service?.SetPassive();
+                    Service?.SetPassiveByUser();
                     SaveConfig();
                     UpdateTrayHeaderAndToolTip();
                     RequestRefreshTray();

@@ -45,6 +45,13 @@ namespace CarroDesk.Modules.AppAutoMute
             _foregroundTracker = Context.GetService<IForegroundTracker>();
             _hotkeys = Context.GetService<IHotkeyService>();
 
+            // 缺少核心依赖时显式失败并进入 Faulted：否则模块会"看似已启用"，
+            // 但静音/白名单判定静默失效，用户只看到静音没生效而没有任何提示。
+            if (_audioService == null)
+                throw new InvalidOperationException("IAudioService 未注册，自动静音模块无法工作。");
+            if (_foregroundTracker == null)
+                throw new InvalidOperationException("IForegroundTracker 未注册，自动静音模块无法工作。");
+
             RegisterHotkey();
             _foregroundTracker.ForegroundChanged += OnForegroundChanged;
             _foregroundTracker.UpdateCurrent();
@@ -252,7 +259,9 @@ namespace CarroDesk.Modules.AppAutoMute
                 {
                     if (!ProcessHelper.IsMatch(app, currentFore))
                     {
-                        _audioService.SetProcessMute(app, true);
+                        // 与白名单分支保持一致使用 ?.：此处原先无空值防护，
+                        // 一旦音频服务缺失就会在 DispatcherTimer 回调里抛 NullReferenceException
+                        _audioService?.SetProcessMute(app, true);
                     }
                 }
             }
@@ -266,7 +275,7 @@ namespace CarroDesk.Modules.AppAutoMute
             // 当前前台应用解除静音
             if (!string.IsNullOrEmpty(_lastTargetProc))
             {
-                _audioService.SetProcessMute(_lastTargetProc, false);
+                _audioService?.SetProcessMute(_lastTargetProc, false);
             }
         }
 
