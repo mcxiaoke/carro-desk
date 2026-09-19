@@ -22,6 +22,10 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
 
         void ClearAll();
 
+        void ClearAll(bool preservePinned);
+
         void RemoveItem(string id);
+
+        void TogglePin(string id);
     }
 }

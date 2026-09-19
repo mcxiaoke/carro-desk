@@ -132,15 +132,36 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
         {
             lock (_lock)
             {
-                return _items.ToList();
+                if (!_items.Any(x => x.IsPinned))
+                {
+                    return _items.ToList();
+                }
+
+                // 置顶项优先排在前，非置顶项随后，各自保持严格录入顺序
+                var result = new List<ClipboardItem>(_items.Count);
+                result.AddRange(_items.Where(x => x.IsPinned));
+                result.AddRange(_items.Where(x => !x.IsPinned));
+                return result;
             }
         }
 
         public void ClearAll()
         {
+            ClearAll(preservePinned: true);
+        }
+
+        public void ClearAll(bool preservePinned)
+        {
             lock (_lock)
             {
-                _items.Clear();
+                if (preservePinned)
+                {
+                    _items.RemoveAll(x => !x.IsPinned);
+                }
+                else
+                {
+                    _items.Clear();
+                }
                 _storage.Save(_items);
             }
 
@@ -164,21 +185,50 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
             HistoryChanged?.Invoke();
         }
 
+        public void TogglePin(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return;
+
+            lock (_lock)
+            {
+                var item = _items.FirstOrDefault(x => x.Id == id);
+                if (item != null)
+                {
+                    item.IsPinned = !item.IsPinned;
+                    _storage.Save(_items);
+                }
+            }
+
+            HistoryChanged?.Invoke();
+        }
+
         private void ApplyCleanupRulesLocked()
         {
             if (_config == null) return;
 
-            // 规则 1：过期清理（天数）
+            // 规则 1：过期清理（天数，保护已置顶项目）
             if (_config.RetentionDays > 0)
             {
                 var cutoff = DateTime.Now.AddDays(-_config.RetentionDays);
-                _items.RemoveAll(x => x.CopiedAt < cutoff);
+                _items.RemoveAll(x => !x.IsPinned && x.CopiedAt < cutoff);
             }
 
-            // 规则 2：最大条数截断（保留最新）
+            // 规则 2：最大条数截断（保留最新，从最末尾倒序淘汰未置顶的最老项）
             if (_config.MaxItems > 0 && _items.Count > _config.MaxItems)
             {
-                _items.RemoveRange(_config.MaxItems, _items.Count - _config.MaxItems);
+                for (int i = _items.Count - 1; i >= 0 && _items.Count > _config.MaxItems; i--)
+                {
+                    if (!_items[i].IsPinned)
+                    {
+                        _items.RemoveAt(i);
+                    }
+                }
+
+                // 极端情况：若置顶项本身就超过 MaxItems，直接截断
+                if (_items.Count > _config.MaxItems)
+                {
+                    _items.RemoveRange(_config.MaxItems, _items.Count - _config.MaxItems);
+                }
             }
         }
 

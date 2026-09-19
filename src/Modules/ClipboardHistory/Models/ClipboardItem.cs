@@ -16,8 +16,10 @@ namespace CarroDesk.Modules.ClipboardHistory.Models
 
         public string Hash { get; set; } = string.Empty;
 
+        public bool IsPinned { get; set; }
+
         public string FormattedTime => CopiedAt.ToString("MM-dd HH:mm:ss");
 
-        public string DisplaySummary => $"{PreviewText} ({TextLength} 字)";
+        public string DisplaySummary => $"{(IsPinned ? "📌 " : "")}{PreviewText} ({TextLength} 字)";
     }
 }

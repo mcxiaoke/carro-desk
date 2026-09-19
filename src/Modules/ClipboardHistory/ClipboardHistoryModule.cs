@@ -186,8 +186,14 @@ namespace CarroDesk.Modules.ClipboardHistory
 
         private void ClearAllHistory()
         {
-            _service?.ClearAll();
-            Context?.RequestTrayRefresh();
+            int count = _service?.Count ?? 0;
+            if (count == 0) return;
+
+            if (System.Windows.MessageBox.Show("确定要清空剪贴板历史记录吗？\n\n(已固定的记录将被安全保留)", "清空确认", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Question) == System.Windows.MessageBoxResult.Yes)
+            {
+                _service?.ClearAll(preservePinned: true);
+                Context?.RequestTrayRefresh();
+            }
         }
 
         private void OnClipboardUpdated()

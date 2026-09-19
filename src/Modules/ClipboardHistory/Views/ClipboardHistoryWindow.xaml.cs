@@ -174,10 +174,10 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
 
         private void HistoryList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
-            CommitSelectedItem();
+            CommitSelectedItem(autoPaste: true);
         }
 
-        private void CommitSelectedItem()
+        private void CommitSelectedItem(bool autoPaste = true)
         {
             if (HistoryList.SelectedItem is ClipboardItem item && !string.IsNullOrEmpty(item.FullText))
             {
@@ -189,6 +189,12 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
 
                 // 3. 隐藏浮窗
                 Hide();
+
+                // 4. 若需要自动粘贴，异步模拟 Ctrl+V 发送至原前台活动应用
+                if (autoPaste)
+                {
+                    ClipboardHelper.SimulatePaste();
+                }
             }
         }
 
@@ -201,10 +207,73 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
             }
         }
 
+        private void MenuCopyAndPaste_Click(object sender, RoutedEventArgs e)
+        {
+            CommitSelectedItem(autoPaste: true);
+        }
+
+        private void MenuCopyOnly_Click(object sender, RoutedEventArgs e)
+        {
+            CommitSelectedItem(autoPaste: false);
+        }
+
+        private void MenuTogglePin_Click(object sender, RoutedEventArgs e)
+        {
+            if (HistoryList.SelectedItem is ClipboardItem item)
+            {
+                _service.TogglePin(item.Id);
+                RefreshList();
+            }
+        }
+
+        private void MenuDelete_Click(object sender, RoutedEventArgs e)
+        {
+            DeleteSelectedItem();
+        }
+
+        private void MenuViewDetails_Click(object sender, RoutedEventArgs e)
+        {
+            if (HistoryList.SelectedItem is ClipboardItem item)
+            {
+                MessageBox.Show(item.FullText, $"剪贴板详情 ({item.TextLength} 字符)", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+        }
+
+        private void BtnItemPin_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button btn && btn.Tag is ClipboardItem item)
+            {
+                _service.TogglePin(item.Id);
+                RefreshList();
+                e.Handled = true;
+            }
+        }
+
+        private void BtnItemDelete_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button btn && btn.Tag is ClipboardItem item)
+            {
+                _service.RemoveItem(item.Id);
+                RefreshList();
+                e.Handled = true;
+            }
+        }
+
         private void BtnClearAll_Click(object sender, RoutedEventArgs e)
         {
-            _service.ClearAll();
-            RefreshList();
+            int total = _allItems.Count;
+            if (total == 0) return;
+
+            int pinnedCount = _allItems.Count(x => x.IsPinned);
+            string prompt = pinnedCount > 0
+                ? $"确定要清空剪贴板历史记录吗？\n\n(已固定的 {pinnedCount} 条记录将被保留)"
+                : "确定要清空所有剪贴板历史记录吗？此操作不可撤销。";
+
+            if (MessageBox.Show(prompt, "清空确认", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
+            {
+                _service.ClearAll(preservePinned: true);
+                RefreshList();
+            }
         }
 
         private void BtnClose_Click(object sender, RoutedEventArgs e)

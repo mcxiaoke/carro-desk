@@ -220,9 +220,44 @@ namespace CarroDesk.Tests
             Assert.AreEqual(1, service.Count);
             Assert.AreEqual("Text 1", service.GetItems()[0].FullText);
 
-            service.ClearAll();
+            service.ClearAll(preservePinned: false);
             Assert.AreEqual(0, service.Count);
             Assert.AreEqual(0, storage.SavedItems.Count);
+        }
+
+        [TestMethod]
+        public void ClipboardHistory_Pin_PreservesPinnedOnClearAndPrioritizesOnTop()
+        {
+            var storage = new MemoryClipboardStorage();
+            var service = new ClipboardHistoryService(storage);
+            service.Start(new ClipboardHistoryConfig { MaxItems = 3 });
+
+            service.RecordText("Text 1");
+            service.RecordText("Text 2");
+            Assert.AreEqual(2, service.Count);
+
+            // Pin 第 1 个（Text 2）
+            var itemToPin = service.GetItems().First(x => x.FullText == "Text 1");
+            service.TogglePin(itemToPin.Id);
+
+            var items = service.GetItems();
+            Assert.IsTrue(items[0].IsPinned, "置顶条目应当排在最前");
+            Assert.AreEqual("Text 1", items[0].FullText);
+
+            // 再次添加新项，置顶项仍然排在最前面
+            service.RecordText("Text 3");
+            items = service.GetItems();
+            Assert.AreEqual("Text 1", items[0].FullText, "新增项目后已置顶项依然在最顶端");
+            Assert.IsTrue(items[0].IsPinned);
+
+            // ClearAll(preservePinned: true) 默认保留置顶项
+            service.ClearAll(preservePinned: true);
+            Assert.AreEqual(1, service.Count, "清空未固定项后应保留已置顶条目");
+            Assert.AreEqual("Text 1", service.GetItems()[0].FullText);
+
+            // 彻底清空
+            service.ClearAll(preservePinned: false);
+            Assert.AreEqual(0, service.Count);
         }
 
         [TestMethod]
