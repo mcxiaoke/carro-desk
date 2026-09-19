@@ -42,6 +42,9 @@ namespace CarroDesk.Views
         [DllImport("user32.dll")]
         private static extern IntPtr GetForegroundWindow();
 
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool LockWorkStation();
+
         private readonly ILockService _lockService;
         private readonly ILockAppearance _appearance;
         private readonly bool _primary;
@@ -341,6 +344,18 @@ namespace CarroDesk.Views
             ShakeCard();
             PinBox.Clear();
             PinBox.Focus();
+        }
+
+        private void OnWindowsLockEscapeClick(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                LockWorkStation();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, "调用系统锁屏失败: " + ex.Message, "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
         }
 
         private void ShakeCard()

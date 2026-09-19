@@ -10,6 +10,7 @@ using CarroDesk.Modules.ScreenLock.Models;
 using CarroDesk.Modules.TaskScheduler.Models;
 using CarroDesk.Services;
 using CarroDesk.Services.Localization;
+using CarroDesk.Services.Tasks;
 
 namespace CarroDesk.Views
 {
@@ -88,6 +89,7 @@ namespace CarroDesk.Views
                 AutoStartBox.IsChecked = _editing.AutoStart;
                 UnlockOnResumeBox.IsChecked = _editingScreenLock.UnlockOnResume;
                 TasksEnabledBox.IsChecked = _editingTaskScheduler.GlobalEnabled;
+                HotkeyBox.Text = string.IsNullOrWhiteSpace(_editingScreenLock.Hotkey) ? "Ctrl+Alt+L" : _editingScreenLock.Hotkey;
 
                 ExcludeList.ItemsSource = null;
                 var list = _editingScreenLock.ExcludeProcesses != null ? ProcessHelper.NormalizeList(_editingScreenLock.ExcludeProcesses) : new List<string>();
@@ -202,6 +204,28 @@ namespace CarroDesk.Views
             ExcludeInputBox.Text = "";
         }
 
+        private void OnBrowseExcludeExeClick(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var ofd = new Microsoft.Win32.OpenFileDialog
+                {
+                    Filter = "可执行文件 (*.exe)|*.exe|所有文件 (*.*)|*.*",
+                    Title = "选择排除进程应用程序 (.exe)"
+                };
+                if (ofd.ShowDialog(this) == true)
+                {
+                    string fileName = System.IO.Path.GetFileNameWithoutExtension(ofd.FileName);
+                    ExcludeInputBox.Text = fileName;
+                    AddExcludeProcess(fileName);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, "选择文件失败: " + ex.Message, "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
         private void OnExcludeDeleteClick(object sender, RoutedEventArgs e)
         {
             var sel = ExcludeList.SelectedItem as string;
@@ -210,6 +234,18 @@ namespace CarroDesk.Views
             list.Remove(sel);
             ExcludeList.ItemsSource = null;
             ExcludeList.ItemsSource = list;
+        }
+
+        private void OnExcludeClearClick(object sender, RoutedEventArgs e)
+        {
+            var list = (ExcludeList.ItemsSource as List<string>) ?? new List<string>();
+            if (list.Count == 0) return;
+            if (MessageBox.Show(this, "确定要清空排除进程列表吗？", "确认清空", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
+            {
+                list.Clear();
+                ExcludeList.ItemsSource = null;
+                ExcludeList.ItemsSource = list;
+            }
         }
 
         private void OnResetDefaultsClick(object sender, RoutedEventArgs e)
@@ -225,6 +261,7 @@ namespace CarroDesk.Views
             ShowClockBox.IsChecked = defScreenLock.ShowClock;
             OpacitySlider.Value = defScreenLock.OverlayOpacity;
             UpdateOpacityText(defScreenLock.OverlayOpacity);
+            HotkeyBox.Text = defScreenLock.Hotkey ?? "Ctrl+Alt+L";
             AutoStartBox.IsChecked = defHost.AutoStart;
             UnlockOnResumeBox.IsChecked = defScreenLock.UnlockOnResume;
             TasksEnabledBox.IsChecked = defTaskScheduler.GlobalEnabled;
@@ -278,6 +315,7 @@ namespace CarroDesk.Views
             _editingScreenLock.IdleMinutes = idle;
             _editingScreenLock.ShowClock = ShowClockBox.IsChecked == true;
             _editingScreenLock.OverlayOpacity = Math.Round(OpacitySlider.Value, 2);
+            _editingScreenLock.Hotkey = HotkeyBox.Text.Trim();
             _editingScreenLock.UnlockOnResume = UnlockOnResumeBox.IsChecked == true;
             var excl = ExcludeList.ItemsSource as List<string>;
             _editingScreenLock.ExcludeProcesses = ProcessHelper.NormalizeList(excl);
@@ -289,6 +327,13 @@ namespace CarroDesk.Views
         {
             if (_editingScreenLock.IdleMinutes < 0 || _editingScreenLock.IdleMinutes > 24 * 60) return Loc.T("Config.ErrorIdleRange");
             if (_editingScreenLock.OverlayOpacity < 0.3 || _editingScreenLock.OverlayOpacity > 1.0) return "透明度需在 0.3-1.0 之间";
+            if (!string.IsNullOrWhiteSpace(_editingScreenLock.Hotkey))
+            {
+                if (!HotkeyHelper.Validate(_editingScreenLock.Hotkey, out string hkErr))
+                {
+                    return "全局锁屏热键格式无效: " + hkErr;
+                }
+            }
             foreach (var p in _editingScreenLock.ExcludeProcesses)
             {
                 if (p.Length > 260) return "排除进程名过长: " + p;

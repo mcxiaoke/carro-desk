@@ -78,6 +78,10 @@
 
                         <TextBlock x:Name="MessageText" FontSize="12" Foreground="#FFF85149" HorizontalAlignment="Center"
                                    Margin="0,10,0,0" TextWrapping="Wrap" TextAlignment="Center" MinHeight="16"/>
+
+                        <!-- 应急切换至系统原生锁屏逃生通道 -->
+                        <Button x:Name="WindowsLockEscapeButton" Content="🔒 切换至 Windows 锁屏" Height="26" Margin="0,10,0,0"
+                                FontSize="11" Foreground="#8B949E" Background="Transparent" BorderThickness="0" Cursor="Hand" Click="OnWindowsLockEscapeClick" ToolTip="如果无法输入或忘记PIN，可安全降级到系统登录界面锁屏"/>
                     </StackPanel>
                 </Border>
             </StackPanel>

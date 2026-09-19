@@ -10,6 +10,7 @@ namespace CarroDesk.Modules.ScreenLock.Models
         public int IdleMinutes { get; set; } = 5;
         public bool ShowClock { get; set; } = true;
         public double OverlayOpacity { get; set; } = 0.88;
+        public string Hotkey { get; set; } = "Ctrl+Alt+L";
 
         [JsonConverter(typeof(StringOrStringListConverter))]
         public List<string> ExcludeProcesses { get; set; } = new List<string>();
@@ -23,6 +24,7 @@ namespace CarroDesk.Modules.ScreenLock.Models
                 IdleMinutes = IdleMinutes,
                 ShowClock = ShowClock,
                 OverlayOpacity = OverlayOpacity,
+                Hotkey = Hotkey,
                 ExcludeProcesses = ExcludeProcesses != null ? new List<string>(ExcludeProcesses) : new List<string>(),
                 UnlockOnResume = UnlockOnResume
             };

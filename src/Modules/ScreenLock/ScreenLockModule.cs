@@ -1,11 +1,15 @@
 using System;
 using System.Collections.Generic;
+using System.Windows;
+using System.Windows.Controls;
 using CarroDesk.Core;
 using CarroDesk.Core.Models;
 using CarroDesk.Modules.ScreenLock.Models;
 using Microsoft.Win32;
 using CarroDesk.Services;
 using CarroDesk.Services.Localization;
+using CarroDesk.Host.Services;
+using CarroDesk.Views;
 
 namespace CarroDesk.Modules.ScreenLock
 {
@@ -19,6 +23,8 @@ namespace CarroDesk.Modules.ScreenLock
 
         private bool _sessionLocked;
         private DateTime _pauseUntil = DateTime.MinValue;
+        private IHotkeyService _hotkeys;
+        private int _hotkeyId;
 
         // 闲时业务状态机（规范 §3.4）：纯 IIdleService 广播 + 模块内复刻 IdleDetector 语义
         private const double IdleIntervalMs = 1000;
@@ -51,6 +57,9 @@ namespace CarroDesk.Modules.ScreenLock
                 _idleService.UserActiveDetected += OnUserActive;
             }
 
+            _hotkeys = Context.GetService<IHotkeyService>();
+            RegisterHotkey();
+
             Controller.Unlocked += OnControllerUnlocked;
             SystemEvents.SessionSwitch += OnSessionSwitch;
         }
@@ -64,6 +73,8 @@ namespace CarroDesk.Modules.ScreenLock
                 _idleService.UserActiveDetected -= OnUserActive;
                 _idleService = null;
             }
+            UnregisterHotkey();
+            _hotkeys?.UnregisterAll(Id);
             if (Controller != null)
             {
                 Controller.Unlocked -= OnControllerUnlocked;
@@ -74,11 +85,41 @@ namespace CarroDesk.Modules.ScreenLock
         {
             base.OnConfigReloaded();
             ResetIdleMachine();
+            UnregisterHotkey();
+            RegisterHotkey();
             if (Controller != null)
             {
                 Controller.ApplyPinFromConfig();
             }
             UpdateTrayHeaderAndToolTip();
+        }
+
+        private void RegisterHotkey()
+        {
+            if (Config == null || string.IsNullOrWhiteSpace(Config.Hotkey) || _hotkeys == null)
+                return;
+
+            try
+            {
+                _hotkeyId = _hotkeys.Register(Id, Config.Hotkey, () =>
+                {
+                    LockSafe();
+                }, out _);
+            }
+            catch { }
+        }
+
+        private void UnregisterHotkey()
+        {
+            if (_hotkeyId > 0 && _hotkeys != null)
+            {
+                try
+                {
+                    _hotkeys.Unregister(Id, _hotkeyId);
+                    _hotkeyId = 0;
+                }
+                catch { }
+            }
         }
 
         public override void OnLanguageChanged()
@@ -324,7 +365,7 @@ namespace CarroDesk.Modules.ScreenLock
             {
                 Id = "screenlock_lock_now",
                 Header = Loc.T("Tray.LockNow", "立即锁定"),
-                InputGestureText = "Win+L (仿真)",
+                InputGestureText = Config?.Hotkey ?? "Ctrl+Alt+L",
                 ClickAction = () => LockSafe()
             };
             root.Children.Add(lockItem);
@@ -371,7 +412,46 @@ namespace CarroDesk.Modules.ScreenLock
                 IsChecked = IsPaused,
                 ClickAction = () => ResumeIdle()
             });
+            pauseRoot.Children.Add(TrayMenuItem.Separator());
+            pauseRoot.Children.Add(new TrayMenuItem
+            {
+                Id = "screenlock_pause_custom",
+                Header = Loc.T("Tray.PauseCustom", "自定义暂停分钟数..."),
+                ClickAction = () =>
+                {
+                    if (PromptPauseMinutes(out int mins))
+                    {
+                        PauseFor(TimeSpan.FromMinutes(mins));
+                        ShowNotifySelf(Loc.T("Tray.BalloonPause", PauseUntil));
+                    }
+                }
+            });
             root.Children.Add(pauseRoot);
+
+            // 4. 锁屏与闲时保护设置入口
+            root.Children.Add(TrayMenuItem.Separator());
+            root.Children.Add(new TrayMenuItem
+            {
+                Id = "screenlock_settings",
+                Header = Loc.T("Tray.ScreenLockSettings", "屏幕保护设置..."),
+                ClickAction = () =>
+                {
+                    try
+                    {
+                        var pinService = Context?.GetService<IPinService>();
+                        var cfgMgr = Context?.GetService<IConfigManager>() as ConfigManager;
+                        var win = new ConfigEditorWindow(pinService, cfgMgr, () =>
+                        {
+                            OnConfigReloaded();
+                        })
+                        {
+                            WindowStartupLocation = WindowStartupLocation.CenterScreen
+                        };
+                        win.ShowDialog();
+                    }
+                    catch { }
+                }
+            });
 
             items.Add(root);
             return items;
@@ -391,6 +471,80 @@ namespace CarroDesk.Modules.ScreenLock
         private void ShowNotifySelf(string msg)
         {
             try { Context?.ShowNotification(msg, "CarroDesk"); } catch { }
+        }
+
+        private static bool PromptPauseMinutes(out int minutes)
+        {
+            minutes = 0;
+            var dlg = new Window
+            {
+                Title = "自定义暂停闲时锁屏",
+                Width = 360,
+                Height = 160,
+                WindowStartupLocation = WindowStartupLocation.CenterScreen,
+                ResizeMode = ResizeMode.NoResize,
+                Background = System.Windows.Media.Brushes.White,
+                FontFamily = new System.Windows.Media.FontFamily("Segoe UI, Microsoft YaHei UI")
+            };
+            var grid = new Grid { Margin = new Thickness(16) };
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            var lbl = new TextBlock
+            {
+                Text = "请输入暂停计时的分钟数 (1-1440)：",
+                Margin = new Thickness(0, 0, 0, 8),
+                FontSize = 13,
+                Foreground = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString("#FF374151")
+            };
+            var txt = new TextBox
+            {
+                Text = "45",
+                Height = 28,
+                VerticalContentAlignment = VerticalAlignment.Center,
+                Padding = new Thickness(4, 0, 4, 0),
+                FontSize = 13
+            };
+            txt.SelectAll();
+
+            var btnPanel = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin = new Thickness(0, 12, 0, 0)
+            };
+            var btnOk = new Button { Content = "确定", Width = 70, Height = 28, IsDefault = true, Margin = new Thickness(0, 0, 8, 0) };
+            var btnCancel = new Button { Content = "取消", Width = 70, Height = 28, IsCancel = true };
+
+            btnOk.Click += (s, e) => { dlg.DialogResult = true; dlg.Close(); };
+            btnCancel.Click += (s, e) => { dlg.DialogResult = false; dlg.Close(); };
+
+            btnPanel.Children.Add(btnOk);
+            btnPanel.Children.Add(btnCancel);
+
+            Grid.SetRow(lbl, 0);
+            Grid.SetRow(txt, 1);
+            Grid.SetRow(btnPanel, 2);
+
+            grid.Children.Add(lbl);
+            grid.Children.Add(txt);
+            grid.Children.Add(btnPanel);
+
+            dlg.Content = grid;
+            dlg.Loaded += (s, e) => txt.Focus();
+
+            if (dlg.ShowDialog() == true)
+            {
+                string input = txt.Text.Trim();
+                if (int.TryParse(input, out int m) && m > 0 && m <= 1440)
+                {
+                    minutes = m;
+                    return true;
+                }
+                MessageBox.Show("请输入 1 到 1440 之间的有效分钟数。", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            return false;
         }
     }
 }

@@ -115,6 +115,10 @@ namespace CarroDesk.Tests
             Assert.IsTrue(root.Children.Any(c => c.Id == "screenlock_lock_now"), "二级菜单应包含立即锁定");
             Assert.IsTrue(root.Children.Any(c => c.Id == "screenlock_idle_root"), "二级菜单应包含空闲锁定");
             Assert.IsTrue(root.Children.Any(c => c.Id == "screenlock_pause_root"), "二级菜单应包含暂停计时");
+            Assert.IsTrue(root.Children.Any(c => c.Id == "screenlock_settings"), "二级菜单应包含设置选项");
+
+            var pauseNode = root.Children.First(c => c.Id == "screenlock_pause_root");
+            Assert.IsTrue(pauseNode.Children.Any(c => c.Id == "screenlock_pause_custom"), "暂停子菜单应包含自定义暂停选项");
         }
 
         [TestMethod]

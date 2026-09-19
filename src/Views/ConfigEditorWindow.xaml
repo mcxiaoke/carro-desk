@@ -179,6 +179,10 @@
                             <TextBlock x:Name="OpacityText" Grid.Row="3" Grid.Column="2" Text="88%" VerticalAlignment="Center" Foreground="#FF555555" Margin="8,6,0,0"/>
 
                             <TextBlock Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2" Text="{loc:Loc Config.OpacityHint}" Foreground="#FF888888" FontSize="11" Margin="0,2,0,0"/>
+
+                            <TextBlock Grid.Row="5" Text="全局锁屏热键" VerticalAlignment="Center" Margin="0,6,10,0" Foreground="#FF444444"/>
+                            <TextBox x:Name="HotkeyBox" Grid.Row="5" Grid.Column="1" Height="26" Margin="0,6,0,0" VerticalContentAlignment="Center" Padding="4,2" Text="Ctrl+Alt+L"/>
+                            <TextBlock Grid.Row="5" Grid.Column="2" Text="(一键立即锁屏，如 Ctrl+Alt+L)" VerticalAlignment="Center" Foreground="#FF888888" FontSize="11" Margin="8,6,0,0"/>
                         </Grid>
                     </StackPanel>
                 </Border>
@@ -206,13 +210,22 @@
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <TextBox x:Name="ExcludeInputBox" Height="26" Padding="5,2" ToolTip="{loc:Loc Config.ExcludeInputPlaceholder}" KeyDown="ExcludeInputBox_KeyDown"/>
-                            <Button Content="{loc:Loc Config.PickRunning}" Grid.Column="1" Height="26" Margin="4,0,0,0" Padding="8,0" Click="OnPickRunningProcessClick"/>
-                            <Button Content="{loc:Loc Common.Add}" Grid.Column="2" Height="26" Margin="4,0,0,0" Padding="12,0" Click="OnExcludeAddClick"/>
-                            <Button Content="{loc:Loc Common.Delete}" Grid.Column="3" Height="26" Margin="4,0,0,0" Padding="12,0" Click="OnExcludeDeleteClick"/>
+                            <Button Content="📂 浏览 (.exe)..." Grid.Column="1" Height="26" Margin="4,0,0,0" Padding="8,0" Click="OnBrowseExcludeExeClick" ToolTip="在本地磁盘中选择可执行文件"/>
+                            <Button Content="{loc:Loc Config.PickRunning}" Grid.Column="2" Height="26" Margin="4,0,0,0" Padding="8,0" Click="OnPickRunningProcessClick"/>
+                            <Button Content="{loc:Loc Common.Add}" Grid.Column="3" Height="26" Margin="4,0,0,0" Padding="12,0" Click="OnExcludeAddClick"/>
+                            <Button Content="{loc:Loc Common.Delete}" Grid.Column="4" Height="26" Margin="4,0,0,0" Padding="12,0" Click="OnExcludeDeleteClick"/>
                         </Grid>
-                        <ListBox x:Name="ExcludeList" Height="80" Margin="0,6,0,0" SelectionMode="Single" MouseDoubleClick="ExcludeList_MouseDoubleClick"/>
+                        <ListBox x:Name="ExcludeList" Height="80" Margin="0,6,0,0" SelectionMode="Single" MouseDoubleClick="ExcludeList_MouseDoubleClick">
+                            <ListBox.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="删除所选" Click="OnExcludeDeleteClick"/>
+                                    <MenuItem Header="清空列表" Click="OnExcludeClearClick"/>
+                                </ContextMenu>
+                            </ListBox.ContextMenu>
+                        </ListBox>
                         <TextBlock Text="{loc:Loc Config.ExcludeTip}" Foreground="#FF888888" FontSize="11" Margin="0,3,0,0"/>
                     </StackPanel>
                 </Border>

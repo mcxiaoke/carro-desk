@@ -78,6 +78,7 @@ namespace CarroDesk.Tests
                 IdleMinutes = 15,
                 ShowClock = false,
                 OverlayOpacity = 0.5,
+                Hotkey = "Ctrl+Shift+L",
                 UnlockOnResume = false,
                 ExcludeProcesses = new System.Collections.Generic.List<string> { "game.exe" }
             };
@@ -87,6 +88,7 @@ namespace CarroDesk.Tests
             Assert.AreEqual(15, cloned.IdleMinutes);
             Assert.IsFalse(cloned.ShowClock);
             Assert.AreEqual(0.5, cloned.OverlayOpacity);
+            Assert.AreEqual("Ctrl+Shift+L", cloned.Hotkey);
             Assert.IsFalse(cloned.UnlockOnResume);
             Assert.AreEqual(1, cloned.ExcludeProcesses.Count);
             Assert.AreEqual("game.exe", cloned.ExcludeProcesses[0]);
