@@ -20,6 +20,13 @@ namespace CarroDesk.Modules.AudioSwitch
 
         public AudioDeviceItem CurrentDefaultDevice { get; private set; }
 
+        private AudioSwitchConfig _fallbackConfig;
+        public new AudioSwitchConfig Config
+        {
+            get => base.Config ?? _fallbackConfig ?? (_fallbackConfig = new AudioSwitchConfig());
+            internal set => _fallbackConfig = value;
+        }
+
         public AudioSwitchModule()
         {
         }
@@ -129,6 +136,28 @@ namespace CarroDesk.Modules.AudioSwitch
             return false;
         }
 
+        public bool IsDeviceExcluded(AudioDeviceItem device)
+        {
+            if (device == null) return false;
+            return IsDeviceExcluded(device.Id, device.Name);
+        }
+
+        public bool IsDeviceExcluded(string id, string name)
+        {
+            if (Config?.ExcludedDevices == null || Config.ExcludedDevices.Count == 0)
+                return false;
+
+            foreach (var excl in Config.ExcludedDevices)
+            {
+                if (string.IsNullOrWhiteSpace(excl)) continue;
+                string trimmed = excl.Trim();
+                if (!string.IsNullOrEmpty(id) && string.Equals(trimmed, id, StringComparison.OrdinalIgnoreCase)) return true;
+                if (!string.IsNullOrEmpty(name) && string.Equals(trimmed, name, StringComparison.OrdinalIgnoreCase)) return true;
+                if (!string.IsNullOrEmpty(name) && name.IndexOf(trimmed, StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            }
+            return false;
+        }
+
         public bool ToggleAudioDevice()
         {
             if (_audioService == null) return false;
@@ -141,10 +170,25 @@ namespace CarroDesk.Modules.AudioSwitch
                 return false;
             }
 
-            if (all.Count == 1)
+            // 过滤排除黑名单设备
+            var available = all.FindAll(d => !IsDeviceExcluded(d));
+            if (available.Count == 0)
             {
-                Context?.ShowNotification($"当前仅有一个音频输出设备: {all[0].Name}");
-                return false;
+                // 若所有设备都被排除，降级回退到全量设备，防止无声死锁
+                available = all;
+            }
+
+            if (available.Count == 1)
+            {
+                if (CurrentDefaultDevice != null && CurrentDefaultDevice.Id == available[0].Id)
+                {
+                    Context?.ShowNotification($"当前仅有一个可用的音频输出设备: {available[0].Name}");
+                    return false;
+                }
+                else
+                {
+                    return SwitchToDevice(available[0].Id);
+                }
             }
 
             string currentId = CurrentDefaultDevice?.Id;
@@ -160,20 +204,15 @@ namespace CarroDesk.Modules.AudioSwitch
             AudioDeviceItem targetDevice = null;
             if (!string.IsNullOrEmpty(targetPattern))
             {
-                targetDevice = _audioService.FindDeviceByPattern(targetPattern);
-                // 如果找到的目标刚好是当前设备，则不视为目标
-                if (targetDevice != null && targetDevice.Id == currentId)
-                {
-                    targetDevice = null;
-                }
+                targetDevice = available.Find(d => d.Id != currentId && !string.IsNullOrEmpty(d.Name) && d.Name.IndexOf(targetPattern, StringComparison.OrdinalIgnoreCase) >= 0);
             }
 
-            // 如果按 pattern 没找到目标，则在活跃设备列表中循环切换至下一个设备 (Round-Robin)
+            // 如果按 pattern 没找到目标，则在可用候选设备列表中循环切换至下一个设备 (Round-Robin)
             if (targetDevice == null)
             {
-                int currentIndex = all.FindIndex(d => d.Id == currentId);
-                int nextIndex = (currentIndex + 1) % all.Count;
-                targetDevice = all[nextIndex];
+                int currentIndex = available.FindIndex(d => d.Id == currentId);
+                int nextIndex = (currentIndex + 1) % available.Count;
+                targetDevice = available[nextIndex];
             }
 
             if (targetDevice != null)
@@ -323,14 +362,38 @@ namespace CarroDesk.Modules.AudioSwitch
                 string name = d.Name ?? "(未知设备)";
                 string icon = GetDeviceIcon(name);
                 string devId = d.Id;
+                bool isExcluded = IsDeviceExcluded(d);
+                string header = isExcluded ? $"{icon} {name} (已排除)" : $"{icon} {name}";
                 root.Children.Add(new TrayMenuItem
                 {
                     Id = "audioswitch_dev_" + devId,
-                    Header = $"{icon} {name}",
+                    Header = header,
                     IsChecked = string.Equals(d.Id, currentId, StringComparison.OrdinalIgnoreCase),
                     ClickAction = () => { SwitchToDevice(devId); RequestRefreshSelf(); }
                 });
             }
+
+            root.Children.Add(TrayMenuItem.Separator());
+
+            root.Children.Add(new TrayMenuItem
+            {
+                Id = "audioswitch_settings",
+                Header = Loc.T("Tray.AudioSwitchSettings", "音频切换设置..."),
+                ClickAction = () =>
+                {
+                    try
+                    {
+                        var cfgMgr = Context?.GetService<IConfigManager>();
+                        var win = new CarroDesk.Views.AudioSwitchSettingsWindow(this, cfgMgr, _audioService, msg => Context?.ShowNotification(msg))
+                        {
+                            WindowStartupLocation = System.Windows.WindowStartupLocation.CenterScreen
+                        };
+                        win.ShowDialog();
+                        RequestRefreshSelf();
+                    }
+                    catch { }
+                }
+            });
 
             items.Add(root);
             return items;

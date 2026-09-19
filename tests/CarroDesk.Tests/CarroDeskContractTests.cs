@@ -171,6 +171,19 @@ namespace CarroDesk.Tests
             Assert.AreEqual("audioswitch_root", root.Id);
             Assert.IsTrue(root.Header.Contains("音频输出设备"), $"根项 Header 应包含音频输出设备，实际: {root.Header}");
             Assert.IsTrue(root.Children.Any(c => c.Id == "audioswitch_fast_toggle"), "二级菜单应包含快捷切换");
+            Assert.IsTrue(root.Children.Any(c => c.Id == "audioswitch_settings"), "二级菜单应包含音频切换设置入口");
+        }
+
+        [TestMethod]
+        public void AudioSwitchModule_IsDeviceExcluded_MatchesCorrectly()
+        {
+            var module = new AudioSwitchModule();
+            module.Config.ExcludedDevices.Add("DELL U2720Q");
+            module.Config.ExcludedDevices.Add("{0.0.0.00000000}.{GUID-123}");
+
+            Assert.IsTrue(module.IsDeviceExcluded("{0.0.0.00000000}.{GUID-123}", "Any Name"));
+            Assert.IsTrue(module.IsDeviceExcluded("other-id", "DELL U2720Q (NVIDIA High Definition Audio)"));
+            Assert.IsFalse(module.IsDeviceExcluded("other-id", "Realtek High Definition Audio (扬声器)"));
         }
 
         [TestMethod]
