@@ -15,7 +15,7 @@ namespace CarroDesk.Modules.ClipboardHistory
     {
         public override string Id => "ClipboardHistory";
         public override string Name => Loc.T("Tray.ClipboardHistory", "剪贴板历史");
-        public override string Description => "记录剪贴板文本历史，提供快速搜索与按需回写";
+        public override string Description => Loc.T("Clipboard.ModuleDesc", "记录剪贴板文本历史，提供快速搜索与按需回写");
         public override string Version => "1.0.0";
         public override int Order => 35;
         public override bool DefaultEnabled => true;
@@ -137,7 +137,7 @@ namespace CarroDesk.Modules.ClipboardHistory
             {
                 Id = "clipboard_root",
                 Header = $"{Name} ({count})",
-                ToolTip = $"{Name} (快捷键: {Config?.Hotkey ?? "Win+Alt+V"})"
+                ToolTip = Loc.T("Clipboard.TooltipWithHotkey", "{0} (快捷键: {1})", Name, Config?.Hotkey ?? "Win+Alt+V")
             };
 
             root.Children.Add(new TrayMenuItem
@@ -211,7 +211,7 @@ namespace CarroDesk.Modules.ClipboardHistory
             int count = _service?.Count ?? 0;
             if (count == 0) return;
 
-            if (System.Windows.MessageBox.Show("确定要清空剪贴板历史记录吗？\n\n(已固定的记录将被安全保留)", "清空确认", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Question) == System.Windows.MessageBoxResult.Yes)
+            if (System.Windows.MessageBox.Show(Loc.T("Clipboard.ClearConfirmKeepPinned", "确定要清空剪贴板历史记录吗？\n\n(已固定的记录将被安全保留)"), Loc.T("Clipboard.ClearConfirmCaption", "清空确认"), System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Question) == System.Windows.MessageBoxResult.Yes)
             {
                 _service?.ClearAll(preservePinned: true);
                 Context?.RequestTrayRefresh();

@@ -14,6 +14,7 @@ using CarroDesk;
 using CarroDesk.Models;
 using CarroDesk.Services;
 using CarroDesk.Services.Tasks;
+using CarroDesk.Services.Localization;
 
 namespace CarroDesk.Views
 {
@@ -199,8 +200,8 @@ namespace CarroDesk.Views
             {
                 var ofd = new Microsoft.Win32.OpenFileDialog
                 {
-                    Filter = "可执行文件 (*.exe)|*.exe|所有文件 (*.*)|*.*",
-                    Title = "选择应用程序 (.exe)"
+                    Filter = Loc.T("Common.ExeFilter", "可执行文件 (*.exe)|*.exe|所有文件 (*.*)|*.*"),
+                    Title = Loc.T("Msg.SelectAppExe", "选择应用程序 (.exe)")
                 };
                 if (ofd.ShowDialog(this) == true)
                 {
@@ -211,14 +212,14 @@ namespace CarroDesk.Views
             }
             catch (Exception ex)
             {
-                MessageBox.Show(this, "选择文件失败: " + ex.Message, "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(this, Loc.T("Msg.OpenFileFailed", "选择文件失败: {0}", ex.Message), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 
         private void OnClearAppsClick(object sender, RoutedEventArgs e)
         {
             if (_targetApps.Count == 0) return;
-            var res = MessageBox.Show(this, "确定要清空受控程序列表吗？", "确认清空", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            var res = MessageBox.Show(this, Loc.T("Msg.ClearTargetList", "确定要清空受控程序列表吗？"), Loc.T("Msg.ConfirmClear", "确认清空"), MessageBoxButton.YesNo, MessageBoxImage.Question);
             if (res == MessageBoxResult.Yes)
             {
                 _targetApps.Clear();
@@ -242,12 +243,12 @@ namespace CarroDesk.Views
                         _audioService.UnmuteProcesses(activeProcs);
                     }
                 }
-                TxtNotice.Text = "已立即恢复所有声音";
-                _notifier?.Invoke("已恢复所有应用程序声音");
+                TxtNotice.Text = Loc.T("AutoMute.UnmutedAll", "已立即恢复所有声音");
+                _notifier?.Invoke(Loc.T("AutoMute.UnmutedAllApplications", "已恢复所有应用程序声音"));
             }
             catch (Exception ex)
             {
-                MessageBox.Show(this, "恢复声音失败: " + ex.Message, "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(this, Loc.T("AutoMute.RestoreFailed", "恢复声音失败: {0}", ex.Message), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 
@@ -258,7 +259,7 @@ namespace CarroDesk.Views
             {
                 if (!HotkeyHelper.Validate(hotkey, out string err))
                 {
-                    MessageBox.Show($"快捷键格式不正确: {err}\n支持格式例如: Ctrl+Win+S, Ctrl+Alt+M", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show(Loc.T("Msg.HotkeyInvalid", "快捷键格式不正确: {0}\n支持格式例如: {1}", err, "Ctrl+Win+S, Ctrl+Alt+M"), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
             }
@@ -279,7 +280,7 @@ namespace CarroDesk.Views
             }
 
             _module?.OnConfigReloaded();
-            string saveMsg = "后台智能静音配置已保存并生效";
+            string saveMsg = Loc.T("AutoMute.ConfigSaved", "后台智能静音配置已保存并生效");
             _notifier?.Invoke(saveMsg);
 
             DialogResult = true;

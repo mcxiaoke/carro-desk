@@ -452,7 +452,7 @@ namespace CarroDesk
 
             try
             {
-                ShowBalloonPublic("操作发生异常，详情请查看日志");
+                ShowBalloonPublic(Loc.T("Msg.UnexpectedError", "操作发生异常，详情请查看日志"));
             }
             catch { /* intentionally ignored: non-fatal balloon tip display failure */ }
 

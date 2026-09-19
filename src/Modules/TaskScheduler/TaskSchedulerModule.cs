@@ -16,7 +16,7 @@ namespace CarroDesk.Modules.TaskScheduler
     {
         public override string Id => "TaskScheduler";
         public override string Name => Loc.T("Tray.Tasks", "自动化计划任务");
-        public override string Description => "支持 Cron/周期/定时/文件监听/会话切换等自动化脚本调度";
+        public override string Description => Loc.T("Tasks.ModuleDesc", "支持 Cron/周期/定时/文件监听/会话切换等自动化脚本调度");
 
         public TaskSchedulerService Scheduler { get; private set; }
 

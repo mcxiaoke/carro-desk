@@ -210,8 +210,8 @@ namespace CarroDesk.Views
             {
                 var ofd = new Microsoft.Win32.OpenFileDialog
                 {
-                    Filter = "可执行文件 (*.exe)|*.exe|所有文件 (*.*)|*.*",
-                    Title = "选择排除进程应用程序 (.exe)"
+                    Filter = Loc.T("Common.ExeFilter", "可执行文件 (*.exe)|*.exe|所有文件 (*.*)|*.*"),
+                    Title = Loc.T("Msg.SelectExcludeExe", "选择排除进程应用程序 (.exe)")
                 };
                 if (ofd.ShowDialog(this) == true)
                 {
@@ -222,7 +222,7 @@ namespace CarroDesk.Views
             }
             catch (Exception ex)
             {
-                MessageBox.Show(this, "选择文件失败: " + ex.Message, "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(this, Loc.T("Msg.OpenFileFailed", "选择文件失败: {0}", ex.Message), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 
@@ -240,7 +240,7 @@ namespace CarroDesk.Views
         {
             var list = (ExcludeList.ItemsSource as List<string>) ?? new List<string>();
             if (list.Count == 0) return;
-            if (MessageBox.Show(this, "确定要清空排除进程列表吗？", "确认清空", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
+            if (MessageBox.Show(this, Loc.T("Msg.ClearExcludeList", "确定要清空排除进程列表吗？"), Loc.T("Msg.ConfirmClear", "确认清空"), MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
             {
                 list.Clear();
                 ExcludeList.ItemsSource = null;
@@ -326,18 +326,18 @@ namespace CarroDesk.Views
         private string Validate()
         {
             if (_editingScreenLock.IdleMinutes < 0 || _editingScreenLock.IdleMinutes > 24 * 60) return Loc.T("Config.ErrorIdleRange");
-            if (_editingScreenLock.OverlayOpacity < 0.3 || _editingScreenLock.OverlayOpacity > 1.0) return "透明度需在 0.3-1.0 之间";
+            if (_editingScreenLock.OverlayOpacity < 0.3 || _editingScreenLock.OverlayOpacity > 1.0) return Loc.T("Config.OpacityRange", "透明度需在 0.3-1.0 之间");
             if (!string.IsNullOrWhiteSpace(_editingScreenLock.Hotkey))
             {
                 if (!HotkeyHelper.Validate(_editingScreenLock.Hotkey, out string hkErr))
                 {
-                    return "全局锁屏热键格式无效: " + hkErr;
+                    return Loc.T("Config.HotkeyInvalid", "全局锁屏热键格式无效: {0}", hkErr);
                 }
             }
             foreach (var p in _editingScreenLock.ExcludeProcesses)
             {
-                if (p.Length > 260) return "排除进程名过长: " + p;
-                if (p.IndexOfAny(new[] { '<', '>', ':', '\"', '|', '?', '*' }) >= 0) return "排除进程名含非法字符: " + p;
+                if (p.Length > 260) return Loc.T("Config.ExcludeNameTooLong", "排除进程名过长: {0}", p);
+                if (p.IndexOfAny(new[] { '<', '>', ':', '\"', '|', '?', '*' }) >= 0) return Loc.T("Config.ExcludeNameInvalidChars", "排除进程名含非法字符: {0}", p);
             }
             return null;
         }

@@ -13,8 +13,8 @@ namespace CarroDesk.Modules.AppAutoMute
     public class AppAutoMuteModule : ModuleBase<AppAutoMuteConfig>
     {
         public override string Id => "AppAutoMute";
-        public override string Name => "应用前后台智能静音";
-        public override string Description => "当目标应用位于后台时自动静音，切回前台时自动恢复发声";
+        public override string Name => Loc.T("AutoMute.ModuleName", "应用前后台智能静音");
+        public override string Description => Loc.T("AutoMute.ModuleDesc", "当目标应用位于后台时自动静音，切回前台时自动恢复发声");
 
         private IAudioService _audioService;
         private IForegroundTracker _foregroundTracker;
@@ -128,7 +128,7 @@ namespace CarroDesk.Modules.AppAutoMute
             var configMgr = Context?.GetService<IConfigManager>();
             configMgr?.SaveModuleConfig(Id, Config);
 
-            string msg = Config.Enabled ? "应用自动静音已启用" : "应用自动静音已禁用 (已恢复所有声音)";
+            string msg = Config.Enabled ? Loc.T("AutoMute.EnabledNotify", "应用自动静音已启用") : Loc.T("AutoMute.DisabledNotify", "应用自动静音已禁用 (已恢复所有声音)");
             Context?.ShowNotification(msg);
 
             if (!Config.Enabled)

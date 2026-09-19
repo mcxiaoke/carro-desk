@@ -150,13 +150,13 @@ namespace CarroDesk.Views
             {
                 TemplateQuickBox.Items.Clear();
                 TemplateQuickBox.Items.Add(new ComboBoxItem { Content = Loc.T("Tasks.InsertTemplate", "插入模板..."), IsEnabled = false, IsSelected = true });
-                TemplateQuickBox.Items.Add(new ComboBoxItem { Content = "{{date}} - 日期 (yyyy-MM-dd)", Tag = "{{date}}" });
-                TemplateQuickBox.Items.Add(new ComboBoxItem { Content = "{{time}} - 时间 (HH-mm-ss)", Tag = "{{time}}" });
-                TemplateQuickBox.Items.Add(new ComboBoxItem { Content = "{{datetime}} - 日期时间", Tag = "{{datetime}}" });
-                TemplateQuickBox.Items.Add(new ComboBoxItem { Content = "{{timestamp}} - 紧凑时间戳", Tag = "{{timestamp}}" });
-                TemplateQuickBox.Items.Add(new ComboBoxItem { Content = "{{task}} - 任务名称", Tag = "{{task}}" });
-                TemplateQuickBox.Items.Add(new ComboBoxItem { Content = "{{scripts}} - 脚本目录", Tag = "{{scripts}}" });
-                TemplateQuickBox.Items.Add(new ComboBoxItem { Content = "{{logs}} - 日志目录", Tag = "{{logs}}" });
+                TemplateQuickBox.Items.Add(new ComboBoxItem { Content = Loc.T("Tasks.TemplateDate", "{{date}} - 日期 (yyyy-MM-dd)"), Tag = "{{date}}" });
+                TemplateQuickBox.Items.Add(new ComboBoxItem { Content = Loc.T("Tasks.TemplateTime", "{{time}} - 时间 (HH-mm-ss)"), Tag = "{{time}}" });
+                TemplateQuickBox.Items.Add(new ComboBoxItem { Content = Loc.T("Tasks.TemplateDateTime", "{{datetime}} - 日期时间"), Tag = "{{datetime}}" });
+                TemplateQuickBox.Items.Add(new ComboBoxItem { Content = Loc.T("Tasks.TemplateTimestamp", "{{timestamp}} - 紧凑时间戳"), Tag = "{{timestamp}}" });
+                TemplateQuickBox.Items.Add(new ComboBoxItem { Content = Loc.T("Tasks.TemplateTask", "{{task}} - 任务名称"), Tag = "{{task}}" });
+                TemplateQuickBox.Items.Add(new ComboBoxItem { Content = Loc.T("Tasks.TemplateScripts", "{{scripts}} - 脚本目录"), Tag = "{{scripts}}" });
+                TemplateQuickBox.Items.Add(new ComboBoxItem { Content = Loc.T("Tasks.TemplateLogs", "{{logs}} - 日志目录"), Tag = "{{logs}}" });
                 TemplateQuickBox.SelectedIndex = 0;
             }
             catch { }
@@ -397,7 +397,7 @@ namespace CarroDesk.Views
             try
             {
                 var dlg = new Microsoft.Win32.OpenFileDialog();
-                dlg.Filter = "脚本/可执行|*.ps1;*.js;*.py;*.bat;*.cmd;*.vbs;*.exe|所有文件|*.*";
+                dlg.Filter = Loc.T("Tasks.ScriptFilter", "脚本/可执行|*.ps1;*.js;*.py;*.bat;*.cmd;*.vbs;*.exe|所有文件|*.*");
                 string scripts = Services.ConfigService.ScriptsDirPath;
                 if (Directory.Exists(scripts)) dlg.InitialDirectory = scripts;
                 if (dlg.ShowDialog() == true)
@@ -723,7 +723,7 @@ namespace CarroDesk.Views
                 if (t == cur) continue;
                 string terr = t.Validate();
                 if (terr != null) errors.Add(t.Name + ": " + terr);
-                if (seen.Contains(t.Name)) errors.Add("重名: " + t.Name);
+                if (seen.Contains(t.Name)) errors.Add(Loc.T("Tasks.DuplicatePrefix", "重名: ") + t.Name);
                 else seen.Add(t.Name);
             }
             if (errors.Count > 0)
@@ -918,7 +918,7 @@ namespace CarroDesk.Views
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show("保存任务状态失败: " + ex.Message, "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                    MessageBox.Show(Loc.T("Tasks.SaveStatusFailed", "保存任务状态失败: {0}", ex.Message), Loc.T("Common.Error", "错误"), MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
         }
@@ -947,7 +947,7 @@ namespace CarroDesk.Views
             }
             catch (Exception ex)
             {
-                MessageBox.Show("打开脚本目录失败: " + ex.Message, "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(Loc.T("Tasks.OpenScriptsDirFailed", "打开脚本目录失败: {0}", ex.Message), Loc.T("Common.Error", "错误"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -957,7 +957,7 @@ namespace CarroDesk.Views
             string taskName = cur?.Name ?? NameBox.Text.Trim();
             if (string.IsNullOrWhiteSpace(taskName))
             {
-                MessageBox.Show("请先选择一个任务", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(Loc.T("Tasks.SelectTaskFirst", "请先选择一个任务"), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
@@ -970,7 +970,7 @@ namespace CarroDesk.Views
                     OpenLogFile(aggLog);
                     return;
                 }
-                MessageBox.Show($"该任务尚未生成运行日志文件：\n{logPath}", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(Loc.T("Tasks.NoLogFile", "该任务尚未生成运行日志文件：\n{0}", logPath), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
@@ -989,7 +989,7 @@ namespace CarroDesk.Views
             }
             catch (Exception ex)
             {
-                MessageBox.Show("打开日志失败: " + ex.Message, "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(Loc.T("Tasks.OpenLogFailed", "打开日志失败: {0}", ex.Message), Loc.T("Common.Error", "错误"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -1007,7 +1007,7 @@ namespace CarroDesk.Views
             }
             catch (Exception ex)
             {
-                MessageBox.Show("打开日志目录失败: " + ex.Message, "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(Loc.T("Tasks.OpenLogsDirFailed", "打开日志目录失败: {0}", ex.Message), Loc.T("Common.Error", "错误"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 

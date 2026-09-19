@@ -186,7 +186,9 @@ namespace CarroDesk.Modules.Awake
         {
             if (isTriggered)
             {
-                ShowNotify(Loc.T("Tray.AwakeNotifyProcessActive", $"检测到目标进程 '{procName}' 运行，已自动保持唤醒。"));
+                // 必须走带格式化的重载：默认值里带 {0}，两参重载不会执行 string.Format，
+                // 会导致中文丢失进程名、英文显示字面量 {0}
+                ShowNotify(Loc.T("Tray.AwakeNotifyProcessActive", "检测到目标进程 '{0}' 正在运行，已自动开启保持唤醒。", procName));
             }
             else
             {
@@ -239,11 +241,11 @@ namespace CarroDesk.Modules.Awake
                         var rem = Service.RemainingTime;
                         if (rem.TotalHours >= 1)
                         {
-                            status = $"剩 {(int)rem.TotalHours}h{rem.Minutes:D2}m";
+                            status = Loc.T("Awake.RemainingHours", "剩 {0}h{1:D2}m", (int)rem.TotalHours, rem.Minutes);
                         }
                         else
                         {
-                            status = $"剩 {Math.Max(1, (int)Math.Ceiling(rem.TotalMinutes))}m";
+                            status = Loc.T("Awake.RemainingMinutes", "剩 {0}m", Math.Max(1, (int)Math.Ceiling(rem.TotalMinutes)));
                         }
                         break;
                     default:
@@ -256,40 +258,40 @@ namespace CarroDesk.Modules.Awake
 
         public string BuildAwakeToolTip()
         {
-            if (Service == null) return "CarroDesk - 保持唤醒";
+            if (Service == null) return Loc.T("Awake.TrayTitle", "CarroDesk - 保持唤醒");
 
             string modeDesc;
             if (Service.IsBatteryPaused)
             {
-                modeDesc = "已因电池供电挂起保持唤醒";
+                modeDesc = Loc.T("Awake.StatusBatterySuspended", "已因电池供电挂起保持唤醒");
             }
             else if (Service.IsProcessTriggered)
             {
-                modeDesc = $"进程 '{Service.ActiveProcessTrigger}' 联动保持唤醒中";
+                modeDesc = Loc.T("Awake.StatusProcessLinked", "进程 '{0}' 联动保持唤醒中", Service.ActiveProcessTrigger);
             }
             else
             {
                 switch (Service.Mode)
                 {
                     case AwakeMode.Passive:
-                        modeDesc = "遵循系统默认电源策略（已关闭）";
+                        modeDesc = Loc.T("Awake.StatusFollowingSystem", "遵循系统默认电源策略（已关闭）");
                         break;
                     case AwakeMode.Indefinite:
-                        modeDesc = "无限期保持唤醒";
+                        modeDesc = Loc.T("Awake.StatusIndefinite", "无限期保持唤醒");
                         break;
                     case AwakeMode.Timed:
                     case AwakeMode.UntilTime:
                         var rem = Service.RemainingTime;
-                        modeDesc = $"定时保持唤醒 (剩余 {(int)rem.TotalMinutes} 分钟，到期时间 {Service.ExpireTime:HH:mm})";
+                        modeDesc = Loc.T("Awake.StatusTimed", "定时保持唤醒 (剩余 {0} 分钟，到期时间 {1})", (int)rem.TotalMinutes, Service.ExpireTime.ToString("HH:mm"));
                         break;
                     default:
-                        modeDesc = "已关闭";
+                        modeDesc = Loc.T("Awake.StatusClosed", "已关闭");
                         break;
                 }
             }
 
-            string displayDesc = Service.KeepDisplayOn ? "保持屏幕常亮" : "允许屏幕熄灭";
-            return $"CarroDesk - 保持唤醒: {modeDesc} [{displayDesc}]";
+            string displayDesc = Service.KeepDisplayOn ? Loc.T("Awake.DisplayOn", "保持屏幕常亮") : Loc.T("Awake.DisplayOff", "允许屏幕熄灭");
+            return Loc.T("Awake.TooltipFormat", "CarroDesk - 保持唤醒: {0} [{1}]", modeDesc, displayDesc);
         }
 
         private void UpdateTrayHeaderAndToolTip()
@@ -365,7 +367,7 @@ namespace CarroDesk.Modules.Awake
             int[] presetMinutes = new[] { 15, 30, 60, 120, 240, 480 };
             foreach (var m in presetMinutes)
             {
-                string label = m < 60 ? $"{m} 分钟" : $"{m / 60} 小时";
+                string label = m < 60 ? Loc.T("Awake.MinutesLabel", "{0} 分钟", m) : Loc.T("Awake.HoursLabel", "{0} 小时", m / 60);
                 timedSubmenu.Children.Add(new TrayMenuItem
                 {
                     Id = $"awake_timed_{m}",
@@ -376,7 +378,7 @@ namespace CarroDesk.Modules.Awake
                         SaveConfig();
                         UpdateTrayHeaderAndToolTip();
                         RequestRefreshTray();
-                        ShowNotify($"已开启保持唤醒 ({label})");
+                        ShowNotify(Loc.T("Awake.TimedOn", "已开启保持唤醒 ({0})", label));
                     }
                 });
             }
@@ -394,7 +396,7 @@ namespace CarroDesk.Modules.Awake
                         SaveConfig();
                         UpdateTrayHeaderAndToolTip();
                         RequestRefreshTray();
-                        ShowNotify($"已开启保持唤醒 ({customMins} 分钟)");
+                        ShowNotify(Loc.T("Awake.TimedCustom", "已开启保持唤醒 ({0} 分钟)", customMins));
                     }
                 }
             });
@@ -411,8 +413,8 @@ namespace CarroDesk.Modules.Awake
             int[] targetHours = new[] { 18, 20, 22 };
             foreach (var h in targetHours)
             {
-                string label = $"至 {h:D2}:00";
-                if (h == 18) label += " (下班)";
+                string label = Loc.T("Awake.UntilHour", "至 {0:D2}:00", h);
+                if (h == 18) label += Loc.T("Awake.UntilHourOffWork", " (下班)");
                 untilSubmenu.Children.Add(new TrayMenuItem
                 {
                     Id = $"awake_until_{h}",
@@ -424,7 +426,7 @@ namespace CarroDesk.Modules.Awake
                         SaveConfig();
                         UpdateTrayHeaderAndToolTip();
                         RequestRefreshTray();
-                        ShowNotify($"已设置保持唤醒至 {h:D2}:00");
+                        ShowNotify(Loc.T("Awake.UntilTime", "已设置保持唤醒至 {0:D2}:00", h));
                     }
                 });
             }
@@ -499,7 +501,7 @@ namespace CarroDesk.Modules.Awake
 
             var lbl = new TextBlock
             {
-                Text = "请输入保持唤醒的分钟数 (1-1440)：",
+                Text = Loc.T("Awake.PromptMinutes", "请输入保持唤醒的分钟数 (1-1440)："),
                 Margin = new Thickness(0, 0, 0, 8),
                 FontSize = 13,
                 Foreground = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString("#FF374151")
@@ -548,7 +550,7 @@ namespace CarroDesk.Modules.Awake
                     minutes = m;
                     return true;
                 }
-                MessageBox.Show("请输入 1 到 1440 之间的有效分钟数。", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(Loc.T("Msg.InvalidMinutes", "请输入 1 到 1440 之间的有效分钟数。"), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
             }
             return false;
         }

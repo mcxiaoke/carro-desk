@@ -8,6 +8,7 @@ using System.Windows;
 using System.Windows.Controls;
 using CarroDesk.Modules.MonitorProfile;
 using CarroDesk.Modules.MonitorProfile.Models;
+using CarroDesk.Services.Localization;
 
 namespace CarroDesk.Views
 {
@@ -60,19 +61,19 @@ namespace CarroDesk.Views
                     var count = _module.DdcService.DetectMonitorCount();
                     var monitors = _module.DdcService.GetMonitorsInfo();
                     string desc = monitors.Count > 0
-                        ? string.Join("; ", monitors.Select(m => $"{m.Description} (当前亮度:{m.CurrentBrightness}%)"))
-                        : "未检测到外部 DDC/CI 显示器，已启用 WMI 适配";
+                        ? string.Join("; ", monitors.Select(m => Loc.T("Monitor.BrightnessSuffix", "{0} (当前亮度:{1}%)", m.Description, m.CurrentBrightness)))
+                        : Loc.T("Monitor.NoDdcMonitor", "未检测到外部 DDC/CI 显示器，已启用 WMI 适配");
 
                     Dispatcher.BeginInvoke(new Action(() =>
                     {
-                        TxtHardwareInfo.Text = $"检测到 {count} 台显示设备 | {desc}";
+                        TxtHardwareInfo.Text = Loc.T("Monitor.DetectedCount", "检测到 {0} 台显示设备 | {1}", count, desc);
                     }));
                 }
                 catch (Exception ex)
                 {
                     Dispatcher.BeginInvoke(new Action(() =>
                     {
-                        TxtHardwareInfo.Text = $"显示设备检测异常: {ex.Message}";
+                        TxtHardwareInfo.Text = Loc.T("Monitor.DetectFailed", "显示设备检测异常: {0}", ex.Message);
                     }));
                 }
             });
@@ -144,11 +145,11 @@ namespace CarroDesk.Views
             if (selected == null || !_modeSettings.ContainsKey(selected.Name))
             {
                 GridTimeSettings.ItemsSource = null;
-                TxtCurrentModeTitle.Text = "请选择一个情境模式";
+                TxtCurrentModeTitle.Text = Loc.T("Monitor.SelectProfile", "请选择一个情境模式");
                 return;
             }
 
-            TxtCurrentModeTitle.Text = $"模式「{selected.Name}」的时间段设置";
+            TxtCurrentModeTitle.Text = Loc.T("Monitor.ProfileTimeSettings", "模式「{0}」的时间段设置", selected.Name);
             GridTimeSettings.ItemsSource = _modeSettings[selected.Name];
         }
 
@@ -189,7 +190,7 @@ namespace CarroDesk.Views
         {
             if (_modes.Count <= 1)
             {
-                MessageBox.Show("至少需要保留一个情境模式。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(Loc.T("Monitor.KeepOneProfile", "至少需要保留一个情境模式。"), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
@@ -215,17 +216,17 @@ namespace CarroDesk.Views
             var selected = LstModes.SelectedItem as ModeItemViewModel;
             if (selected == null)
             {
-                MessageBox.Show("请先选择一个要重命名的方法模式。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(Loc.T("Monitor.SelectProfileToRename", "请先选择一个要重命名的方法模式。"), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
             string oldName = selected.Name;
-            if (PromptInput(this, "重命名情境模式", $"请输入模式「{oldName}」的新名称：", oldName, out string newName))
+            if (PromptInput(this, Loc.T("Monitor.RenameTitle", "重命名情境模式"), Loc.T("Monitor.RenamePrompt", "请输入模式「{0}」的新名称：", oldName), oldName, out string newName))
             {
                 newName = newName?.Trim();
                 if (string.IsNullOrWhiteSpace(newName))
                 {
-                    MessageBox.Show("模式名称不能为空。", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show(Loc.T("Monitor.NameEmpty", "模式名称不能为空。"), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
 
@@ -236,7 +237,7 @@ namespace CarroDesk.Views
 
                 if (_modes.Any(m => string.Equals(m.Name, newName, StringComparison.OrdinalIgnoreCase)))
                 {
-                    MessageBox.Show($"已存在名为「{newName}」的模式，请使用其他名称。", "名称重复", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show(Loc.T("Monitor.NameExists", "已存在名为「{0}」的模式，请使用其他名称。", newName), Loc.T("Msg.NameDuplicate", "名称重复"), MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
 
@@ -254,7 +255,7 @@ namespace CarroDesk.Views
                 }
 
                 selected.Name = newName;
-                TxtCurrentModeTitle.Text = $"模式「{selected.Name}」的时间段设置";
+                TxtCurrentModeTitle.Text = Loc.T("Monitor.ProfileTimeSettings", "模式「{0}」的时间段设置", selected.Name);
             }
         }
 
@@ -300,8 +301,8 @@ namespace CarroDesk.Views
                 HorizontalAlignment = HorizontalAlignment.Right,
                 Margin = new Thickness(0, 12, 0, 0)
             };
-            var btnOk = new Button { Content = "确定", Width = 70, Height = 28, IsDefault = true, Margin = new Thickness(0, 0, 8, 0) };
-            var btnCancel = new Button { Content = "取消", Width = 70, Height = 28, IsCancel = true };
+            var btnOk = new Button { Content = Loc.T("Common.Ok", "确定"), Width = 70, Height = 28, IsDefault = true, Margin = new Thickness(0, 0, 8, 0) };
+            var btnCancel = new Button { Content = Loc.T("Common.Cancel", "取消"), Width = 70, Height = 28, IsCancel = true };
 
             btnOk.Click += (s, ev) => { dlg.DialogResult = true; dlg.Close(); };
             btnCancel.Click += (s, ev) => { dlg.DialogResult = false; dlg.Close(); };
@@ -336,20 +337,20 @@ namespace CarroDesk.Views
             string timeStr = TxtNewTime.Text.Trim();
             if (!TimeSpan.TryParse(timeStr, out _))
             {
-                MessageBox.Show("请输入正确的时间格式 (HH:mm)，例如 18:30", "格式错误", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(Loc.T("Monitor.InvalidTime", "请输入正确的时间格式 (HH:mm)，例如 18:30"), Loc.T("Msg.FormatError", "格式错误"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
             int b, c;
             if (!int.TryParse(TxtNewBrightness.Text, out b) || b < 0 || b > 100)
             {
-                MessageBox.Show("亮度值必须在 0 到 100 之间。", "格式错误", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(Loc.T("Monitor.BrightnessRange", "亮度值必须在 0 到 100 之间。"), Loc.T("Msg.FormatError", "格式错误"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
             if (!int.TryParse(TxtNewContrast.Text, out c) || c < 0 || c > 100)
             {
-                MessageBox.Show("对比度值必须在 0 到 100 之间。", "格式错误", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(Loc.T("Monitor.ContrastRange", "对比度值必须在 0 到 100 之间。"), Loc.T("Msg.FormatError", "格式错误"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
@@ -376,7 +377,7 @@ namespace CarroDesk.Views
                 var list = _modeSettings[selected.Name];
                 if (list.Count <= 1)
                 {
-                    MessageBox.Show("每个模式至少需要保留一个时间点。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                    MessageBox.Show(Loc.T("Monitor.KeepOneTimePoint", "每个模式至少需要保留一个时间点。"), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Information);
                     return;
                 }
                 list.Remove(setting);
@@ -415,26 +416,26 @@ namespace CarroDesk.Views
             var setting = GridTimeSettings.SelectedItem as MonitorTimeSetting;
             if (setting == null)
             {
-                MessageBox.Show("请先在列表中选中一个要更新的时间点行。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(Loc.T("Monitor.SelectTimeRow", "请先在列表中选中一个要更新的时间点行。"), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
             string timeStr = TxtNewTime.Text.Trim();
             if (!TimeSpan.TryParse(timeStr, out _))
             {
-                MessageBox.Show("请输入正确的时间格式 (HH:mm)，例如 18:30", "格式错误", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(Loc.T("Monitor.InvalidTime", "请输入正确的时间格式 (HH:mm)，例如 18:30"), Loc.T("Msg.FormatError", "格式错误"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
             if (!int.TryParse(TxtNewBrightness.Text, out int b) || b < 0 || b > 100)
             {
-                MessageBox.Show("亮度值必须在 0 到 100 之间。", "格式错误", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(Loc.T("Monitor.BrightnessRange", "亮度值必须在 0 到 100 之间。"), Loc.T("Msg.FormatError", "格式错误"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
             if (!int.TryParse(TxtNewContrast.Text, out int c) || c < 0 || c > 100)
             {
-                MessageBox.Show("对比度值必须在 0 到 100 之间。", "格式错误", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(Loc.T("Monitor.ContrastRange", "对比度值必须在 0 到 100 之间。"), Loc.T("Msg.FormatError", "格式错误"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
@@ -455,7 +456,7 @@ namespace CarroDesk.Views
 
         private void BtnResetDefaults_Click(object sender, RoutedEventArgs e)
         {
-            if (MessageBox.Show("确认恢复到默认显示器情境与时间表吗？", "确认", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
+            if (MessageBox.Show(Loc.T("Monitor.RestoreConfirm", "确认恢复到默认显示器情境与时间表吗？"), Loc.T("Common.Confirm", "确认"), MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
             {
                 var def = MonitorProfileConfig.CreateDefault();
                 _module.SaveAndApplyConfig(def);
@@ -468,7 +469,7 @@ namespace CarroDesk.Views
             var cfg = BuildCurrentConfigFromUi();
             _module.SaveAndApplyConfig(cfg);
             _module.ScheduleEngine.ApplyCurrentSetting(force: true);
-            MessageBox.Show($"已应用测试：当前情境 [{cfg.ActiveProfile}]", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show(Loc.T("Monitor.TestApplied", "已应用测试：当前情境 [{0}]", cfg.ActiveProfile), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
         private void BtnSave_Click(object sender, RoutedEventArgs e)

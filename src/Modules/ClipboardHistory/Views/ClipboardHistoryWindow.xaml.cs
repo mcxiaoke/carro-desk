@@ -326,7 +326,7 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
 
                 _isEnlarged = true;
                 BtnMaximize.Content = "❐";
-                BtnMaximize.ToolTip = "还原窗口大小";
+                BtnMaximize.ToolTip = Loc.T("Clipboard.RestoreTip", "还原窗口大小");
             }
             else
             {
@@ -337,7 +337,7 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
 
                 _isEnlarged = false;
                 BtnMaximize.Content = "🗖";
-                BtnMaximize.ToolTip = "放大 / 还原窗口";
+                BtnMaximize.ToolTip = Loc.T("Clipboard.MaximizeTip", "放大 / 还原窗口");
             }
         }
 

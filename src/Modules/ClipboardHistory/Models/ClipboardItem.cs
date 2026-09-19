@@ -1,4 +1,5 @@
 using System;
+using CarroDesk.Services.Localization;
 
 namespace CarroDesk.Modules.ClipboardHistory.Models
 {
@@ -37,7 +38,7 @@ namespace CarroDesk.Modules.ClipboardHistory.Models
             get
             {
                 string singleLine = PreviewText?.Replace("\r\n", " ")?.Replace("\n", " ")?.Replace("\r", " ");
-                return $"{(IsPinned ? "📌 " : "")}{singleLine} ({TextLength} 字)";
+                return string.Format("{0}{1} ({2} {3})", IsPinned ? "📌 " : "", singleLine, TextLength, Loc.T("Clipboard.CharUnit", "字"));
             }
         }
 

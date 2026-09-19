@@ -11,8 +11,8 @@ namespace CarroDesk.Modules.AudioSwitch
     public class AudioSwitchModule : ModuleBase<AudioSwitchConfig>
     {
         public override string Id => "AudioSwitch";
-        public override string Name => "音频输出设备切换";
-        public override string Description => "快速在扬声器与耳机之间一键切换默认音频输出端点";
+        public override string Name => Loc.T("Audio.ModuleName", "音频输出设备切换");
+        public override string Description => Loc.T("Audio.ModuleDesc", "快速在扬声器与耳机之间一键切换默认音频输出端点");
 
         private IAudioService _audioService;
         private IHotkeyService _hotkeys;
@@ -167,7 +167,7 @@ namespace CarroDesk.Modules.AudioSwitch
             var all = _audioService.GetPlaybackDevices();
             if (all == null || all.Count == 0)
             {
-                Context?.ShowNotification("未找到可用的音频输出设备");
+                Context?.ShowNotification(Loc.T("Audio.NoDevice", "未找到可用的音频输出设备"));
                 return false;
             }
 
@@ -183,7 +183,7 @@ namespace CarroDesk.Modules.AudioSwitch
             {
                 if (CurrentDefaultDevice != null && CurrentDefaultDevice.Id == available[0].Id)
                 {
-                    Context?.ShowNotification($"当前仅有一个可用的音频输出设备: {available[0].Name}");
+                    Context?.ShowNotification(Loc.T("Audio.OnlyOneDevice", "当前仅有一个可用的音频输出设备: {0}", available[0].Name));
                     return false;
                 }
                 else
@@ -360,7 +360,7 @@ namespace CarroDesk.Modules.AudioSwitch
             foreach (var d in GetPlaybackDevices())
             {
                 if (d == null) continue;
-                string name = d.Name ?? "(未知设备)";
+                string name = d.Name ?? Loc.T("Audio.UnknownDevice", "(未知设备)");
                 string icon = GetDeviceIcon(name);
                 string devId = d.Id;
                 bool isExcluded = IsDeviceExcluded(d);

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Text;
+using CarroDesk.Services.Localization;
 
 namespace CarroDesk.Services.Tasks
 {
@@ -337,13 +338,13 @@ namespace CarroDesk.Services.Tasks
             try
             {
                 string err;
-                if (!Validate(expr, out err)) return "表达式无效: " + err;
+                if (!Validate(expr, out err)) return Loc.T("Cron.Invalid", "表达式无效: {0}", err);
                 var parts = expr.Trim().Split(new char[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
                 string m = parts[0], h = parts[1], dom = parts[2], mon = parts[3], dow = parts[4];
 
-                if (expr.Trim() == "* * * * *") return "每分钟执行一次";
+                if (expr.Trim() == "* * * * *") return Loc.T("Cron.EveryMinute", "每分钟执行一次");
                 if (m.StartsWith("*/") && h == "*" && dom == "*" && mon == "*" && dow == "*")
-                    return "每隔 " + m.Substring(2) + " 分钟执行一次";
+                    return Loc.T("Cron.EveryNMinutes", "每隔 {0} 分钟执行一次", m.Substring(2));
 
                 int im, ih;
                 bool mIsNum = int.TryParse(m, out im);
@@ -351,24 +352,24 @@ namespace CarroDesk.Services.Tasks
 
                 if (mIsNum && hIsNum && dom == "*" && mon == "*")
                 {
-                    if (dow == "*") return string.Format("每天 {0:D2}:{1:D2} 执行", ih, im);
-                    if (dow == "1-5") return string.Format("工作日 (周一至周五) {0:D2}:{1:D2} 执行", ih, im);
+                    if (dow == "*") return Loc.T("Cron.Daily", "每天 {0:D2}:{1:D2} 执行", ih, im);
+                    if (dow == "1-5") return Loc.T("Cron.Weekdays", "工作日 (周一至周五) {0:D2}:{1:D2} 执行", ih, im);
                     if (dow == "0,6" || dow == "6,0" || dow == "7,6" || dow == "6,7")
-                        return string.Format("周末 (周六周日) {0:D2}:{1:D2} 执行", ih, im);
-                    if (dow == "1") return string.Format("每周一 {0:D2}:{1:D2} 执行", ih, im);
-                    if (dow == "0" || dow == "7") return string.Format("每周日 {0:D2}:{1:D2} 执行", ih, im);
+                        return Loc.T("Cron.Weekend", "周末 (周六周日) {0:D2}:{1:D2} 执行", ih, im);
+                    if (dow == "1") return Loc.T("Cron.WeeklyMonday", "每周一 {0:D2}:{1:D2} 执行", ih, im);
+                    if (dow == "0" || dow == "7") return Loc.T("Cron.WeeklySunday", "每周日 {0:D2}:{1:D2} 执行", ih, im);
                 }
 
                 if (mIsNum && hIsNum && mon == "*" && dow == "*" && int.TryParse(dom, out _))
                 {
-                    return string.Format("每月 {0} 号 {1:D2}:{2:D2} 执行", dom, ih, im);
+                    return Loc.T("Cron.Monthly", "每月 {0} 号 {1:D2}:{2:D2} 执行", dom, ih, im);
                 }
 
-                return "按规则执行: " + expr;
+                return Loc.T("Cron.ByRule", "按规则执行: {0}", expr);
             }
             catch
             {
-                return "有效表达式: " + expr;
+                return Loc.T("Cron.ValidExpression", "有效表达式: {0}", expr);
             }
         }
     }

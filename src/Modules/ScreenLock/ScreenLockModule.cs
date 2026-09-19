@@ -17,7 +17,7 @@ namespace CarroDesk.Modules.ScreenLock
     {
         public override string Id => "ScreenLock";
         public override string Name => Loc.T("Tray.ScreenLockTitle", "屏幕锁定与闲时保护");
-        public override string Description => "提供闲时伪锁屏保护、PIN验证与键盘输入防御";
+        public override string Description => Loc.T("Lock.ModuleDesc", "提供闲时伪锁屏保护、PIN验证与键盘输入防御");
 
         public LockController Controller { get; private set; }
 
@@ -527,7 +527,7 @@ namespace CarroDesk.Modules.ScreenLock
 
             var lbl = new TextBlock
             {
-                Text = "请输入暂停计时的分钟数 (1-1440)：",
+                Text = Loc.T("Lock.PromptPauseMinutes", "请输入暂停计时的分钟数 (1-1440)："),
                 Margin = new Thickness(0, 0, 0, 8),
                 FontSize = 13,
                 Foreground = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString("#FF374151")
@@ -576,7 +576,7 @@ namespace CarroDesk.Modules.ScreenLock
                     minutes = m;
                     return true;
                 }
-                MessageBox.Show("请输入 1 到 1440 之间的有效分钟数。", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(Loc.T("Msg.InvalidMinutes", "请输入 1 到 1440 之间的有效分钟数。"), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
             }
             return false;
         }

@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Windows.Interop;
 using CarroDesk.Core;
 using CarroDesk.Models;
+using CarroDesk.Services.Localization;
 
 namespace CarroDesk.Services.Tasks
 {
@@ -91,7 +92,7 @@ namespace CarroDesk.Services.Tasks
                 // 内部冲突检测
                 if (_chordToId.TryGetValue(chord, out int existingId) && _owner.TryGetValue(existingId, out string existingModule))
                 {
-                    error = $"快捷键 '{hotkey}' 与内部模块 [{existingModule}] 冲突";
+                    error = Loc.T("HotkeyErr.ConflictInternal", "快捷键 '{0}' 与内部模块 [{1}] 冲突", hotkey, existingModule);
                     return 0;
                 }
 
@@ -101,7 +102,7 @@ namespace CarroDesk.Services.Tasks
                 {
                     int e = Marshal.GetLastWin32Error();
                     error = e == 1409
-                        ? $"快捷键 '{hotkey}' 已被系统或其他外部程序占用 (Win32: 1409)"
+                        ? Loc.T("HotkeyErr.OccupiedExternal", "快捷键 '{0}' 已被系统或其他外部程序占用 (Win32: 1409)", hotkey)
                         : $"RegisterHotKey failed code={e}";
                     return 0;
                 }

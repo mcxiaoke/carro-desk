@@ -12,6 +12,7 @@ using CarroDesk.Core.Models;
 using CarroDesk.Modules.AudioSwitch;
 using CarroDesk.Modules.AudioSwitch.Models;
 using CarroDesk.Services.Tasks;
+using CarroDesk.Services.Localization;
 
 namespace CarroDesk.Views
 {
@@ -85,9 +86,9 @@ namespace CarroDesk.Views
         {
             get
             {
-                if (IsCurrentDefault) return "当前默认";
-                if (IsExcluded) return "已排除";
-                return "就绪";
+                if (IsCurrentDefault) return Loc.T("Audio.StatusCurrentDefault", "当前默认");
+                if (IsExcluded) return Loc.T("Audio.StatusExcluded", "已排除");
+                return Loc.T("Audio.StatusReady", "就绪");
             }
         }
 
@@ -149,8 +150,8 @@ namespace CarroDesk.Views
             ChkEnabled.IsChecked = config.Enabled;
             TxtHotkey.Text = config.Hotkey ?? "Ctrl+`";
             ChkPlaySound.IsChecked = config.PlayNotificationSound;
-            TxtSpeakerPattern.Text = config.SpeakerPattern ?? "扬声器";
-            TxtHeadphonePattern.Text = config.HeadphonePattern ?? "耳机";
+            TxtSpeakerPattern.Text = config.SpeakerPattern ?? Loc.T("Audio.Speaker", "扬声器");
+            TxtHeadphonePattern.Text = config.HeadphonePattern ?? Loc.T("Audio.Headset", "耳机");
 
             LoadAudioDevices(config.ExcludedDevices);
         }
@@ -176,18 +177,18 @@ namespace CarroDesk.Views
             if (currentDefault != null)
             {
                 string icon = GetDeviceIcon(currentDefault.Name);
-                StatusBadgeText.Text = $"当前默认: {icon} {currentDefault.Name}";
+                StatusBadgeText.Text = Loc.T("Audio.CurrentDefault", "当前默认: {0} {1}", icon, currentDefault.Name);
             }
             else
             {
-                StatusBadgeText.Text = "当前默认: (未检测到)";
+                StatusBadgeText.Text = Loc.T("Audio.CurrentDefaultNone", "当前默认: (未检测到)");
             }
 
             var rawDevices = audioSvc?.GetPlaybackDevices() ?? _module?.GetPlaybackDevices() ?? new List<AudioDeviceItem>();
             foreach (var d in rawDevices)
             {
                 if (d == null) continue;
-                string name = d.Name ?? "(未知设备)";
+                string name = d.Name ?? Loc.T("Audio.UnknownDevice", "(未知设备)");
                 string icon = GetDeviceIcon(name);
 
                 bool isExcluded = false;
@@ -219,14 +220,14 @@ namespace CarroDesk.Views
                 });
             }
 
-            TxtDeviceCount.Text = $"系统音频播放设备与排除策略 (共 {_devices.Count} 个):";
+            TxtDeviceCount.Text = Loc.T("Audio.DeviceListTitle", "系统音频播放设备与排除策略 (共 {0} 个):", _devices.Count);
         }
 
         private string GetDeviceIcon(string name)
         {
             if (string.IsNullOrEmpty(name)) return "🔈";
-            string sp = TxtSpeakerPattern?.Text?.Trim() ?? "扬声器";
-            string hp = TxtHeadphonePattern?.Text?.Trim() ?? "耳机";
+            string sp = TxtSpeakerPattern?.Text?.Trim() ?? Loc.T("Audio.Speaker", "扬声器");
+            string hp = TxtHeadphonePattern?.Text?.Trim() ?? Loc.T("Audio.Headset", "耳机");
 
             if (!string.IsNullOrEmpty(hp) && name.IndexOf(hp, StringComparison.OrdinalIgnoreCase) >= 0) return "🎧";
             if (!string.IsNullOrEmpty(sp) && name.IndexOf(sp, StringComparison.OrdinalIgnoreCase) >= 0) return "🔊";
@@ -269,12 +270,12 @@ namespace CarroDesk.Views
                 {
                     d.IsCurrentDefault = string.Equals(d.Id, vm.Id, StringComparison.OrdinalIgnoreCase);
                 }
-                StatusBadgeText.Text = $"当前默认: {vm.Icon} {vm.Name}";
-                TxtNotice.Text = $"已切换至默认: {vm.Name}";
+                StatusBadgeText.Text = Loc.T("Audio.CurrentDefault", "当前默认: {0} {1}", vm.Icon, vm.Name);
+                TxtNotice.Text = Loc.T("Audio.SwitchedTo", "已切换至默认: {0}", vm.Name);
             }
             else
             {
-                MessageBox.Show(this, $"切换至设备【{vm.Name}】失败，请检查设备是否连接正常。", "切换失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(this, Loc.T("Audio.SwitchFailed", "切换至设备【{0}】失败，请检查设备是否连接正常。", vm.Name), Loc.T("Audio.SwitchFailedTitle", "切换失败"), MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 
@@ -284,11 +285,11 @@ namespace CarroDesk.Views
             {
                 string clean = CleanDeviceNameForPattern(vm.Name);
                 TxtSpeakerPattern.Text = clean;
-                TxtNotice.Text = $"已将【{clean}】设为扬声器匹配关键字";
+                TxtNotice.Text = Loc.T("Audio.SetSpeakerKeyword", "已将【{0}】设为扬声器匹配关键字", clean);
             }
             else
             {
-                MessageBox.Show(this, "请先在下方列表中选择一个音频设备。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(this, Loc.T("Audio.SelectDeviceFirst", "请先在下方列表中选择一个音频设备。"), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Information);
             }
         }
 
@@ -298,11 +299,11 @@ namespace CarroDesk.Views
             {
                 string clean = CleanDeviceNameForPattern(vm.Name);
                 TxtHeadphonePattern.Text = clean;
-                TxtNotice.Text = $"已将【{clean}】设为耳机匹配关键字";
+                TxtNotice.Text = Loc.T("Audio.SetHeadsetKeyword", "已将【{0}】设为耳机匹配关键字", clean);
             }
             else
             {
-                MessageBox.Show(this, "请先在下方列表中选择一个音频设备。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(this, Loc.T("Audio.SelectDeviceFirst", "请先在下方列表中选择一个音频设备。"), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Information);
             }
         }
 
@@ -334,7 +335,7 @@ namespace CarroDesk.Views
         {
             var currentExclusions = _devices.Where(x => x.IsExcluded).Select(x => x.Name).ToList();
             LoadAudioDevices(currentExclusions);
-            TxtNotice.Text = "已刷新音频播放设备列表";
+            TxtNotice.Text = Loc.T("Audio.Refreshed", "已刷新音频播放设备列表");
         }
 
         private void OnClearExclusionsClick(object sender, RoutedEventArgs e)
@@ -344,7 +345,7 @@ namespace CarroDesk.Views
             {
                 d.IsExcluded = false;
             }
-            TxtNotice.Text = "已清除所有排除项";
+            TxtNotice.Text = Loc.T("Audio.ClearedExclusions", "已清除所有排除项");
         }
 
         private void OnTestToggleClick(object sender, RoutedEventArgs e)
@@ -371,36 +372,36 @@ namespace CarroDesk.Views
                     if (_module.CurrentDefaultDevice != null)
                     {
                         string icon = GetDeviceIcon(_module.CurrentDefaultDevice.Name);
-                        StatusBadgeText.Text = $"当前默认: {icon} {_module.CurrentDefaultDevice.Name}";
+                        StatusBadgeText.Text = Loc.T("Audio.CurrentDefault", "当前默认: {0} {1}", icon, _module.CurrentDefaultDevice.Name);
                     }
-                    TxtNotice.Text = "快捷切换成功！";
+                    TxtNotice.Text = Loc.T("Audio.QuickSwitchOk", "快捷切换成功！");
                 }
                 else
                 {
-                    TxtNotice.Text = "未切换 (可能仅有一个可用设备)";
+                    TxtNotice.Text = Loc.T("Audio.QuickSwitchSkipped", "未切换 (可能仅有一个可用设备)");
                 }
             }
             else
             {
-                TxtNotice.Text = "模块未挂载，无法测试切换";
+                TxtNotice.Text = Loc.T("Audio.ModuleNotMounted", "模块未挂载，无法测试切换");
             }
         }
 
         private void OnResetDefaultsClick(object sender, RoutedEventArgs e)
         {
-            var res = MessageBox.Show(this, "确定要恢复音频切换模块的默认配置吗？", "恢复默认", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            var res = MessageBox.Show(this, Loc.T("Audio.RestoreConfirm", "确定要恢复音频切换模块的默认配置吗？"), Loc.T("Common.ResetDefaults", "恢复默认"), MessageBoxButton.YesNo, MessageBoxImage.Question);
             if (res == MessageBoxResult.Yes)
             {
                 ChkEnabled.IsChecked = true;
                 TxtHotkey.Text = "Ctrl+`";
                 ChkPlaySound.IsChecked = true;
-                TxtSpeakerPattern.Text = "扬声器";
-                TxtHeadphonePattern.Text = "耳机";
+                TxtSpeakerPattern.Text = Loc.T("Audio.Speaker", "扬声器");
+                TxtHeadphonePattern.Text = Loc.T("Audio.Headset", "耳机");
                 foreach (var d in _devices)
                 {
                     d.IsExcluded = false;
                 }
-                TxtNotice.Text = "已恢复为默认配置";
+                TxtNotice.Text = Loc.T("Audio.Restored", "已恢复为默认配置");
             }
         }
 
@@ -411,7 +412,7 @@ namespace CarroDesk.Views
             {
                 if (!HotkeyHelper.Validate(hotkey, out string err))
                 {
-                    MessageBox.Show(this, $"快捷键格式不正确: {err}\n支持格式例如: Ctrl+`, Alt+F11, Win+Ctrl+A", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show(this, Loc.T("Msg.HotkeyInvalid", "快捷键格式不正确: {0}\n支持格式例如: {1}", err, "Ctrl+`, Alt+F11, Win+Ctrl+A"), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
             }
@@ -432,7 +433,7 @@ namespace CarroDesk.Views
             }
 
             _module?.OnConfigReloaded();
-            string msg = "音频输出设备切换配置已保存并生效";
+            string msg = Loc.T("Audio.ConfigSaved", "音频输出设备切换配置已保存并生效");
             _notifier?.Invoke(msg);
 
             DialogResult = true;

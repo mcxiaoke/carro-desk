@@ -9,6 +9,7 @@ using System.Windows.Threading;
 using CarroDesk.Core;
 using CarroDesk.Core.Models;
 using CarroDesk.Views;
+using CarroDesk.Services.Localization;
 
 namespace CarroDesk.Host.Services
 {
@@ -257,7 +258,7 @@ namespace CarroDesk.Host.Services
                 IModule module = null;
                 if (!_nodeOwner.TryGetValue(node, out module)) module = null;
                 TryLog(module, "托盘菜单点击执行异常（ClickAction）", ex);
-                try { _notify?.Invoke((node.Header ?? "托盘操作") + " 执行失败", "CarroDesk"); }
+                try { _notify?.Invoke((node.Header ?? Loc.T("Msg.TrayAction", "托盘操作")) + " " + Loc.T("Msg.TrayActionFailed", "执行失败"), "CarroDesk"); }
                 catch { }
             }
         }
@@ -277,7 +278,7 @@ namespace CarroDesk.Host.Services
                     IModule mod = null;
                     if (!_nodeOwner.TryGetValue(n, out mod)) mod = module;
                     TryLog(mod, "托盘菜单点击执行异常（ClickAction）", ex);
-                    try { _notify?.Invoke((n.Header ?? "托盘操作") + " 执行失败", "CarroDesk"); }
+                    try { _notify?.Invoke((n.Header ?? Loc.T("Msg.TrayAction", "托盘操作")) + " " + Loc.T("Msg.TrayActionFailed", "执行失败"), "CarroDesk"); }
                     catch { }
                 },
                 BackgroundPropertyWarn = (n, propName) =>

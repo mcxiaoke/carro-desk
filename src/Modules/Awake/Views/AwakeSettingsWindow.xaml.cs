@@ -10,6 +10,7 @@ using CarroDesk.Core;
 using CarroDesk.Modules.Awake;
 using CarroDesk.Modules.Awake.Models;
 using CarroDesk.Services;
+using CarroDesk.Services.Localization;
 
 namespace CarroDesk.Views
 {
@@ -83,32 +84,32 @@ namespace CarroDesk.Views
             {
                 StatusBadge.Background = new SolidColorBrush(Color.FromRgb(0xFE, 0xF3, 0xC7));
                 StatusBadgeText.Foreground = new SolidColorBrush(Color.FromRgb(0x92, 0x40, 0x0E));
-                StatusBadgeText.Text = "已暂停 (电池供电)";
+                StatusBadgeText.Text = Loc.T("Awake.StatusPausedBattery", "已暂停 (电池供电)");
             }
             else if (service.IsProcessTriggered)
             {
                 StatusBadge.Background = new SolidColorBrush(Color.FromRgb(0xDC, 0xFD, 0xE7));
                 StatusBadgeText.Foreground = new SolidColorBrush(Color.FromRgb(0x16, 0x65, 0x34));
-                StatusBadgeText.Text = $"进程唤醒中 ({service.ActiveProcessTrigger})";
+                StatusBadgeText.Text = Loc.T("Awake.StatusProcessAwake", "进程唤醒中 ({0})", service.ActiveProcessTrigger);
             }
             else if (service.Mode == AwakeMode.Indefinite)
             {
                 StatusBadge.Background = new SolidColorBrush(Color.FromRgb(0xDB, 0xEA, 0xFE));
                 StatusBadgeText.Foreground = new SolidColorBrush(Color.FromRgb(0x1E, 0x40, 0xAF));
-                StatusBadgeText.Text = "无限期保持唤醒";
+                StatusBadgeText.Text = Loc.T("Awake.StatusIndefinite", "无限期保持唤醒");
             }
             else if (service.Mode == AwakeMode.Timed || service.Mode == AwakeMode.UntilTime)
             {
                 StatusBadge.Background = new SolidColorBrush(Color.FromRgb(0xDB, 0xEA, 0xFE));
                 StatusBadgeText.Foreground = new SolidColorBrush(Color.FromRgb(0x1E, 0x40, 0xAF));
                 var rem = service.RemainingTime;
-                StatusBadgeText.Text = $"倒计时中 (剩余 {(int)rem.TotalMinutes}分)";
+                StatusBadgeText.Text = Loc.T("Awake.StatusCountdown", "倒计时中 (剩余 {0}分)", (int)rem.TotalMinutes);
             }
             else
             {
                 StatusBadge.Background = new SolidColorBrush(Color.FromRgb(0xF1, 0xF5, 0xF9));
                 StatusBadgeText.Foreground = new SolidColorBrush(Color.FromRgb(0x47, 0x55, 0x69));
-                StatusBadgeText.Text = "已关闭 (跟随系统)";
+                StatusBadgeText.Text = Loc.T("Awake.StatusOff", "已关闭 (跟随系统)");
             }
         }
 
@@ -119,7 +120,7 @@ namespace CarroDesk.Views
                 var procs = ProcessHelper.GetRunningWindowProcesses();
                 if (procs.Count == 0)
                 {
-                    MessageBox.Show("未找到具有窗口的运行中应用程序。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                    MessageBox.Show(Loc.T("Awake.NoWindowApps", "未找到具有窗口的运行中应用程序。"), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Information);
                     return;
                 }
 
@@ -141,7 +142,7 @@ namespace CarroDesk.Views
             }
             catch (Exception ex)
             {
-                MessageBox.Show("获取运行中进程失败：" + ex.Message, "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(Loc.T("Awake.ProcessListFailed", "获取运行中进程失败：{0}", ex.Message), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 
@@ -177,8 +178,8 @@ namespace CarroDesk.Views
             {
                 var ofd = new Microsoft.Win32.OpenFileDialog
                 {
-                    Filter = "可执行文件 (*.exe)|*.exe|所有文件 (*.*)|*.*",
-                    Title = "选择关联进程应用程序 (.exe)"
+                    Filter = Loc.T("Common.ExeFilter", "可执行文件 (*.exe)|*.exe|所有文件 (*.*)|*.*"),
+                    Title = Loc.T("Msg.SelectProcessExe", "选择关联进程应用程序 (.exe)")
                 };
                 if (ofd.ShowDialog(this) == true)
                 {
@@ -189,7 +190,7 @@ namespace CarroDesk.Views
             }
             catch (Exception ex)
             {
-                MessageBox.Show(this, "选择文件失败: " + ex.Message, "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(this, Loc.T("Msg.OpenFileFailed", "选择文件失败: {0}", ex.Message), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 
@@ -206,7 +207,7 @@ namespace CarroDesk.Views
         private void OnClearProcessesClick(object sender, RoutedEventArgs e)
         {
             if (_processes == null || _processes.Count == 0) return;
-            if (MessageBox.Show(this, "确定要清空所有关联进程吗？", "确认清空", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
+            if (MessageBox.Show(this, Loc.T("Awake.ClearConfirm", "确定要清空所有关联进程吗？"), Loc.T("Msg.ConfirmClear", "确认清空"), MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
             {
                 _processes.Clear();
                 ProcessListBox.ItemsSource = null;
@@ -216,7 +217,7 @@ namespace CarroDesk.Views
 
         private void OnResetDefaultsClick(object sender, RoutedEventArgs e)
         {
-            if (MessageBox.Show("确定要将设置恢复为默认配置吗？", "确认", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            if (MessageBox.Show(Loc.T("Msg.RestoreDefaultsConfirm", "确定要将设置恢复为默认配置吗？"), Loc.T("Common.Confirm", "确认"), MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
                 return;
 
             var def = AwakeConfig.CreateDefault();
@@ -293,7 +294,7 @@ namespace CarroDesk.Views
                     }
                     else
                     {
-                        MessageBox.Show("指定时刻格式无效，请输入有效时间如 18:00。", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        MessageBox.Show(Loc.T("Awake.InvalidTime", "指定时刻格式无效，请输入有效时间如 18:00。"), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
                         return;
                     }
                 }

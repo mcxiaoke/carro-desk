@@ -8,6 +8,14 @@ namespace CarroDesk.Tests
     [TestClass]
     public class CronHelperTests
     {
+        [TestInitialize]
+        public void PinLanguage()
+        {
+            // ExplainCron 的文案随语言变化，本类断言中文字面量，
+            // 因此显式固定语言，消除对测试执行顺序的隐式依赖
+            CarroDesk.Services.Localization.I18nService.Instance.SetLanguage("zh-CN", false);
+        }
+
         [TestMethod]
         public void Validate_ValidExpressions_ReturnsTrue()
         {

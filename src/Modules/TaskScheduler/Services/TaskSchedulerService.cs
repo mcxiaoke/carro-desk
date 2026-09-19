@@ -8,6 +8,7 @@ using CarroDesk.Core;
 using CarroDesk.Models;
 using CarroDesk.Modules.TaskScheduler.Models;
 using CarroDesk.Services.Tasks.Triggers;
+using CarroDesk.Services.Localization;
 
 namespace CarroDesk.Services.Tasks
 {
@@ -237,7 +238,7 @@ namespace CarroDesk.Services.Tasks
             {
                 if (task.Options != null && !task.Options.NotifyOnFailure) return;
                 if (code == 0) return;
-                string msg = "任务失败 [" + task.Name + "] exit=" + code + "，详见 logs/task-" + task.Name + ".log";
+                string msg = Loc.T("Tasks.RunFailed", "任务失败 [{0}] exit={1}，详见 logs/task-{2}.log", task.Name, code, task.Name);
                 try
                 {
                     if (_notificationService != null)
