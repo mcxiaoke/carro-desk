@@ -147,8 +147,15 @@
                     <StackPanel>
                         <TextBlock Text="{loc:Loc Config.BasicSettings}" FontWeight="Bold" Foreground="#FF333333" Margin="0,0,0,6"/>
                         <Grid>
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" MinWidth="110"/><ColumnDefinition Width="130"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" MinWidth="110"/><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
 
                             <TextBlock Text="{loc:Loc Config.LanguageLabel}" VerticalAlignment="Center" Foreground="#FF444444" Margin="0,0,10,0"/>
                             <ComboBox x:Name="LanguageBox" Grid.Column="1" Height="26" Margin="0,3" SelectionChanged="LanguageBox_SelectionChanged">
@@ -180,9 +187,9 @@
 
                             <TextBlock Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2" Text="{loc:Loc Config.OpacityHint}" Foreground="#FF888888" FontSize="11" Margin="0,2,0,0"/>
 
-                            <TextBlock Grid.Row="5" Text="全局锁屏热键" VerticalAlignment="Center" Margin="0,6,10,0" Foreground="#FF444444"/>
+                            <TextBlock Grid.Row="5" Text="{loc:Loc Config.HotkeyLabel, Default='全局锁屏热键'}" VerticalAlignment="Center" Margin="0,6,10,0" Foreground="#FF444444"/>
                             <TextBox x:Name="HotkeyBox" Grid.Row="5" Grid.Column="1" Height="26" Margin="0,6,0,0" VerticalContentAlignment="Center" Padding="4,2" Text="Ctrl+Alt+L"/>
-                            <TextBlock Grid.Row="5" Grid.Column="2" Text="(一键立即锁屏，如 Ctrl+Alt+L)" VerticalAlignment="Center" Foreground="#FF888888" FontSize="11" Margin="8,6,0,0"/>
+                            <TextBlock Grid.Row="5" Grid.Column="2" Text="{loc:Loc Config.HotkeyDesc, Default='(一键立即锁屏，如 Ctrl+Alt+L)'}" VerticalAlignment="Center" Foreground="#FF888888" FontSize="11" Margin="8,6,0,0"/>
                         </Grid>
                     </StackPanel>
                 </Border>

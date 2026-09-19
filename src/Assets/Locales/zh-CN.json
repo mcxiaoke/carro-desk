@@ -203,6 +203,8 @@
     "OpacityTranslucent": "微透",
     "OpacityOpaque": "高遮蔽",
     "OpacityHint": "0.30 最透 · 1.00 完全遮挡不透明",
+    "HotkeyLabel": "全局锁屏热键",
+    "HotkeyDesc": "(一键立即锁屏，如 Ctrl+Alt+L)",
     "SystemIntegration": "系统集成",
     "AutoStartLabel": "开机自启（写入注册表 Run）",
     "UnlockOnResumeLabel": "Windows 解锁后自动解除伪锁屏（推荐开启）",

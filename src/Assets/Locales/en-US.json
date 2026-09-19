@@ -203,6 +203,8 @@
     "OpacityTranslucent": "Medium",
     "OpacityOpaque": "Opaque",
     "OpacityHint": "0.30 Translucent · 1.00 Fully Opaque",
+    "HotkeyLabel": "Lock Hotkey",
+    "HotkeyDesc": "(Press to lock immediately, e.g. Ctrl+Alt+L)",
     "SystemIntegration": "System Integration",
     "AutoStartLabel": "Start with Windows (Registry Run)",
     "UnlockOnResumeLabel": "Auto-unlock ScreenLock when Windows session is unlocked",

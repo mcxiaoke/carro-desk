@@ -25,6 +25,7 @@
     <Compile Include="AppAutoMuteModuleTests.cs" />
     <Compile Include="ConfigAndTriggerTests.cs" />
     <Compile Include="ClipboardHistoryModuleTests.cs" />
+    <Compile Include="UiRenderingTests.cs" />
   </ItemGroup>
 
   <ItemGroup>

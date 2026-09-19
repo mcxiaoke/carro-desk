@@ -123,6 +123,20 @@ namespace CarroDesk.Services.Localization
             }
         }
 
+        public string FormatWithDefault(string key, string defaultValue, params object[] args)
+        {
+            var pattern = Get(key, defaultValue);
+            if (args == null || args.Length == 0) return pattern;
+            try
+            {
+                return string.Format(_currentCulture, pattern, args);
+            }
+            catch
+            {
+                return pattern;
+            }
+        }
+
         private void LoadEmbeddedLocales()
         {
             var asm = Assembly.GetExecutingAssembly();

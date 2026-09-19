@@ -22,6 +22,8 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
         private double _normalLeft;
         private double _normalTop;
 
+        public bool AutoCloseOnDeactivate { get; set; } = true;
+
         public ClipboardHistoryWindow(IClipboardHistoryService service)
         {
             InitializeComponent();
@@ -36,6 +38,11 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
 
         private void OnWindowDeactivated(object sender, EventArgs e)
         {
+            if (!AutoCloseOnDeactivate)
+            {
+                return;
+            }
+
             // 治本方案：若当前窗口内部仍具有键盘焦点（如正在使用输入法 IME 组合、选中文本），绝不误隐
             if (IsKeyboardFocusWithin)
             {
