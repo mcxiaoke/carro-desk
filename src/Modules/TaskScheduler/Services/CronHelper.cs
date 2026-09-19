@@ -15,13 +15,38 @@ namespace CarroDesk.Services.Tasks
         public int MonthMask { get; }        // 1..12 -> 13 bits
         public int DayOfWeekMask { get; }    // 0..6  -> 7 bits (0/7 are Sunday)
 
-        public CompiledCronExpression(long min, int hr, int dom, int mon, int dow)
+        /// <summary>DayOfMonth 字段是否被限定（非 * / ?）。用于还原标准 cron 的 DOM/DOW 组合语义。</summary>
+        public bool DayOfMonthRestricted { get; }
+
+        /// <summary>DayOfWeek 字段是否被限定（非 * / ?）。</summary>
+        public bool DayOfWeekRestricted { get; }
+
+        public CompiledCronExpression(long min, int hr, int dom, int mon, int dow,
+            bool dayOfMonthRestricted, bool dayOfWeekRestricted)
         {
             MinuteMask = min;
             HourMask = hr;
             DayOfMonthMask = dom;
             MonthMask = mon;
             DayOfWeekMask = dow;
+            DayOfMonthRestricted = dayOfMonthRestricted;
+            DayOfWeekRestricted = dayOfWeekRestricted;
+        }
+
+        /// <summary>
+        /// 日期匹配。
+        /// 标准 cron 语义：DOM 与 DOW **同时**被限定时取"或"，只限定其中一个时取"与"
+        /// （未限定的字段掩码为全 1，因此"与"形式天然退化为只判断被限定的那个）。
+        /// 例如 `0 9 1 * 1` 表示"每月 1 号**或**每周一 09:00"，原实现恒用"与"，
+        /// 变成只在"1 号且是周一"触发，导致用户配置静默失效。
+        /// </summary>
+        public bool IsDayMatch(DateTime dt)
+        {
+            bool domMatch = ((1 << dt.Day) & DayOfMonthMask) != 0;
+            bool dowMatch = ((1 << (int)dt.DayOfWeek) & DayOfWeekMask) != 0;
+
+            if (DayOfMonthRestricted && DayOfWeekRestricted) return domMatch || dowMatch;
+            return domMatch && dowMatch;
         }
 
         public bool IsMatch(DateTime dt)
@@ -29,15 +54,16 @@ namespace CarroDesk.Services.Tasks
             if (((1L << dt.Minute) & MinuteMask) == 0) return false;
             if (((1 << dt.Hour) & HourMask) == 0) return false;
             if (((1 << dt.Month) & MonthMask) == 0) return false;
-            if (((1 << dt.Day) & DayOfMonthMask) == 0) return false;
-            int dow = (int)dt.DayOfWeek;
-            if (((1 << dow) & DayOfWeekMask) == 0) return false;
+            if (!IsDayMatch(dt)) return false;
             return true;
         }
     }
 
     public static class CronHelper
     {
+        /// <summary>编译结果缓存上限（防御性，正常配置远小于此值）。</summary>
+        private const int MaxCacheEntries = 256;
+
         private static readonly ConcurrentDictionary<string, CompiledCronExpression> _cache =
             new ConcurrentDictionary<string, CompiledCronExpression>(StringComparer.Ordinal);
 
@@ -117,21 +143,44 @@ namespace CarroDesk.Services.Tasks
         public static CompiledCronExpression Compile(string expr)
         {
             if (string.IsNullOrWhiteSpace(expr)) return null;
-            return _cache.GetOrAdd(expr, e =>
-            {
-                string err;
-                if (!Validate(e, out err)) return null;
-                var parts = e.Trim().Split(new char[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
-                if (parts.Length != 5) return null;
 
-                long minMask = ParseFieldMask64(parts[0], 0, 59);
-                int hrMask = (int)ParseFieldMask64(parts[1], 0, 23);
-                int domMask = (int)ParseFieldMask64(parts[2], 1, 31);
-                int monMask = (int)ParseFieldMask64(parts[3], 1, 12);
-                int dowMask = ParseDowMask(parts[4]);
+            string key = expr.Trim();
+            CompiledCronExpression cached;
+            if (_cache.TryGetValue(key, out cached)) return cached;
 
-                return new CompiledCronExpression(minMask, hrMask, domMask, monMask, dowMask);
-            });
+            var compiled = Build(key);
+            if (compiled == null) return null;
+
+            // 简单容量上限：表达式来自用户配置，正常数量有限，
+            // 这里只是防御异常输入造成的缓存无界增长。
+            if (_cache.Count >= MaxCacheEntries) _cache.Clear();
+            _cache[key] = compiled;
+            return compiled;
+        }
+
+        private static CompiledCronExpression Build(string expr)
+        {
+            string err;
+            if (!Validate(expr, out err)) return null;
+            var parts = expr.Trim().Split(new char[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length != 5) return null;
+
+            long minMask = ParseFieldMask64(parts[0], 0, 59);
+            int hrMask = (int)ParseFieldMask64(parts[1], 0, 23);
+            int domMask = (int)ParseFieldMask64(parts[2], 1, 31);
+            int monMask = (int)ParseFieldMask64(parts[3], 1, 12);
+            int dowMask = ParseDowMask(parts[4]);
+
+            bool domRestricted = IsRestricted(parts[2]);
+            bool dowRestricted = IsRestricted(parts[4]);
+
+            return new CompiledCronExpression(minMask, hrMask, domMask, monMask, dowMask, domRestricted, dowRestricted);
+        }
+
+        private static bool IsRestricted(string field)
+        {
+            return !string.Equals(field, "*", StringComparison.Ordinal) &&
+                   !string.Equals(field, "?", StringComparison.Ordinal);
         }
 
         private static long ParseFieldMask64(string field, int min, int max)
@@ -258,8 +307,7 @@ namespace CarroDesk.Services.Tasks
                 }
 
                 // 2. 日期或星期不匹配 -> 直接跳跃至次日 00:00
-                int dow = (int)cur.DayOfWeek;
-                if (((1 << cur.Day) & compiled.DayOfMonthMask) == 0 || ((1 << dow) & compiled.DayOfWeekMask) == 0)
+                if (!compiled.IsDayMatch(cur))
                 {
                     cur = cur.Date.AddDays(1);
                     continue;
