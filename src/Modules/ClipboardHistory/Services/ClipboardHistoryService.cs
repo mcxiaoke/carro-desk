@@ -91,13 +91,9 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
                 }
                 else
                 {
-                    // 3. 截断预览规则
+                    // 3. 截断预览规则（支持最多显示 3 行与自定义最大字数）
                     int maxChars = _config != null ? Math.Max(10, _config.MaxPreviewChars) : 100;
-                    string preview = rawText.Length > maxChars
-                        ? rawText.Substring(0, maxChars) + "..."
-                        : rawText;
-
-                    preview = preview.Replace("\r\n", " ").Replace("\n", " ").Replace("\r", " ").Trim();
+                    string preview = ClipboardItem.BuildPreviewText(rawText, maxChars);
 
                     var item = new ClipboardItem
                     {

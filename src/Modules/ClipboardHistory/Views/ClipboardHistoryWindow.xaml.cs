@@ -3,9 +3,11 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using CarroDesk.Modules.ClipboardHistory.Models;
 using CarroDesk.Modules.ClipboardHistory.Services;
+using CarroDesk.Services.Localization;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 
 namespace CarroDesk.Modules.ClipboardHistory.Views
@@ -14,6 +16,11 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
     {
         private readonly IClipboardHistoryService _service;
         private List<ClipboardItem> _allItems = new List<ClipboardItem>();
+        private bool _isEnlarged;
+        private double _normalWidth = 460;
+        private double _normalHeight = 540;
+        private double _normalLeft;
+        private double _normalTop;
 
         public ClipboardHistoryWindow(IClipboardHistoryService service)
         {
@@ -113,7 +120,7 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
             var list = filtered.ToList();
             HistoryList.ItemsSource = list;
 
-            TxtHeaderInfo.Text = $"共 {list.Count} 条记录";
+            TxtHeaderInfo.Text = Loc.T("Clipboard.TotalCount", "共 {0} 条记录", list.Count);
             TxtEmptyHint.Visibility = list.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
             if (list.Count > 0)
@@ -235,7 +242,8 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
         {
             if (HistoryList.SelectedItem is ClipboardItem item)
             {
-                MessageBox.Show(item.FullText, $"剪贴板详情 ({item.TextLength} 字符)", MessageBoxButton.OK, MessageBoxImage.Information);
+                string title = Loc.T("Clipboard.DetailsTitle", "剪贴板详情") + $" ({item.TextLength} " + Loc.T("Clipboard.CharsFormat", "{0} 字符", "").Trim() + ")";
+                MessageBox.Show(item.FullText, title, MessageBoxButton.OK, MessageBoxImage.Information);
             }
         }
 
@@ -266,10 +274,11 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
 
             int pinnedCount = _allItems.Count(x => x.IsPinned);
             string prompt = pinnedCount > 0
-                ? $"确定要清空剪贴板历史记录吗？\n\n(已固定的 {pinnedCount} 条记录将被保留)"
-                : "确定要清空所有剪贴板历史记录吗？此操作不可撤销。";
+                ? Loc.T("Clipboard.ClearPreservePinnedPrompt", "确定要清空剪贴板历史记录吗？\n\n(已固定的 {0} 条记录将被保留)", pinnedCount)
+                : Loc.T("Clipboard.ClearConfirm", "确定要清空全部剪贴板历史记录吗？此操作不可撤销。");
 
-            if (MessageBox.Show(prompt, "清空确认", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
+            string title = Loc.T("Common.Confirm", "确认");
+            if (MessageBox.Show(prompt, title, MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
             {
                 _service.ClearAll(preservePinned: true);
                 RefreshList();
@@ -279,6 +288,65 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
         private void BtnClose_Click(object sender, RoutedEventArgs e)
         {
             Hide();
+        }
+
+        private void Header_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.ButtonState == MouseButtonState.Pressed)
+            {
+                DragMove();
+            }
+        }
+
+        private void BtnMaximize_Click(object sender, RoutedEventArgs e)
+        {
+            var workArea = SystemParameters.WorkArea;
+            if (!_isEnlarged)
+            {
+                _normalWidth = Width;
+                _normalHeight = Height;
+                _normalLeft = Left;
+                _normalTop = Top;
+
+                // 放大为宽敞的大窗口展示更多内容
+                double targetW = Math.Min(780, workArea.Width - 40);
+                double targetH = Math.Min(720, workArea.Height - 60);
+
+                Width = targetW;
+                Height = targetH;
+                Left = workArea.Left + (workArea.Width - targetW) / 2;
+                Top = workArea.Top + (workArea.Height - targetH) / 2 - 20;
+
+                _isEnlarged = true;
+                BtnMaximize.Content = "❐";
+                BtnMaximize.ToolTip = "还原窗口大小";
+            }
+            else
+            {
+                Width = _normalWidth;
+                Height = _normalHeight;
+                Left = _normalLeft;
+                Top = _normalTop;
+
+                _isEnlarged = false;
+                BtnMaximize.Content = "🗖";
+                BtnMaximize.ToolTip = "放大 / 还原窗口";
+            }
+        }
+
+        private void ResizeGripThumb_DragDelta(object sender, DragDeltaEventArgs e)
+        {
+            double newW = Width + e.HorizontalChange;
+            double newH = Height + e.VerticalChange;
+
+            if (newW >= MinWidth && newW <= MaxWidth)
+            {
+                Width = newW;
+            }
+            if (newH >= MinHeight && newH <= MaxHeight)
+            {
+                Height = newH;
+            }
         }
 
         private void ClipboardHistoryWindow_KeyDown(object sender, KeyEventArgs e)
