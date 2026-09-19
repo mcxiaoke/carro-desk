@@ -25,6 +25,7 @@ namespace CarroDesk.Tests
             Assert.AreEqual("Win+Shift+W", config.Hotkey);
             Assert.IsTrue(config.DisableOnBattery);
             Assert.AreEqual(20, config.BatteryThreshold);
+            Assert.AreEqual(120, config.AutoAwakeExitDelaySeconds);
             Assert.IsNotNull(config.CustomPresets);
             Assert.IsTrue(config.CustomPresets.Contains(30));
             Assert.IsNotNull(config.AutoAwakeProcesses);
@@ -120,6 +121,7 @@ namespace CarroDesk.Tests
                 Hotkey = "Ctrl+Shift+F9",
                 DisableOnBattery = true,
                 BatteryThreshold = 30,
+                AutoAwakeExitDelaySeconds = 90,
                 AutoAwakeProcesses = new System.Collections.Generic.List<string> { "blender", "ffmpeg" }
             };
 
@@ -132,6 +134,7 @@ namespace CarroDesk.Tests
             Assert.AreEqual(60, loadedConfig.DefaultDurationMinutes);
             Assert.AreEqual("Ctrl+Shift+F9", loadedConfig.Hotkey);
             Assert.AreEqual(30, loadedConfig.BatteryThreshold);
+            Assert.AreEqual(90, loadedConfig.AutoAwakeExitDelaySeconds);
             Assert.AreEqual(2, loadedConfig.AutoAwakeProcesses.Count);
             Assert.AreEqual("blender", loadedConfig.AutoAwakeProcesses[0]);
             Assert.AreEqual("ffmpeg", loadedConfig.AutoAwakeProcesses[1]);

@@ -51,6 +51,7 @@ namespace CarroDesk.Modules.Awake.Services
         private bool _isBatteryPaused = false;
         private bool _isProcessTriggered = false;
         private string _activeProcessTrigger = string.Empty;
+        private int _processExitPendingSeconds = 0;
         private int _tickCount = 0;
 
         public AwakeMode Mode => _mode;
@@ -122,6 +123,7 @@ namespace CarroDesk.Modules.Awake.Services
             _isProcessTriggered = false;
             _activeProcessTrigger = string.Empty;
             _isBatteryPaused = false;
+            _processExitPendingSeconds = 0;
 
             ApplyExecutionState();
             StateChanged?.Invoke();
@@ -133,6 +135,7 @@ namespace CarroDesk.Modules.Awake.Services
             _expireTime = DateTime.MinValue;
             _isProcessTriggered = false;
             _activeProcessTrigger = string.Empty;
+            _processExitPendingSeconds = 0;
 
             ApplyExecutionState();
             StateChanged?.Invoke();
@@ -150,6 +153,7 @@ namespace CarroDesk.Modules.Awake.Services
             _expireTime = DateTime.Now.AddMinutes(minutes);
             _isProcessTriggered = false;
             _activeProcessTrigger = string.Empty;
+            _processExitPendingSeconds = 0;
 
             ApplyExecutionState();
             StateChanged?.Invoke();
@@ -168,6 +172,7 @@ namespace CarroDesk.Modules.Awake.Services
             _expireTime = target;
             _isProcessTriggered = false;
             _activeProcessTrigger = string.Empty;
+            _processExitPendingSeconds = 0;
 
             ApplyExecutionState();
             StateChanged?.Invoke();
@@ -236,6 +241,24 @@ namespace CarroDesk.Modules.Awake.Services
                     SetPassive();
                     Expired?.Invoke();
                     return;
+                }
+            }
+
+            // 进程退出缓冲倒计时（若处于缓冲期）
+            if (_processExitPendingSeconds > 0)
+            {
+                _processExitPendingSeconds--;
+                if (_processExitPendingSeconds <= 0)
+                {
+                    _logger?.LogInfo("Awake", "目标进程退出缓冲期已结束，恢复默认电源状态");
+                    if (_isProcessTriggered && _mode == AwakeMode.Indefinite)
+                    {
+                        string oldProc = _activeProcessTrigger;
+                        _isProcessTriggered = false;
+                        _activeProcessTrigger = string.Empty;
+                        SetPassive();
+                        ProcessTriggered?.Invoke(false, oldProc);
+                    }
                 }
             }
 
@@ -327,7 +350,14 @@ namespace CarroDesk.Modules.Awake.Services
                 if (!string.IsNullOrEmpty(matchedProc))
                 {
                     // 检测到目标进程正在运行
-                    if (_mode == AwakeMode.Passive)
+                    if (_processExitPendingSeconds > 0)
+                    {
+                        // 处于退出缓冲期内进程重新启动，直接取消退出倒计时，继续保持唤醒
+                        _logger?.LogInfo("Awake", $"目标进程 '{matchedProc}' 在退出缓冲期内重新恢复运行，已取消退出倒计时");
+                        _processExitPendingSeconds = 0;
+                        _activeProcessTrigger = matchedProc;
+                    }
+                    else if (_mode == AwakeMode.Passive)
                     {
                         _isProcessTriggered = true;
                         _activeProcessTrigger = matchedProc;
@@ -340,14 +370,26 @@ namespace CarroDesk.Modules.Awake.Services
                 }
                 else
                 {
-                    // 目标进程全部退出
+                    // 目标进程当前未检测到
                     if (_isProcessTriggered && _mode == AwakeMode.Indefinite)
                     {
-                        string oldProc = _activeProcessTrigger;
-                        _isProcessTriggered = false;
-                        _activeProcessTrigger = string.Empty;
-                        SetPassive();
-                        ProcessTriggered?.Invoke(false, oldProc);
+                        int delaySeconds = _config != null ? Math.Max(0, _config.AutoAwakeExitDelaySeconds) : 120;
+                        if (delaySeconds <= 0)
+                        {
+                            // 未配置缓冲延时，立即退出
+                            _processExitPendingSeconds = 0;
+                            string oldProc = _activeProcessTrigger;
+                            _isProcessTriggered = false;
+                            _activeProcessTrigger = string.Empty;
+                            SetPassive();
+                            ProcessTriggered?.Invoke(false, oldProc);
+                        }
+                        else if (_processExitPendingSeconds <= 0)
+                        {
+                            // 首次检测到退出，开启倒计时缓冲
+                            _processExitPendingSeconds = delaySeconds;
+                            _logger?.LogInfo("Awake", $"检测到目标进程已无运行实例，进入退出缓冲倒计时 ({delaySeconds} 秒)");
+                        }
                     }
                 }
             }

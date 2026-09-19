@@ -32,6 +32,9 @@ namespace CarroDesk.Modules.Awake.Models
         /// <summary>检测到以下进程运行时自动保持唤醒</summary>
         public List<string> AutoAwakeProcesses { get; set; } = new List<string>();
 
+        /// <summary>目标进程退出后延迟恢复的时间（秒），防止批处理或多任务频繁启停（默认 120 秒，0 为立即恢复）</summary>
+        public int AutoAwakeExitDelaySeconds { get; set; } = 120;
+
         public static AwakeConfig CreateDefault()
         {
             return new AwakeConfig();

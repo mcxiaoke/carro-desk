@@ -228,6 +228,17 @@
                                 </ContextMenu>
                             </ListBox.ContextMenu>
                         </ListBox>
+
+                        <Grid Margin="0,8,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="60"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="退出缓冲时间：" VerticalAlignment="Center" FontSize="12" Foreground="#FF475569"/>
+                            <TextBox x:Name="ExitDelayBox" Grid.Column="1" Height="24" Margin="6,0,4,0" TextAlignment="Center" Text="120"/>
+                            <TextBlock Grid.Column="2" Text="秒 (进程退出后延迟恢复的缓冲时间，设为 0 则立即恢复)" VerticalAlignment="Center" Foreground="#FF64748B" FontSize="11"/>
+                        </Grid>
                     </StackPanel>
                 </Border>
             </StackPanel>

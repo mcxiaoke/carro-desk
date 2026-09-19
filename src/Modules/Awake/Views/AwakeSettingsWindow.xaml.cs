@@ -68,6 +68,7 @@ namespace CarroDesk.Views
             DisableOnBatteryBox.IsChecked = config.DisableOnBattery;
             BatteryThresholdBox.Text = config.BatteryThreshold.ToString();
             HotkeyBox.Text = config.Hotkey ?? "Win+Shift+W";
+            ExitDelayBox.Text = config.AutoAwakeExitDelaySeconds.ToString();
 
             _processes = config.AutoAwakeProcesses != null ? ProcessHelper.NormalizeList(config.AutoAwakeProcesses) : new List<string>();
             ProcessListBox.ItemsSource = _processes;
@@ -226,6 +227,7 @@ namespace CarroDesk.Views
             DisableOnBatteryBox.IsChecked = def.DisableOnBattery;
             BatteryThresholdBox.Text = def.BatteryThreshold.ToString();
             HotkeyBox.Text = def.Hotkey;
+            ExitDelayBox.Text = def.AutoAwakeExitDelaySeconds.ToString();
             _processes = new List<string>();
             ProcessListBox.ItemsSource = null;
             ProcessListBox.ItemsSource = _processes;
@@ -245,12 +247,19 @@ namespace CarroDesk.Views
                 threshold = Math.Max(5, Math.Min(95, parsedThreshold));
             }
 
+            int exitDelay = 120;
+            if (int.TryParse(ExitDelayBox.Text.Trim(), out int parsedDelay) && parsedDelay >= 0)
+            {
+                exitDelay = Math.Min(3600, parsedDelay);
+            }
+
             var config = _module.Config ?? new AwakeConfig();
             config.KeepDisplayOn = KeepDisplayOnBox.IsChecked == true;
             config.DisableOnBattery = DisableOnBatteryBox.IsChecked == true;
             config.BatteryThreshold = threshold;
             config.DefaultDurationMinutes = defaultMins;
             config.Hotkey = HotkeyBox.Text.Trim();
+            config.AutoAwakeExitDelaySeconds = exitDelay;
             config.AutoAwakeProcesses = ProcessHelper.NormalizeList(_processes);
 
             // 应用工作模式
