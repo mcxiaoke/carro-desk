@@ -55,6 +55,7 @@ namespace CarroDesk.Views
         private DateTime _lastKeepAlive = DateTime.MinValue;
         private DateTime _lastActivateAttempt = DateTime.MinValue;
         private bool _isClosing;
+        private bool _closeRequested;
 
         private readonly Func<bool> _isShuttingDown;
         private bool IsAppShuttingDown => _isShuttingDown != null ? _isShuttingDown() : false;
@@ -386,7 +387,15 @@ namespace CarroDesk.Views
             _deactivateTimer.Stop();
         }
 
-        public void CloseSafe()
+        /// <summary>
+        /// 授权解锁后关闭本窗口。返回 true 表示已确保窗口会被关闭，
+        /// false 表示关闭失败（调用方应保留引用以便重试，而不是把窗口漏在屏幕上）。
+        ///
+        /// 注意：关窗不依赖淡出动画的 Completed 回调——动画被抢占或窗口尚未加载时该回调
+        /// 不会触发，会让全屏置顶窗口永久残留，用户只能杀进程。这里改为"动画仅作视觉，
+        /// 另设兜底定时器保证关闭"。
+        /// </summary>
+        public bool CloseSafe()
         {
             try
             {
@@ -395,16 +404,60 @@ namespace CarroDesk.Views
                 _uiTimer.Stop();
                 _deactivateTimer.Stop();
 
-                var fadeOut = new DoubleAnimation(RootBorder.Opacity, 0, TimeSpan.FromMilliseconds(150));
-                fadeOut.Completed += (s, e) =>
+                try
                 {
-                    try { Close(); } catch { }
+                    var fadeOut = new DoubleAnimation(RootBorder.Opacity, 0, TimeSpan.FromMilliseconds(150));
+                    fadeOut.Completed += (s, e) => RequestClose();
+                    RootBorder.BeginAnimation(UIElement.OpacityProperty, fadeOut);
+                }
+                catch
+                {
+                    // 视觉动画失败无关紧要，继续走关窗流程
+                }
+
+                var fallback = new DispatcherTimer(DispatcherPriority.Send, Dispatcher)
+                {
+                    Interval = TimeSpan.FromMilliseconds(500)
                 };
-                RootBorder.BeginAnimation(UIElement.OpacityProperty, fadeOut);
+                fallback.Tick += (s, e) =>
+                {
+                    try { fallback.Stop(); } catch { }
+                    RequestClose();
+                };
+                fallback.Start();
+
+                return true;
             }
             catch
             {
-                try { Close(); } catch { }
+                return RequestClose();
+            }
+        }
+
+        /// <summary>
+        /// 强制关闭（锁定失败回滚时使用）：绕过 OnClosing 的关闭拦截。
+        /// </summary>
+        public bool ForceClose()
+        {
+            _isClosing = true;
+            return RequestClose();
+        }
+
+        /// <summary>幂等关窗。返回 false 表示 Close() 抛出（调用方需保留引用重试）。</summary>
+        private bool RequestClose()
+        {
+            if (_closeRequested) return true;
+            _closeRequested = true;
+            try
+            {
+                Close();
+                return true;
+            }
+            catch
+            {
+                // 允许后续重试
+                _closeRequested = false;
+                return false;
             }
         }
     }

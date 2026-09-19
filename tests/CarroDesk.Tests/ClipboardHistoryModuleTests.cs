@@ -295,31 +295,17 @@ namespace CarroDesk.Tests
         [TestMethod]
         public void ClipboardHistoryWindow_CanBeInstantiatedAndShown()
         {
-            Exception error = null;
-            var thread = new System.Threading.Thread(() =>
+            // 统一走 TestEnvironment.RunInSta：它会正确初始化 Application
+            // （含 OnExplicitShutdown，避免关闭窗口关停 Application 影响其它 UI 测试）
+            TestEnvironment.RunInSta(() =>
             {
-                try
-                {
-                    var storage = new MemoryClipboardStorage();
-                    var service = new ClipboardHistoryService(storage);
-                    service.Start(new ClipboardHistoryConfig());
-                    var win = new CarroDesk.Modules.ClipboardHistory.Views.ClipboardHistoryWindow(service);
-                    win.ShowAndActivate();
-                    win.Close();
-                }
-                catch (Exception ex)
-                {
-                    error = ex;
-                }
+                var storage = new MemoryClipboardStorage();
+                var service = new ClipboardHistoryService(storage);
+                service.Start(new ClipboardHistoryConfig());
+                var win = new CarroDesk.Modules.ClipboardHistory.Views.ClipboardHistoryWindow(service);
+                win.ShowAndActivate();
+                win.Close();
             });
-            thread.SetApartmentState(System.Threading.ApartmentState.STA);
-            thread.Start();
-            thread.Join();
-
-            if (error != null)
-            {
-                Assert.Fail("Window creation/show failed: " + error);
-            }
         }
     }
 }

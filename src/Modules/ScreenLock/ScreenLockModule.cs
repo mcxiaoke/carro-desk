@@ -42,7 +42,10 @@ namespace CarroDesk.Modules.ScreenLock
 
         public ScreenLockModule()
         {
-            Controller = new LockController(() => Context?.GetService<IPinService>(), () => Config);
+            Controller = new LockController(
+                () => Context?.GetService<IPinService>(),
+                () => Config,
+                Context?.GetService<ILoggerService>());
         }
 
         protected override void OnStart()
@@ -208,7 +211,12 @@ namespace CarroDesk.Modules.ScreenLock
         private void OnIdleThresholdReached()
         {
             if (_sessionLocked) return;
-            Controller.LockSafe();
+            if (!Controller.LockSafe())
+            {
+                // 锁定失败（已内部回滚，不会有半锁定状态）。重置空闲状态机，
+                // 否则 _idleFired 已置位会让后续空闲周期不再重试，锁屏彻底失效。
+                ResetIdleMachine();
+            }
         }
 
         private void OnIdleWarning()
@@ -232,17 +240,43 @@ namespace CarroDesk.Modules.ScreenLock
             else if (e.Reason == SessionSwitchReason.SessionUnlock)
             {
                 _sessionLocked = false;
-                if (Config != null && Config.UnlockOnResume && Controller.IsLocked)
+
+                // SystemEvents 在自己的专用线程上触发本回调，不能直接操作 WPF 窗口。
+                var dispatcher = Context?.Dispatcher;
+                if (dispatcher == null)
                 {
-                    Controller.Unlock();
+                    UnlockFromSessionUnlock();
                 }
-                ResetIdleMachine();
+                else if (dispatcher.CheckAccess())
+                {
+                    UnlockFromSessionUnlock();
+                }
+                else
+                {
+                    dispatcher.BeginInvoke(new Action(UnlockFromSessionUnlock));
+                }
             }
         }
 
-        public void LockSafe()
+        private void UnlockFromSessionUnlock()
         {
-            Controller?.LockSafe();
+            if (Config != null && Config.UnlockOnResume && Controller.IsLocked)
+            {
+                Controller.Unlock();
+            }
+            ResetIdleMachine();
+        }
+
+        public bool LockSafe()
+        {
+            var controller = Controller;
+            if (controller == null) return false;
+            if (controller.LockSafe()) return true;
+
+            // 锁定失败（LockController 内部已回滚，不会留下"键盘被钩住但无 PIN 界面"的半锁定态）。
+            // 必须重置空闲状态机：否则 _idleFired 已置位会让后续空闲周期不再重试，锁屏彻底失效。
+            ResetIdleMachine();
+            return false;
         }
 
         public void Unlock()

@@ -34,30 +34,10 @@ namespace CarroDesk.Tests
 
         private void RunInSta(Action action)
         {
-            Exception ex = null;
-            var t = new Thread(() =>
-            {
-                try
-                {
-                    if (Application.Current == null)
-                    {
-                        new Application();
-                    }
-                    CarroDesk.Services.Localization.I18nService.Instance.Init("zh-CN");
-                    action();
-                }
-                catch (Exception e)
-                {
-                    ex = e;
-                }
-            });
-            t.SetApartmentState(ApartmentState.STA);
-            t.Start();
-            t.Join();
-            if (ex != null)
-            {
-                throw new Exception("STA UI Thread Exception: " + ex.Message, ex);
-            }
+            // 统一使用 TestEnvironment 的 STA 执行器：
+            // 它会显式把 Application.ShutdownMode 设为 OnExplicitShutdown，
+            // 避免"关闭最后一个窗口"关停 Application 后波及其它 UI 测试。
+            TestEnvironment.RunInSta(action);
         }
 
         private void SaveWindowSnapshot(Window win, double width, double height, string filename)
