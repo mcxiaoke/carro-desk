@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
+using System.Windows.Controls;
 using CarroDesk.Core;
 using CarroDesk.Core.Models;
 using CarroDesk.Modules.Awake.Models;
@@ -379,6 +380,24 @@ namespace CarroDesk.Modules.Awake
                     }
                 });
             }
+
+            timedSubmenu.Children.Add(TrayMenuItem.Separator());
+            timedSubmenu.Children.Add(new TrayMenuItem
+            {
+                Id = "awake_timed_custom",
+                Header = Loc.T("Tray.AwakeTimedCustom", "自定义分钟数..."),
+                ClickAction = () =>
+                {
+                    if (PromptMinutes(out int customMins))
+                    {
+                        Service?.SetTimed(customMins);
+                        SaveConfig();
+                        UpdateTrayHeaderAndToolTip();
+                        RequestRefreshTray();
+                        ShowNotify($"已开启保持唤醒 ({customMins} 分钟)");
+                    }
+                }
+            });
             root.Children.Add(timedSubmenu);
 
             // 4. 保持至指定时刻 (子菜单)
@@ -458,6 +477,80 @@ namespace CarroDesk.Modules.Awake
                 Context?.ShowNotification(msg, "CarroDesk");
             }
             catch { }
+        }
+
+        private static bool PromptMinutes(out int minutes)
+        {
+            minutes = 0;
+            var dlg = new Window
+            {
+                Title = "自定义保持唤醒时长",
+                Width = 360,
+                Height = 160,
+                WindowStartupLocation = WindowStartupLocation.CenterScreen,
+                ResizeMode = ResizeMode.NoResize,
+                Background = System.Windows.Media.Brushes.White,
+                FontFamily = new System.Windows.Media.FontFamily("Segoe UI, Microsoft YaHei UI")
+            };
+            var grid = new Grid { Margin = new Thickness(16) };
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            var lbl = new TextBlock
+            {
+                Text = "请输入保持唤醒的分钟数 (1-1440)：",
+                Margin = new Thickness(0, 0, 0, 8),
+                FontSize = 13,
+                Foreground = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString("#FF374151")
+            };
+            var txt = new TextBox
+            {
+                Text = "45",
+                Height = 28,
+                VerticalContentAlignment = VerticalAlignment.Center,
+                Padding = new Thickness(4, 0, 4, 0),
+                FontSize = 13
+            };
+            txt.SelectAll();
+
+            var btnPanel = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin = new Thickness(0, 12, 0, 0)
+            };
+            var btnOk = new Button { Content = "确定", Width = 70, Height = 28, IsDefault = true, Margin = new Thickness(0, 0, 8, 0) };
+            var btnCancel = new Button { Content = "取消", Width = 70, Height = 28, IsCancel = true };
+
+            btnOk.Click += (s, e) => { dlg.DialogResult = true; dlg.Close(); };
+            btnCancel.Click += (s, e) => { dlg.DialogResult = false; dlg.Close(); };
+
+            btnPanel.Children.Add(btnOk);
+            btnPanel.Children.Add(btnCancel);
+
+            Grid.SetRow(lbl, 0);
+            Grid.SetRow(txt, 1);
+            Grid.SetRow(btnPanel, 2);
+
+            grid.Children.Add(lbl);
+            grid.Children.Add(txt);
+            grid.Children.Add(btnPanel);
+
+            dlg.Content = grid;
+            dlg.Loaded += (s, e) => txt.Focus();
+
+            if (dlg.ShowDialog() == true)
+            {
+                string input = txt.Text.Trim();
+                if (int.TryParse(input, out int m) && m > 0 && m <= 1440)
+                {
+                    minutes = m;
+                    return true;
+                }
+                MessageBox.Show("请输入 1 到 1440 之间的有效分钟数。", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            return false;
         }
     }
 }

@@ -68,6 +68,7 @@ namespace CarroDesk.Tests
             Assert.IsTrue(timedNode.Children.Any(c => c.Id == "awake_timed_15"));
             Assert.IsTrue(timedNode.Children.Any(c => c.Id == "awake_timed_30"));
             Assert.IsTrue(timedNode.Children.Any(c => c.Id == "awake_timed_60"));
+            Assert.IsTrue(timedNode.Children.Any(c => c.Id == "awake_timed_custom"), "定时子菜单应包含自定义分钟数项");
         }
 
         [TestMethod]

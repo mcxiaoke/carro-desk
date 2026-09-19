@@ -170,6 +170,28 @@ namespace CarroDesk.Views
             }
         }
 
+        private void OnBrowseExeProcessClick(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var ofd = new Microsoft.Win32.OpenFileDialog
+                {
+                    Filter = "可执行文件 (*.exe)|*.exe|所有文件 (*.*)|*.*",
+                    Title = "选择关联进程应用程序 (.exe)"
+                };
+                if (ofd.ShowDialog(this) == true)
+                {
+                    string fileName = System.IO.Path.GetFileNameWithoutExtension(ofd.FileName);
+                    ProcessInputBox.Text = fileName;
+                    AddProcess(fileName);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, "选择文件失败: " + ex.Message, "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
         private void OnDeleteProcessClick(object sender, RoutedEventArgs e)
         {
             var sel = ProcessListBox.SelectedItem as string;
@@ -178,6 +200,17 @@ namespace CarroDesk.Views
             _processes.Remove(sel);
             ProcessListBox.ItemsSource = null;
             ProcessListBox.ItemsSource = _processes;
+        }
+
+        private void OnClearProcessesClick(object sender, RoutedEventArgs e)
+        {
+            if (_processes == null || _processes.Count == 0) return;
+            if (MessageBox.Show(this, "确定要清空所有关联进程吗？", "确认清空", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
+            {
+                _processes.Clear();
+                ProcessListBox.ItemsSource = null;
+                ProcessListBox.ItemsSource = _processes;
+            }
         }
 
         private void OnResetDefaultsClick(object sender, RoutedEventArgs e)
