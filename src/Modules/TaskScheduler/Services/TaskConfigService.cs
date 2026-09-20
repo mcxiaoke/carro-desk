@@ -14,11 +14,33 @@ namespace CarroDesk.Services.Tasks
         public List<TaskDefinition> Tasks { get; set; } = new List<TaskDefinition>();
         public List<string> Errors { get; set; } = new List<string>();
         public bool FileCreated { get; set; }
+
+        /// <summary>文件损坏并已备份 + 重建，调用方应提示用户。</summary>
+        public bool FileRecovered { get; set; }
+
+        /// <summary>损坏文件的备份路径（FileRecovered 为真时有值）。</summary>
+        public string RecoveredBackupPath { get; set; }
+
+        /// <summary>识别到的 schema 版本；字段缺失视为 1（历史数组格式）。</summary>
+        public int SchemaVersion { get; set; } = TaskConfigService.CurrentSchemaVersion;
+
         public string RawJson { get; set; }
     }
 
     public static class TaskConfigService
     {
+        /// <summary>
+        /// 当前 schema 版本。
+        ///
+        /// 版本约定：**字段缺失即视为 1**——历史文件是裸 JSON 数组，没有 version 字段，
+        /// 因此 v1 以"无版本标记"表达。读取端同时接受：
+        ///   - 裸数组（v1，历史格式）
+        ///   - 对象信封 { "version": n, "tasks": [...] }
+        /// 这样未来引入 v2 时无需破坏既有文件；写入端仍保持裸数组格式不变，
+        /// 避免改变 tray "编辑 tasks.json" 所面向的可手改文件形态。
+        /// </summary>
+        public const int CurrentSchemaVersion = 1;
+
         public static string FilePath
         {
             get { return ConfigService.TaskFilePath; }
@@ -88,8 +110,28 @@ namespace CarroDesk.Services.Tasks
                 result.RawJson = json;
                 if (string.IsNullOrWhiteSpace(json))
                 {
+                    // 空文件此前被静默当作"零任务"接受，用户看到的是"任务全没了"却毫无提示
+                    result.Errors.Add("tasks.json is empty: " + FilePath);
                     return result;
                 }
+
+                int detectedVersion = DetectSchemaVersion(json);
+                if (detectedVersion < 0)
+                {
+                    // 顶层结构都无法解析（ParseTasksJson 内部会吞掉异常并只记错误），
+                    // 这里必须显式按"损坏文件"处理，否则用户会永远卡在加载失败上。
+                    result.Errors.Add("tasks.json is not valid JSON: " + FilePath);
+                    RecoverFromCorruptFile(result);
+                    return result;
+                }
+
+                result.SchemaVersion = detectedVersion;
+                if (result.SchemaVersion > CurrentSchemaVersion)
+                {
+                    result.Errors.Add("tasks.json schema version " + result.SchemaVersion +
+                                      " is newer than supported " + CurrentSchemaVersion + " (best-effort read)");
+                }
+
                 var tasks = ParseTasksJson(json, result.Errors);
                 // dedup by name
                 var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -113,17 +155,79 @@ namespace CarroDesk.Services.Tasks
             catch (Exception ex)
             {
                 result.Errors.Add("load exception: " + ex.Message);
-                try
-                {
-                    if (File.Exists(FilePath))
-                    {
-                        string corruptPath = Path.Combine(ConfigService.DirPath, $"tasks.corrupt-{DateTime.Now:yyyyMMddHHmmss}.json");
-                        File.Copy(FilePath, corruptPath, true);
-                    }
-                }
-                catch { }
+                RecoverFromCorruptFile(result);
             }
             return result;
+        }
+
+        /// <summary>
+        /// 识别 schema 版本。字段缺失一律视为 <see cref="CurrentSchemaVersion"/>，
+        /// 因为 v1 是历史裸数组格式，本就没有版本标记。
+        /// 返回 -1 表示顶层 JSON 结构本身无法解析（损坏文件）。
+        /// </summary>
+        private static int DetectSchemaVersion(string json)
+        {
+            try
+            {
+                using (var sr = new StringReader(json))
+                using (var reader = new JsonTextReader(sr))
+                {
+                    var loadSettings = new JsonLoadSettings
+                    {
+                        CommentHandling = CommentHandling.Ignore,
+                        LineInfoHandling = LineInfoHandling.Ignore
+                    };
+
+                    while (reader.TokenType == JsonToken.None || reader.TokenType == JsonToken.Comment)
+                    {
+                        if (!reader.Read()) break;
+                    }
+                    if (reader.TokenType == JsonToken.None) return CurrentSchemaVersion;
+
+                    var obj = JToken.Load(reader, loadSettings) as JObject;
+                    if (obj != null && obj["version"] != null)
+                    {
+                        int parsed;
+                        if (int.TryParse(obj["version"].ToString(), out parsed)) return parsed;
+                    }
+                    return CurrentSchemaVersion;
+                }
+            }
+            catch
+            {
+                return -1;
+            }
+        }
+
+        /// <summary>
+        /// 损坏文件的备份与自愈。
+        ///
+        /// 原先只把损坏文件复制成 tasks.corrupt-*.json，tasks.json 本身仍是坏文件：
+        /// 下次启动继续失败、永远不会恢复，用户面对的是"任务一直加载不出来"。
+        /// 现在备份后重建一个可用的空任务文件，并通过 FileRecovered 让上层提示用户
+        /// （原任务内容保留在备份文件里，可手工找回）。
+        /// </summary>
+        private static void RecoverFromCorruptFile(TaskLoadResult result)
+        {
+            try
+            {
+                if (!File.Exists(FilePath)) return;
+
+                string corruptPath = Path.Combine(
+                    ConfigService.DirPath,
+                    string.Format("tasks.corrupt-{0:yyyyMMddHHmmss}.json", DateTime.Now));
+
+                File.Copy(FilePath, corruptPath, true);
+                result.RecoveredBackupPath = corruptPath;
+                result.Errors.Add("corrupt tasks.json backed up to: " + corruptPath);
+
+                AtomicFile.WriteAllText(FilePath, "[]", Encoding.UTF8);
+                result.FileRecovered = true;
+            }
+            catch (Exception ex)
+            {
+                result.Errors.Add("corrupt recovery failed: " + ex.Message);
+            }
         }
 
         public static bool Reload(out TaskLoadResult result)

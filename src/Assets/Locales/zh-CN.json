@@ -1,4 +1,4 @@
-{
+﻿{
   "_meta": {
     "code": "zh-CN",
     "name": "简体中文"
@@ -400,6 +400,8 @@
     "RunFailed": "任务失败 [{0}] exit={1}，详见 logs/task-{2}.log",
     "DuplicatePrefix": "重名: ",
     "ModuleDesc": "支持 Cron/周期/定时/文件监听/会话切换等自动化脚本调度",
+    "ConfigRecovered": "tasks.json 已损坏，已备份到 {0} 并重建（任务列表已重置，请检查备份）",
+    "ConfigEmpty": "tasks.json 内容为空，任务列表为空",
     "ScriptFilter": "脚本/可执行|*.ps1;*.js;*.py;*.bat;*.cmd;*.vbs;*.exe|所有文件|*.*"
   },
   "Clipboard": {

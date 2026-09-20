@@ -1,4 +1,4 @@
-{
+﻿{
   "_meta": {
     "code": "en-US",
     "name": "English"
@@ -400,6 +400,8 @@
     "RunFailed": "Task failed [{0}] exit={1}, see logs/task-{2}.log",
     "DuplicatePrefix": "Duplicate: ",
     "ModuleDesc": "Schedules automation scripts via cron, interval, daily, file watch and session triggers",
+    "ConfigRecovered": "tasks.json was corrupt; backed up to {0} and rebuilt (task list reset, check the backup)",
+    "ConfigEmpty": "tasks.json is empty; the task list is empty",
     "ScriptFilter": "Scripts/Executables|*.ps1;*.js;*.py;*.bat;*.cmd;*.vbs;*.exe|All files (*.*)|*.*"
   },
   "Clipboard": {

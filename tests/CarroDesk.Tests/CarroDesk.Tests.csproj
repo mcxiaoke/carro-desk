@@ -17,6 +17,7 @@
     <Compile Include="ClipboardStorageTests.cs" />
     <Compile Include="CoreServiceTests.cs" />
     <Compile Include="ConcurrencyAndLifecycleTests.cs" />
+    <Compile Include="ConfigPersistenceTests.cs" />
     <Compile Include="LocalizationContractTests.cs" />
     <Compile Include="ScreenLockWindowTests.cs" />
     <Compile Include="TaskRunnerTests.cs" />

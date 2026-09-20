@@ -30,7 +30,21 @@ namespace CarroDesk.Services
 
         public bool Verify(string pin)
         {
-            BuildFromCurrent();
+            // 与 Salt/Hash/IsConfigured 保持同一优先级：有未落盘的 pending 就以 pending 为准。
+            //
+            // 此前 Verify 无条件 BuildFromCurrent()，而 Salt/Hash/IsConfigured 却优先读 pending，
+            // 两者语义分叉：只要出现"设置了新 PIN 但尚未写盘"的状态，
+            // 就会出现 IsConfigured 为真、界面显示已配置，而校验永远走旧配置导致
+            // 输入正确 PIN 也始终失败的诡异现象。
+            if (!string.IsNullOrEmpty(_pendingSalt) && !string.IsNullOrEmpty(_pendingHash))
+            {
+                _inner.SetFromConfig(_pendingSalt, _pendingHash);
+            }
+            else
+            {
+                BuildFromCurrent();
+            }
+
             bool ok = _inner.Verify(pin);
             if (ok && _inner.JustUpgraded)
             {
@@ -39,6 +53,9 @@ namespace CarroDesk.Services
                 {
                     c.PinSalt = _inner.Salt;
                     c.PinHash = _inner.Hash;
+                    // 已持久化，pending 使命结束，回到单一来源
+                    _pendingSalt = _inner.Salt;
+                    _pendingHash = _inner.Hash;
                     _config?.Save();
                     _inner.ClearUpgraded();
                 }

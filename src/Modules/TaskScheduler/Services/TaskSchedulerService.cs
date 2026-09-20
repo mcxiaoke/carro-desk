@@ -68,6 +68,7 @@ namespace CarroDesk.Services.Tasks
             TaskLogger.Info("system", "TaskScheduler started, tasks=" + _tasks.Count + ", errors=" + result.Errors.Count + ", globalEnabled=" + _globalEnabled);
             foreach (var e in result.Errors) TaskLogger.Warn("system", e);
             if (result.FileCreated) TaskLogger.Info("system", "tasks.json created at " + TaskConfigService.FilePath);
+            NotifyLoadIssues(result);
         }
 
         private bool? GetCurrentTasksEnabled()
@@ -150,6 +151,7 @@ namespace CarroDesk.Services.Tasks
             Apply(result);
             TaskLogger.Info("system", "TaskScheduler reloaded, tasks=" + _tasks.Count + ", errors=" + result.Errors.Count + ", globalEnabled=" + _globalEnabled);
             foreach (var e in result.Errors) TaskLogger.Warn("system", e);
+            NotifyLoadIssues(result);
             return result;
         }
 
@@ -259,21 +261,41 @@ namespace CarroDesk.Services.Tasks
             {
                 if (task.Options != null && !task.Options.NotifyOnFailure) return;
                 if (code == 0) return;
-                string msg = Loc.T("Tasks.RunFailed", "任务失败 [{0}] exit={1}，详见 logs/task-{2}.log", task.Name, code, task.Name);
-                try
-                {
-                    if (_notificationService != null)
-                    {
-                        _notificationService.Show(msg, "CarroDesk");
-                    }
-                    else if (_balloonNotifier != null)
-                    {
-                        _balloonNotifier(msg);
-                    }
-                }
-                catch { }
+                Notify(Loc.T("Tasks.RunFailed", "任务失败 [{0}] exit={1}，详见 logs/task-{2}.log", task.Name, code, task.Name));
             }
             catch { }
+        }
+
+        private void Notify(string message)
+        {
+            try
+            {
+                if (_notificationService != null)
+                {
+                    _notificationService.Show(message, "CarroDesk");
+                }
+                else if (_balloonNotifier != null)
+                {
+                    _balloonNotifier(message);
+                }
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// 加载期问题中对用户可见的部分：文件损坏并已自愈时必须提示，
+        /// 否则用户看到的是"任务列表突然清空"而不知道备份在哪。
+        /// </summary>
+        private void NotifyLoadIssues(TaskLoadResult result)
+        {
+            if (result == null) return;
+
+            if (result.FileRecovered)
+            {
+                Notify(Loc.T("Tasks.ConfigRecovered",
+                    "tasks.json 已损坏，已备份到 {0} 并重建（任务列表已重置，请检查备份）",
+                    result.RecoveredBackupPath));
+            }
         }
 
         private void StopTriggers()

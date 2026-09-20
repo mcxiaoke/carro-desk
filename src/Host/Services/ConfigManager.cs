@@ -107,13 +107,23 @@ namespace CarroDesk.Host.Services
 
         public void SaveModuleConfig<T>(string moduleId, T config) where T : class
         {
+            SaveModuleConfig(moduleId, config, true);
+        }
+
+        /// <summary>
+        /// 保存模块配置。
+        /// <paramref name="persist"/> 为 false 时只更新内存态并由调用方统一落盘，
+        /// 供"一次保存多个模块"的批量场景使用，避免连续多次全量写盘。
+        /// </summary>
+        public void SaveModuleConfig<T>(string moduleId, T config, bool persist) where T : class
+        {
             if (string.IsNullOrEmpty(moduleId) || config == null) return;
 
             try
             {
                 var token = JToken.FromObject(config);
                 _underlying.SetModuleToken(moduleId, token);
-                _underlying.Save();
+                if (persist) _underlying.Save();
             }
             catch (Exception ex)
             {

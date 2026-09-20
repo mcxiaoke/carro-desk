@@ -129,6 +129,10 @@ namespace CarroDesk.Services
             lock (_ioLock)
             {
                 if (!Directory.Exists(DirPath)) Directory.CreateDirectory(DirPath);
+
+                // 清理进程上次被强杀时遗留的孤儿临时文件（正常路径下 finally 会删除）
+                AtomicFile.CleanupStaleTempFiles(DirPath, TimeSpan.FromHours(1));
+
                 if (!File.Exists(FilePath))
                 {
                     Current = new AppSettings();

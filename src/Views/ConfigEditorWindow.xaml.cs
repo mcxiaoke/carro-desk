@@ -51,49 +51,7 @@ namespace CarroDesk.Views
 
                 PathText.Text = ConfigService.FilePath;
                 RefreshDynamicTexts();
-
-                // Language
-                string curLang = _editing.Language ?? "auto";
-                for (int i = 0; i < LanguageBox.Items.Count; i++)
-                {
-                    if (LanguageBox.Items[i] is ComboBoxItem item && item.Tag != null)
-                    {
-                        if (string.Equals(item.Tag.ToString(), curLang, StringComparison.OrdinalIgnoreCase))
-                        {
-                            LanguageBox.SelectedIndex = i;
-                            break;
-                        }
-                    }
-                }
-
-                // IdleMinutes -> ComboBox (editable)
-                string idleStr = _editingScreenLock.IdleMinutes.ToString();
-                bool found = false;
-                for (int i = 0; i < IdleBox.Items.Count; i++)
-                {
-                    var item = IdleBox.Items[i] as ComboBoxItem;
-                    if (item != null)
-                    {
-                        string txt = item.Content.ToString();
-                        string num = txt.Split(new[] { ' ', '-' }, StringSplitOptions.RemoveEmptyEntries)[0];
-                        if (num == idleStr) { IdleBox.SelectedIndex = i; found = true; break; }
-                    }
-                }
-                if (!found) { IdleBox.Text = idleStr; IdleBox.SelectedIndex = -1; }
-                else IdleBox.Text = idleStr;
-
-                ShowClockBox.IsChecked = _editingScreenLock.ShowClock;
-                OpacitySlider.Value = _editingScreenLock.OverlayOpacity;
-                UpdateOpacityText(_editingScreenLock.OverlayOpacity);
-
-                AutoStartBox.IsChecked = _editing.AutoStart;
-                UnlockOnResumeBox.IsChecked = _editingScreenLock.UnlockOnResume;
-                TasksEnabledBox.IsChecked = _editingTaskScheduler.GlobalEnabled;
-                HotkeyBox.Text = string.IsNullOrWhiteSpace(_editingScreenLock.Hotkey) ? "Ctrl+Alt+L" : _editingScreenLock.Hotkey;
-
-                ExcludeList.ItemsSource = null;
-                var list = _editingScreenLock.ExcludeProcesses != null ? ProcessHelper.NormalizeList(_editingScreenLock.ExcludeProcesses) : new List<string>();
-                ExcludeList.ItemsSource = list;
+                ApplyEditingToUi();
 
                 ValidateText.Text = "";
             }
@@ -105,6 +63,57 @@ namespace CarroDesk.Views
             {
                 _isInitializing = false;
             }
+        }
+
+        /// <summary>
+        /// 把当前编辑中的数据模型刷新到界面控件。
+        /// 这是唯一的"模型 → 界面"通道：新增字段时只改这里，
+        /// 避免出现"加载路径刷新了控件、恢复默认路径漏刷"这类不对称。
+        /// </summary>
+        private void ApplyEditingToUi()
+        {
+            // Language
+            string curLang = _editing.Language ?? "auto";
+            for (int i = 0; i < LanguageBox.Items.Count; i++)
+            {
+                if (LanguageBox.Items[i] is ComboBoxItem item && item.Tag != null)
+                {
+                    if (string.Equals(item.Tag.ToString(), curLang, StringComparison.OrdinalIgnoreCase))
+                    {
+                        LanguageBox.SelectedIndex = i;
+                        break;
+                    }
+                }
+            }
+
+            // IdleMinutes -> ComboBox (editable)
+            string idleStr = _editingScreenLock.IdleMinutes.ToString();
+            bool found = false;
+            for (int i = 0; i < IdleBox.Items.Count; i++)
+            {
+                var item = IdleBox.Items[i] as ComboBoxItem;
+                if (item != null)
+                {
+                    string txt = item.Content.ToString();
+                    string num = txt.Split(new[] { ' ', '-' }, StringSplitOptions.RemoveEmptyEntries)[0];
+                    if (num == idleStr) { IdleBox.SelectedIndex = i; found = true; break; }
+                }
+            }
+            if (!found) { IdleBox.Text = idleStr; IdleBox.SelectedIndex = -1; }
+            else IdleBox.Text = idleStr;
+
+            ShowClockBox.IsChecked = _editingScreenLock.ShowClock;
+            OpacitySlider.Value = _editingScreenLock.OverlayOpacity;
+            UpdateOpacityText(_editingScreenLock.OverlayOpacity);
+
+            AutoStartBox.IsChecked = _editing.AutoStart;
+            UnlockOnResumeBox.IsChecked = _editingScreenLock.UnlockOnResume;
+            TasksEnabledBox.IsChecked = _editingTaskScheduler.GlobalEnabled;
+            HotkeyBox.Text = string.IsNullOrWhiteSpace(_editingScreenLock.Hotkey) ? "Ctrl+Alt+L" : _editingScreenLock.Hotkey;
+
+            ExcludeList.ItemsSource = null;
+            var list = _editingScreenLock.ExcludeProcesses != null ? ProcessHelper.NormalizeList(_editingScreenLock.ExcludeProcesses) : new List<string>();
+            ExcludeList.ItemsSource = list;
         }
 
         private void RefreshDynamicTexts()
@@ -257,16 +266,36 @@ namespace CarroDesk.Views
             var defScreenLock = new ScreenLockConfig();
             var defTaskScheduler = new TaskSchedulerConfig();
 
-            IdleBox.Text = defScreenLock.IdleMinutes.ToString();
-            ShowClockBox.IsChecked = defScreenLock.ShowClock;
-            OpacitySlider.Value = defScreenLock.OverlayOpacity;
-            UpdateOpacityText(defScreenLock.OverlayOpacity);
-            HotkeyBox.Text = defScreenLock.Hotkey ?? "Ctrl+Alt+L";
-            AutoStartBox.IsChecked = defHost.AutoStart;
-            UnlockOnResumeBox.IsChecked = defScreenLock.UnlockOnResume;
-            TasksEnabledBox.IsChecked = defTaskScheduler.GlobalEnabled;
-            ExcludeList.ItemsSource = null;
-            ExcludeList.ItemsSource = new List<string>();
+            try
+            {
+                _isInitializing = true;
+
+                // 必须同时重置数据模型：此前只改控件不动模型，
+                // 凡是未暴露在界面上的字段都会在保存时把旧值再写回去，
+                // "恢复默认"因此只对界面上可见的那几个字段有效。
+                _editing.AutoStart = defHost.AutoStart;
+
+                _editingScreenLock.IdleMinutes = defScreenLock.IdleMinutes;
+                _editingScreenLock.ShowClock = defScreenLock.ShowClock;
+                _editingScreenLock.OverlayOpacity = defScreenLock.OverlayOpacity;
+                _editingScreenLock.Hotkey = defScreenLock.Hotkey;
+                _editingScreenLock.UnlockOnResume = defScreenLock.UnlockOnResume;
+                _editingScreenLock.ExcludeProcesses = new List<string>();
+
+                _editingTaskScheduler.GlobalEnabled = defTaskScheduler.GlobalEnabled;
+
+                // 刻意不在"恢复默认"范围内：
+                //   - PIN（安全凭据，清掉会让用户被锁在门外）
+                //   - Language（语言偏好，重置会导致界面语言突变）
+                //   - FloatingPanel*（悬浮窗位置/钉住/锁定属于窗口状态，不是配置默认值）
+
+                ApplyEditingToUi();
+            }
+            finally
+            {
+                _isInitializing = false;
+            }
+
             ValidateText.Text = Loc.T("Config.ResetDefaultsTooltip");
         }
 
@@ -390,8 +419,10 @@ namespace CarroDesk.Views
                         _editing.CopyTo(target);
                         _editing = target.Clone();
                     }
-                    _configManager.SaveModuleConfig("ScreenLock", _editingScreenLock);
-                    _configManager.SaveModuleConfig("TaskScheduler", _editingTaskScheduler);
+                    _configManager.SaveModuleConfig("ScreenLock", _editingScreenLock, false);
+                    _configManager.SaveModuleConfig("TaskScheduler", _editingTaskScheduler, false);
+                    // 两个模块的内存态更新完后统一落盘一次（SaveModuleConfig 内部不再各自写盘），
+                    // 此前这里连续触发 3 次全量写盘 + File.Replace。
                     _configManager.Save();
                 }
                 ValidateText.Text = Loc.T("Common.Success");
