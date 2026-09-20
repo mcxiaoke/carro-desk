@@ -153,7 +153,28 @@ namespace CarroDesk.Services.Tasks
             return result;
         }
 
+        /// <summary>
+        /// 串行化 <see cref="Apply"/>。
+        ///
+        /// Apply 可从多条路径并发进入：Start()、Reload()、SetGlobalEnabled(true)、
+        /// 以及模块的 OnConfigReloaded 回调。两个 Apply 交错会出现：
+        /// A 的 StopTriggers 释放掉 B 刚建好的触发器、Fired 被重复绑定、
+        /// _triggers 被后写覆盖导致部分触发器无人释放（Stop 时无法解绑 → 泄漏 + 幽灵触发）。
+        ///
+        /// 锁序约定：_applyLock → _lock（Apply 内部会取 _lock）。
+        /// 现有代码中没有任何路径在持有 _lock 时调用 Apply，故不存在反向嵌套。
+        /// </summary>
+        private readonly object _applyLock = new object();
+
         private void Apply(TaskLoadResult result)
+        {
+            lock (_applyLock)
+            {
+                ApplyCore(result);
+            }
+        }
+
+        private void ApplyCore(TaskLoadResult result)
         {
             StopTriggers();
             lock (_lock)
@@ -257,13 +278,18 @@ namespace CarroDesk.Services.Tasks
 
         private void StopTriggers()
         {
-            List<ITrigger> old;
-            lock (_lock) { old = _triggers; _triggers = new List<ITrigger>(); }
-            foreach (var t in old)
+            // 与 Apply 共用同一把串行化锁：否则 Stop()/禁用总开关 与 Apply 交错时，
+            // 可能释放掉对方刚创建的触发器。Monitor 可重入，ApplyCore 内部再次进入是安全的。
+            lock (_applyLock)
             {
-                try { t.Fired -= OnTriggerFired; } catch { }
-                try { t.Stop(); } catch { }
-                try { t.Dispose(); } catch { }
+                List<ITrigger> old;
+                lock (_lock) { old = _triggers; _triggers = new List<ITrigger>(); }
+                foreach (var t in old)
+                {
+                    try { t.Fired -= OnTriggerFired; } catch { }
+                    try { t.Stop(); } catch { }
+                    try { t.Dispose(); } catch { }
+                }
             }
         }
 

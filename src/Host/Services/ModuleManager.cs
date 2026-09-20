@@ -174,6 +174,8 @@ namespace CarroDesk.Host.Services
 
         public void Dispose()
         {
+            // 先停后释放：module.Dispose() 内部还会调一次 Stop()，
+            // 但 ModuleBase.Stop 在 !IsRunning 时直接返回，因此不会二次执行清理。
             StopAll();
             lock (_lock)
             {

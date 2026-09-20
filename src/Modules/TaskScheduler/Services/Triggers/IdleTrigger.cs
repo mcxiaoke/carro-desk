@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using CarroDesk.Core;
 using CarroDesk.Models;
 
@@ -15,7 +16,14 @@ namespace CarroDesk.Services.Tasks.Triggers
 
         private readonly IIdleService _idle;
         private bool _subscribed;
-        private bool _fired;
+
+        /// <summary>
+        /// 0 = 可触发，1 = 已触发。用 Interlocked 保证"判断并置位"是单次原子操作：
+        /// IdleTick 与 UserActiveDetected 都在线程池线程上扇出（见 SystemIdleService），
+        /// 原先 `if (_fired) return; ... _fired = true;` 是两次非原子访问，
+        /// 与用户回座事件交错时可能重复触发，或长时间无法重新武装。
+        /// </summary>
+        private int _fired;
 
         public IdleTrigger(TaskDefinition task, IIdleService idle)
         {
@@ -27,7 +35,7 @@ namespace CarroDesk.Services.Tasks.Triggers
         {
             if (_subscribed) return;
             if (_idle == null) return;
-            _fired = false;
+            Interlocked.Exchange(ref _fired, 0);
             _idle.IdleTick += OnIdleTick;
             _idle.UserActiveDetected += OnUserActive;
             _subscribed = true;
@@ -35,20 +43,20 @@ namespace CarroDesk.Services.Tasks.Triggers
 
         private void OnUserActive()
         {
-            _fired = false;
+            Interlocked.Exchange(ref _fired, 0);
         }
 
         private void OnIdleTick(TimeSpan rawIdle)
         {
-            if (_fired) return;
             int afterMinutes = Task.Trigger.AfterMinutes;
             if (afterMinutes <= 0) return;
-            if (rawIdle.TotalMinutes >= afterMinutes)
-            {
-                _fired = true;
-                var h = Fired;
-                if (h != null) h(Task, "idle:" + afterMinutes + "m");
-            }
+            if (rawIdle.TotalMinutes < afterMinutes) return;
+
+            // 只有把 _fired 从 0 换成 1 的那一次才触发，天然幂等
+            if (Interlocked.CompareExchange(ref _fired, 1, 0) != 0) return;
+
+            var h = Fired;
+            if (h != null) h(Task, "idle:" + afterMinutes + "m");
         }
 
         public void Stop()
