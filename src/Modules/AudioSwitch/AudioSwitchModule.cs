@@ -4,6 +4,7 @@ using System.Media;
 using CarroDesk.Core;
 using CarroDesk.Core.Models;
 using CarroDesk.Modules.AudioSwitch.Models;
+using CarroDesk.Modules.AudioSwitch.Views;
 using CarroDesk.Services.Localization;
 
 namespace CarroDesk.Modules.AudioSwitch
@@ -385,7 +386,7 @@ namespace CarroDesk.Modules.AudioSwitch
                     try
                     {
                         var cfgMgr = Context?.GetService<IConfigManager>();
-                        var win = new CarroDesk.Views.AudioSwitchSettingsWindow(this, cfgMgr, _audioService, msg => Context?.ShowNotification(msg))
+                        var win = new AudioSwitchSettingsWindow(this, cfgMgr, _audioService, msg => Context?.ShowNotification(msg))
                         {
                             WindowStartupLocation = System.Windows.WindowStartupLocation.CenterScreen
                         };

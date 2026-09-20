@@ -12,7 +12,7 @@ using CarroDesk.Modules.Awake.Models;
 using CarroDesk.Services;
 using CarroDesk.Services.Localization;
 
-namespace CarroDesk.Views
+namespace CarroDesk.Modules.Awake.Views
 {
     public partial class AwakeSettingsWindow : Window
     {

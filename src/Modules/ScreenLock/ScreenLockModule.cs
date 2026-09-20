@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
@@ -8,12 +8,11 @@ using CarroDesk.Modules.ScreenLock.Models;
 using Microsoft.Win32;
 using CarroDesk.Services;
 using CarroDesk.Services.Localization;
-using CarroDesk.Host.Services;
-using CarroDesk.Views;
+using CarroDesk.Modules.ScreenLock.Views;
 
 namespace CarroDesk.Modules.ScreenLock
 {
-    public class ScreenLockModule : ModuleBase<ScreenLockConfig>, IExitGuard
+    public class ScreenLockModule : ModuleBase<ScreenLockConfig>, IExitGuard, IScreenLockStatus
     {
         public override string Id => "ScreenLock";
         public override string Name => Loc.T("Tray.ScreenLockTitle", "屏幕锁定与闲时保护");
@@ -40,6 +39,9 @@ namespace CarroDesk.Modules.ScreenLock
         public DateTime PauseUntil => _pauseUntil;
         public bool IsPaused => DateTime.Now < _pauseUntil;
 
+        // IScreenLockStatus：只暴露宿主需要的只读状态，宿主不再 import 模块私有 Model
+        public int IdleMinutes => Config?.IdleMinutes ?? 5;
+
         public ScreenLockModule()
         {
             Controller = new LockController(
@@ -62,6 +64,13 @@ namespace CarroDesk.Modules.ScreenLock
 
             _hotkeys = Context.GetService<IHotkeyService>();
             RegisterHotkey();
+
+            // 宿主退出状态契约化（P2-12）：模块经抽象解析，不再由 App 直插
+            Controller.IsShuttingDownProvider = () =>
+            {
+                var host = Context?.GetService<IHostStatusProvider>();
+                return host?.IsShuttingDown ?? false;
+            };
 
             Controller.Unlocked += OnControllerUnlocked;
             SystemEvents.SessionSwitch += OnSessionSwitch;
@@ -235,6 +244,8 @@ namespace CarroDesk.Modules.ScreenLock
         private void OnControllerUnlocked()
         {
             ResetIdleMachine();
+            // 解锁后自行刷新托盘状态，宿主无需再订阅（P2-12 移除 App 的 Unlocked 钩子）
+            RequestTrayRefreshSelf();
         }
 
         public void OnSessionSwitch(object sender, SessionSwitchEventArgs e)
@@ -480,12 +491,8 @@ namespace CarroDesk.Modules.ScreenLock
                 {
                     try
                     {
-                        var pinService = Context?.GetService<IPinService>();
-                        var cfgMgr = Context?.GetService<IConfigManager>() as ConfigManager;
-                        var win = new ConfigEditorWindow(pinService, cfgMgr, () =>
-                        {
-                            OnConfigReloaded();
-                        })
+                        var cfgMgr = Context?.GetService<IConfigManager>();
+                        var win = new ScreenLockSettingsWindow(cfgMgr, () => OnConfigReloaded())
                         {
                             WindowStartupLocation = WindowStartupLocation.CenterScreen
                         };

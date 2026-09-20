@@ -1,8 +1,8 @@
-<Window x:Class="CarroDesk.Views.ConfigEditorWindow"
+<Window x:Class="CarroDesk.Modules.ScreenLock.Views.ScreenLockSettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:loc="clr-namespace:CarroDesk.Services.Localization"
-        Title="{loc:Loc Config.Title}" Height="560" Width="580"
+        Title="{loc:Loc Tray.ScreenLockSettings, Default='屏幕锁定与闲时保护设置'}" Height="680" Width="580"
         WindowStartupLocation="CenterScreen" ResizeMode="CanResize"
         Background="#FFF6F7F9">
     <Window.Resources>
@@ -126,57 +126,85 @@
         <!-- 主内容滚动区 -->
         <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <StackPanel Margin="16,12,12,12">
-                <!-- 路径提示微卡片 -->
-                <Border Background="#FFEBF2FB" CornerRadius="6" BorderBrush="#FFD3E3F8" BorderThickness="1" Padding="12,8" Margin="0,0,0,10">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <StackPanel VerticalAlignment="Center">
-                            <TextBlock Text="{loc:Loc Config.ConfigLocation}" FontWeight="Bold" FontSize="11" Foreground="#FF1A73E8"/>
-                            <TextBlock x:Name="PathText" Text="--" FontSize="11" Foreground="#FF333333" TextTrimming="CharacterEllipsis" Margin="0,2,0,0"/>
-                            <TextBlock x:Name="ModeText" Text="--" FontSize="10" Foreground="#FF777777" Margin="0,1,0,0"/>
-                        </StackPanel>
-                        <Button Grid.Column="1" Content="{loc:Loc Common.OpenDir}" Height="26" Margin="8,0,0,0" Padding="10,2" VerticalAlignment="Center" Click="OnOpenConfigDirClick"/>
-                    </Grid>
-                </Border>
-
-                <!-- 基础设置 -->
+                <!-- 锁屏与闲时保护 -->
                 <Border Background="White" CornerRadius="6" BorderBrush="#FFE4E7EB" BorderThickness="1" Padding="12,8" Margin="0,0,0,8">
                     <StackPanel>
-                        <TextBlock Text="{loc:Loc Config.BasicSettings}" FontWeight="Bold" Foreground="#FF333333" Margin="0,0,0,6"/>
+                        <TextBlock Text="{loc:Loc Config.BasicSettings, Default='锁屏与闲时保护'}" FontWeight="Bold" Foreground="#FF333333" Margin="0,0,0,6"/>
                         <Grid>
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" MinWidth="110"/><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                            <TextBlock Text="{loc:Loc Config.LanguageLabel}" VerticalAlignment="Center" Foreground="#FF444444" Margin="0,0,10,0"/>
-                            <ComboBox x:Name="LanguageBox" Grid.Column="1" Height="26" Margin="0,3" SelectionChanged="LanguageBox_SelectionChanged">
-                                <ComboBoxItem Content="{loc:Loc Tray.LangAuto}" Tag="auto"/>
-                                <ComboBoxItem Content="{loc:Loc Tray.LangZh}" Tag="zh-CN"/>
-                                <ComboBoxItem Content="{loc:Loc Tray.LangEn}" Tag="en-US"/>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" MinWidth="100"/><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Text="{loc:Loc Config.IdleLockLabel, Default='闲时自动锁定'}" VerticalAlignment="Center" Foreground="#FF444444" Margin="0,0,10,0"/>
+                            <ComboBox x:Name="IdleBox" Grid.Column="1" Height="26" Margin="0,3" IsEditable="True" ToolTip="0=禁用，1-1440 分钟">
+                                <ComboBoxItem Content="{loc:Loc Config.IdleDisabled}"/>
+                                <ComboBoxItem Content="1"/>
+                                <ComboBoxItem Content="3"/>
+                                <ComboBoxItem Content="5"/>
+                                <ComboBoxItem Content="10"/>
+                                <ComboBoxItem Content="15"/>
+                                <ComboBoxItem Content="30"/>
+                                <ComboBoxItem Content="60"/>
                             </ComboBox>
+                            <TextBlock Grid.Column="2" Text="{loc:Loc Config.IdleUnit, Default='分钟'}" TextWrapping="Wrap" VerticalAlignment="Center" Foreground="#FF888888" FontSize="11" Margin="8,0,0,0"/>
+
+                            <TextBlock Grid.Row="1" Text="{loc:Loc Config.ShowClockLabel, Default='锁屏时钟'}" VerticalAlignment="Center" Margin="0,8,10,0" Foreground="#FF444444"/>
+                            <CheckBox x:Name="ShowClockBox" Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" VerticalAlignment="Center" Margin="0,8,0,0">
+                                <TextBlock Text="{loc:Loc Config.ShowClockDesc, Default='显示大号时钟'}" TextWrapping="Wrap"/>
+                            </CheckBox>
+
+                            <TextBlock Grid.Row="2" Text="{loc:Loc Config.OpacityLabel, Default='遮罩透明度'}" VerticalAlignment="Center" Margin="0,8,10,0" Foreground="#FF444444"/>
+                            <Slider x:Name="OpacitySlider" Grid.Row="2" Grid.Column="1" Minimum="0.3" Maximum="1.0" TickFrequency="0.01" SmallChange="0.01" LargeChange="0.05" IsSnapToTickEnabled="True" Value="0.88" Margin="0,8,0,0" VerticalAlignment="Center" ValueChanged="OpacitySlider_ValueChanged"/>
+                            <TextBlock x:Name="OpacityText" Grid.Row="2" Grid.Column="2" Text="88%" VerticalAlignment="Center" Foreground="#FF555555" Margin="8,8,0,0"/>
+
+                            <TextBlock Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="2" Text="{loc:Loc Config.OpacityHint, Default='锁屏遮罩的不透明度'}" Foreground="#FF888888" FontSize="11" TextWrapping="Wrap" Margin="8,2,0,0"/>
+
+                            <TextBlock Grid.Row="4" Text="{loc:Loc Config.HotkeyLabel, Default='全局锁屏热键'}" VerticalAlignment="Center" Margin="0,8,10,0" Foreground="#FF444444"/>
+                            <TextBox x:Name="HotkeyBox" Grid.Row="4" Grid.Column="1" Height="26" Margin="0,8,0,0" VerticalContentAlignment="Center" Padding="4,2" Text="Ctrl+Alt+L"/>
+                            <TextBlock Grid.Row="4" Grid.Column="2" Text="{loc:Loc Config.HotkeyDesc, Default='(一键立即锁屏，如 Ctrl+Alt+L)'}" TextWrapping="Wrap" VerticalAlignment="Center" Foreground="#FF888888" FontSize="11" Margin="8,8,0,0"/>
                         </Grid>
+
+                        <!-- 解锁行为（整行换行，避免长文案挤压三列网格造成截断/重叠） -->
+                        <TextBlock Text="{loc:Loc Config.UnlockOnResumeLabel, Default='Windows 解锁后自动解除伪锁屏（推荐开启）'}" FontWeight="SemiBold" Foreground="#FF444444" TextWrapping="Wrap" Margin="0,10,0,2"/>
+                        <CheckBox x:Name="UnlockOnResumeBox" FontSize="12" IsChecked="True">
+                                <TextBlock Text="{loc:Loc Config.UnlockOnResumeDesc, Default='会话恢复时自动解锁'}" TextWrapping="Wrap"/>
+                            </CheckBox>
                     </StackPanel>
                 </Border>
 
-                <!-- 系统集成 -->
-                <Border Background="White" CornerRadius="6" BorderBrush="#FFE4E7EB" BorderThickness="1" Padding="12,8" Margin="0,0,0,8">
-                    <StackPanel>
-                        <TextBlock Text="{loc:Loc Config.SystemIntegration}" FontWeight="Bold" Foreground="#FF333333" Margin="0,0,0,6"/>
-                        <CheckBox x:Name="AutoStartBox" Content="{loc:Loc Config.AutoStartLabel}" Margin="0,2,0,0"/>
-                    </StackPanel>
-                </Border>
-
-                <!-- 安全设置 -->
+                <!-- 排除进程 -->
                 <Border Background="White" CornerRadius="6" BorderBrush="#FFE4E7EB" BorderThickness="1" Padding="12,8" Margin="0,0,0,4">
                     <StackPanel>
-                        <TextBlock Text="{loc:Loc Config.SecurityTitle}" FontWeight="Bold" Foreground="#FF333333" Margin="0,0,0,6"/>
+                        <TextBlock Text="{loc:Loc Config.ExcludeTitle}" FontWeight="Bold" Foreground="#FF333333" Margin="0,0,0,4"/>
+                        <TextBlock Text="{loc:Loc Config.ExcludeDesc}" Foreground="#FF888888" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,5"/>
                         <Grid>
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" MinWidth="110"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                            <TextBlock Text="{loc:Loc Config.PinStatusLabel}" VerticalAlignment="Center" Foreground="#FF444444" Margin="0,0,10,0"/>
-                            <TextBlock x:Name="PinStatusText" Grid.Column="1" Text="--" VerticalAlignment="Center" Foreground="#FF333333"/>
-                            <Button x:Name="PinButton" Grid.Column="2" Content="{loc:Loc Config.ChangePin}" Height="26" Padding="12,0" Click="OnPinChangeClick"/>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="ExcludeInputBox" Height="26" Padding="5,2" ToolTip="{loc:Loc Config.ExcludeInputPlaceholder}" KeyDown="ExcludeInputBox_KeyDown"/>
+                            <Button Content="{loc:Loc Config.BrowseExe, Default='📂 浏览 (.exe)...'}" Grid.Column="1" Height="26" Margin="4,0,0,0" Padding="8,0" Click="OnBrowseExcludeExeClick" ToolTip="{loc:Loc Config.BrowseExeTooltip, Default='在本地磁盘中选择可执行文件'}"/>
+                            <Button Content="{loc:Loc Config.PickRunning}" Grid.Column="2" Height="26" Margin="4,0,0,0" Padding="8,0" Click="OnPickRunningProcessClick"/>
+                            <Button Content="{loc:Loc Common.Add}" Grid.Column="3" Height="26" Margin="4,0,0,0" Padding="12,0" Click="OnExcludeAddClick"/>
+                            <Button Content="{loc:Loc Common.Delete}" Grid.Column="4" Height="26" Margin="4,0,0,0" Padding="12,0" Click="OnExcludeDeleteClick"/>
                         </Grid>
-                        <TextBlock Text="{loc:Loc Config.PinHint}" Foreground="#FF888888" FontSize="11" Margin="0,5,0,0"/>
+                        <ListBox x:Name="ExcludeList" Height="80" Margin="0,6,0,0" SelectionMode="Single" MouseDoubleClick="ExcludeList_MouseDoubleClick">
+                            <ListBox.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="{loc:Loc Config.DeleteSelected, Default='删除所选'}" Click="OnExcludeDeleteClick"/>
+                                    <MenuItem Header="{loc:Loc Config.ClearList, Default='清空列表'}" Click="OnExcludeClearClick"/>
+                                </ContextMenu>
+                            </ListBox.ContextMenu>
+                        </ListBox>
+                        <TextBlock Text="{loc:Loc Config.ExcludeTip}" Foreground="#FF888888" FontSize="11" Margin="0,3,0,0"/>
                     </StackPanel>
                 </Border>
 

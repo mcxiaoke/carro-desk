@@ -16,7 +16,7 @@ using CarroDesk.Services;
 using CarroDesk.Services.Tasks;
 using CarroDesk.Services.Localization;
 
-namespace CarroDesk.Views
+namespace CarroDesk.Modules.AppAutoMute.Views
 {
     public partial class AppAutoMuteSettingsWindow : Window
     {

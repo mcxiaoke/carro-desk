@@ -1,20 +1,16 @@
-﻿using System;
+using System;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using CarroDesk.Core;
 using CarroDesk.Host.Services;
-using CarroDesk.Modules.ScreenLock;
-using CarroDesk.Modules.TaskScheduler;
+using CarroDesk.Host.Modules;
 using Hardcodet.Wpf.TaskbarNotification;
 using Microsoft.Win32;
 using CarroDesk.Services;
 using CarroDesk.Services.Localization;
-using CarroDesk.Modules.AudioSwitch;
-using CarroDesk.Modules.AppAutoMute;
-using CarroDesk.Modules.Awake;
-using CarroDesk.Modules.ClipboardHistory;
 using CarroDesk.Services.Tasks;
 using CarroDesk.Views;
 
@@ -29,7 +25,6 @@ namespace CarroDesk
 
         public static ModuleManager Modules { get; private set; }
 
-        private ScreenLockModule _screenLockModule;
         private ConfigManager _configManager;
 
         // 说明：原 `App.Config`（配置门面）与公开的 `App.Services` 已删除。
@@ -45,8 +40,6 @@ namespace CarroDesk
         private int _floatingPanelHotkeyId;
 
         internal static App CurrentApp => Current as App;
-        internal DateTime PauseUntil => _screenLockModule != null ? _screenLockModule.PauseUntil : DateTime.MinValue;
-        internal bool IsPaused => _screenLockModule != null && _screenLockModule.IsPaused;
         internal static TrayContextMenu TrayMenu => _trayMenu;
 
         protected override void OnStartup(StartupEventArgs e)
@@ -114,7 +107,7 @@ namespace CarroDesk
             // 3. 构建托盘
             CreateTrayIcon();
 
-            // 4. 构建并注册核心业务模块与基础设施
+            // 4. 构建核心服务与基础设施，装配模块清单
             var audioService = new AudioService();
             Services.AddSingleton(audioService);
             Services.AddSingleton<IAudioService>(audioService);
@@ -140,38 +133,12 @@ namespace CarroDesk
                 (msg, title) => ShowBalloon(msg));
             _trayController.Attach(_trayMenu);
 
-            _screenLockModule = new ScreenLockModule();
-            _screenLockModule.Controller.IsShuttingDownProvider = () => IsShuttingDown;
-            Modules.RegisterModule(_screenLockModule);
-
-            var taskSchedulerModule = new TaskSchedulerModule();
-            Modules.RegisterModule(taskSchedulerModule);
-            Services.AddSingleton<ITaskSchedulerService>(sp => taskSchedulerModule.Scheduler);
-
-            var audioSwitchModule = new AudioSwitchModule();
-            Modules.RegisterModule(audioSwitchModule);
-
-            var appAutoMuteModule = new AppAutoMuteModule();
-            Modules.RegisterModule(appAutoMuteModule);
-
-            var monitorProfileModule = new CarroDesk.Modules.MonitorProfile.MonitorProfileModule();
-            Modules.RegisterModule(monitorProfileModule);
-
-            var awakeModule = new AwakeModule();
-            Modules.RegisterModule(awakeModule);
-
-            var clipboardHistoryModule = new ClipboardHistoryModule();
-            Modules.RegisterModule(clipboardHistoryModule);
+            // 业务模块清单统一装配（P2-12：App 不再逐个 new 模块）
+            ModuleRegistry.RegisterStandardModules(Modules, Services, () => IsShuttingDown);
 
             // 5. 初始化并启动模块
             Modules.InitializeAll(Services);
             Modules.StartAll();
-
-            _screenLockModule.Controller.Unlocked += () =>
-            {
-                UpdateTrayText();
-                _trayController?.RequestRefresh();
-            };
 
             Exit += OnAppExit;
             UpdateTrayText();
@@ -239,8 +206,9 @@ namespace CarroDesk
             UpdateTrayText();
             if (_tbIcon != null)
             {
-                var slConfig = _configManager?.GetModuleConfig<CarroDesk.Modules.ScreenLock.Models.ScreenLockConfig>("ScreenLock");
-                int idleMins = slConfig?.IdleMinutes ?? 5;
+                // 经 Core 契约读取屏锁状态，宿主不 import 模块私有 Model（P2-12）
+                var slStatus = Modules.Modules.OfType<IScreenLockStatus>().FirstOrDefault();
+                int idleMins = slStatus?.IdleMinutes ?? 5;
                 string balloonMsg = Loc.T("Tray.BalloonConfigReloaded", idleMins);
                 _tbIcon.ShowBalloonTip("CarroDesk", balloonMsg, BalloonIcon.Info);
             }
@@ -306,28 +274,6 @@ namespace CarroDesk
             _tbIcon.TrayMouseDoubleClick += (s, e) => ToggleFloatingPanel();
 
             RefreshMenuChecks();
-        }
-
-        internal void SetIdleMinutes(int minutes)
-        {
-            _screenLockModule?.SetIdleMinutes(minutes);
-            UpdateTrayText();
-            _trayController?.RequestRefresh();
-        }
-
-        internal void PauseFor(TimeSpan duration)
-        {
-            _screenLockModule?.PauseFor(duration);
-            UpdateTrayText();
-            _trayController?.RequestRefresh();
-            ShowBalloon(Loc.T("Tray.BalloonPause", _screenLockModule != null ? _screenLockModule.PauseUntil : DateTime.MinValue));
-        }
-
-        internal void ResumeIdle()
-        {
-            _screenLockModule?.ResumeIdle();
-            UpdateTrayText();
-            _trayController?.RequestRefresh();
         }
 
         internal void RefreshMenuChecks()

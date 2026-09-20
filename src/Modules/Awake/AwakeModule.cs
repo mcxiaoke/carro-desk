@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
@@ -7,8 +7,8 @@ using CarroDesk.Core;
 using CarroDesk.Core.Models;
 using CarroDesk.Modules.Awake.Models;
 using CarroDesk.Modules.Awake.Services;
+using CarroDesk.Modules.Awake.Views;
 using CarroDesk.Services.Localization;
-using CarroDesk.Views;
 
 namespace CarroDesk.Modules.Awake
 {

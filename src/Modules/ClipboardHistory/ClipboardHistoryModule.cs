@@ -159,12 +159,37 @@ namespace CarroDesk.Modules.ClipboardHistory
 
             root.Children.Add(new TrayMenuItem
             {
+                Id = "clipboard_settings",
+                Header = Loc.T("Clipboard.Settings", "剪贴板历史设置..."),
+                ClickAction = OpenSettings
+            });
+
+            root.Children.Add(new TrayMenuItem
+            {
                 Id = "clipboard_clear_all",
                 Header = Loc.T("Clipboard.ClearAll", "清空历史记录"),
                 ClickAction = ClearAllHistory
             });
 
             yield return root;
+        }
+
+        public void OpenSettings()
+        {
+            try
+            {
+                var cfgMgr = Context?.GetService<IConfigManager>();
+                var win = new ClipboardHistorySettingsWindow(this, cfgMgr, msg => Context?.ShowNotification(msg))
+                {
+                    WindowStartupLocation = System.Windows.WindowStartupLocation.CenterScreen
+                };
+                win.ShowDialog();
+                Context?.RequestTrayRefresh();
+            }
+            catch (Exception ex)
+            {
+                Context?.GetService<ILoggerService>()?.LogError(Id, "打开剪贴板历史设置窗口异常", ex);
+            }
         }
 
         public void SummonWindow()

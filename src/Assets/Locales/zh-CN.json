@@ -1,4 +1,4 @@
-﻿{
+{
   "_meta": {
     "code": "zh-CN",
     "name": "简体中文"
@@ -327,6 +327,8 @@
     "FileNotExists": "需不存在",
     "TestRun": "测试运行 (Test)",
     "TestRunTooltip": "直接试跑当前任务配置并查看返回状态和日志",
+    "GlobalEnabledLabel": "启用任务调度",
+    "GlobalEnabledTooltip": "总开关：关闭后所有计划任务暂停执行",
     "Validate": "校验",
     "SaveAndReload": "保存并生效",
     "SaveOnly": "仅保存",
@@ -408,6 +410,11 @@
     "Title": "剪贴板历史",
     "OpenWindow": "打开剪贴板历史...",
     "AutoRecord": "自动记录剪贴板",
+    "Settings": "剪贴板历史设置...",
+    "ConfigSaved": "剪贴板历史配置已保存并生效",
+    "InvalidMaxItems": "最大保留条数必须是大于 0 的整数。",
+    "InvalidRetentionDays": "最大保留天数必须是大于等于 0 的整数。",
+    "InvalidMaxPreview": "预览最大字符数必须是大于 0 的整数。",
     "ClearAll": "清空历史记录",
     "ClearConfirm": "确定要清空全部剪贴板历史记录吗？",
     "ClearPreservePinnedPrompt": "确定要清空剪贴板历史记录吗？\n\n(已固定的 {0} 条记录将被保留)",

@@ -5,6 +5,7 @@ using System.Windows.Threading;
 using CarroDesk.Core;
 using CarroDesk.Core.Models;
 using CarroDesk.Modules.AppAutoMute.Models;
+using CarroDesk.Modules.AppAutoMute.Views;
 using CarroDesk.Services;
 using CarroDesk.Services.Localization;
 
@@ -378,7 +379,7 @@ namespace CarroDesk.Modules.AppAutoMute
                     {
                         var cfgMgr = Context?.GetService<IConfigManager>();
                         var audio = Context?.GetService<IAudioService>();
-                        var win = new CarroDesk.Views.AppAutoMuteSettingsWindow(this, cfgMgr, audio, msg => Context?.ShowNotification(msg))
+                        var win = new AppAutoMuteSettingsWindow(this, cfgMgr, audio, msg => Context?.ShowNotification(msg))
                         {
                             WindowStartupLocation = System.Windows.WindowStartupLocation.CenterScreen
                         };

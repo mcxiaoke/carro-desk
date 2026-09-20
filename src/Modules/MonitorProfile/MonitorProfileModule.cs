@@ -5,6 +5,7 @@ using CarroDesk.Core;
 using CarroDesk.Core.Models;
 using CarroDesk.Modules.MonitorProfile.Models;
 using CarroDesk.Modules.MonitorProfile.Services;
+using CarroDesk.Modules.MonitorProfile.Views;
 using CarroDesk.Services.Localization;
 
 namespace CarroDesk.Modules.MonitorProfile
@@ -339,7 +340,7 @@ namespace CarroDesk.Modules.MonitorProfile
                 {
                     try
                     {
-                        var win = new CarroDesk.Views.MonitorProfileSettingsWindow(this)
+                        var win = new MonitorProfileSettingsWindow(this)
                         {
                             WindowStartupLocation = System.Windows.WindowStartupLocation.CenterScreen
                         };

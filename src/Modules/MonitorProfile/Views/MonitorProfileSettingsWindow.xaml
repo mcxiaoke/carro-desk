@@ -1,4 +1,4 @@
-<Window x:Class="CarroDesk.Views.MonitorProfileSettingsWindow"
+<Window x:Class="CarroDesk.Modules.MonitorProfile.Views.MonitorProfileSettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="显示器亮度与情境模式设置" Height="680" Width="720"

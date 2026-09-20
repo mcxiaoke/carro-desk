@@ -1,4 +1,4 @@
-﻿{
+{
   "_meta": {
     "code": "en-US",
     "name": "English"
@@ -327,6 +327,8 @@
     "FileNotExists": "File must not exist",
     "TestRun": "Test Run",
     "TestRunTooltip": "Test-run current task configuration and view output/log",
+    "GlobalEnabledLabel": "Enable Task Scheduler",
+    "GlobalEnabledTooltip": "Master switch: all scheduled tasks are paused when disabled",
     "Validate": "Validate",
     "SaveAndReload": "Save & Apply",
     "SaveOnly": "Save Only",
@@ -408,6 +410,11 @@
     "Title": "Clipboard History",
     "OpenWindow": "Open Clipboard History...",
     "AutoRecord": "Auto-record Clipboard",
+    "Settings": "Clipboard History Settings...",
+    "ConfigSaved": "Clipboard history configuration saved and applied",
+    "InvalidMaxItems": "Max items must be an integer greater than 0.",
+    "InvalidRetentionDays": "Retention days must be a non-negative integer.",
+    "InvalidMaxPreview": "Max preview characters must be an integer greater than 0.",
     "ClearAll": "Clear All History",
     "ClearConfirm": "Are you sure you want to clear all clipboard history?",
     "ClearPreservePinnedPrompt": "Are you sure you want to clear clipboard history?\n\n({0} pinned items will be kept)",

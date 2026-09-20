@@ -10,7 +10,7 @@ using CarroDesk.Modules.MonitorProfile;
 using CarroDesk.Modules.MonitorProfile.Models;
 using CarroDesk.Services.Localization;
 
-namespace CarroDesk.Views
+namespace CarroDesk.Modules.MonitorProfile.Views
 {
     public partial class MonitorProfileSettingsWindow : Window
     {

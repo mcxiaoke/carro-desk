@@ -14,7 +14,7 @@ using CarroDesk.Modules.AudioSwitch.Models;
 using CarroDesk.Services.Tasks;
 using CarroDesk.Services.Localization;
 
-namespace CarroDesk.Views
+namespace CarroDesk.Modules.AudioSwitch.Views
 {
     public class AudioDeviceViewModel : INotifyPropertyChanged
     {

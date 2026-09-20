@@ -1,10 +1,11 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using CarroDesk.Core;
 using CarroDesk.Core.Models;
 using CarroDesk.Host.Services;
 using CarroDesk.Modules.TaskScheduler.Models;
+using CarroDesk.Modules.TaskScheduler.Views;
 using CarroDesk.Services;
 using CarroDesk.Services.Localization;
 using CarroDesk.Services.Tasks;
@@ -247,7 +248,7 @@ namespace CarroDesk.Modules.TaskScheduler
                 {
                     try
                     {
-                        var win = new CarroDesk.Views.TaskEditorWindow(Scheduler, () => RequestRefreshSelf())
+                        var win = new TaskEditorWindow(Scheduler, () => RequestRefreshSelf())
                         {
                             WindowStartupLocation = System.Windows.WindowStartupLocation.CenterScreen
                         };

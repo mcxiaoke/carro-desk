@@ -9,7 +9,7 @@ using CarroDesk.Models;
 using CarroDesk.Services.Localization;
 using CarroDesk.Services.Tasks;
 
-namespace CarroDesk.Views
+namespace CarroDesk.Modules.TaskScheduler.Views
 {
     public partial class TaskEditorWindow : Window
     {
@@ -46,10 +46,19 @@ namespace CarroDesk.Views
 
         private void OnLoaded(object sender, RoutedEventArgs e)
         {
+            GlobalEnabledBox.IsChecked = _scheduler?.IsGlobalEnabled ?? true;
             LoadTasks();
             RefreshScriptQuick();
             InitTemplateQuick();
             if (_tasks.Count > 0) TaskList.SelectedIndex = 0;
+        }
+
+        private void OnGlobalEnabledClick(object sender, RoutedEventArgs e)
+        {
+            if (_isUpdating) return;
+            bool enabled = GlobalEnabledBox.IsChecked == true;
+            _scheduler?.SetGlobalEnabled(enabled);
+            _onReloadCompleted?.Invoke();
         }
 
         private void LoadTasks()
