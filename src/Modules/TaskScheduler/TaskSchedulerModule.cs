@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using CarroDesk.Core;
@@ -50,6 +50,13 @@ namespace CarroDesk.Modules.TaskScheduler
             {
                 Context?.GetService<ILoggerService>()?.LogError(Id, "启动任务调度器失败", ex);
             }
+        }
+
+        public override void Dispose()
+        {
+            // Scheduler 订阅了静态 SystemEvents.PowerModeChanged，Dispose 内会解绑
+            Scheduler?.Dispose();
+            base.Dispose();
         }
 
         protected override void OnStop()

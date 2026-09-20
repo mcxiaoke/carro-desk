@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
@@ -59,6 +59,23 @@ namespace CarroDesk.Modules.Awake
             UnregisterHotkey();
             _hotkeys?.UnregisterAll(Id);
             Service.Stop();
+        }
+
+        public override void Dispose()
+        {
+            // Initialize 中订阅了 AwakeService 的 5 个事件，必须成对解绑：
+            // Service 内含 1 秒 DispatcherTimer，事件引用会把整个模块钉在内存里。
+            if (Service != null)
+            {
+                Service.StateChanged -= OnServiceStateChanged;
+                Service.Expired -= OnServiceExpired;
+                Service.BatteryStateChanged -= OnBatteryStateChanged;
+                Service.ProcessTriggered -= OnProcessTriggered;
+                Service.Tick -= OnServiceTick;
+            }
+
+            base.Dispose();
+            Service?.Dispose();
         }
 
         public override void OnConfigReloaded()

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -24,14 +24,18 @@ namespace CarroDesk
     {
         private const string MutexName = "Global\\CarroDesk_SingleInstance_2C7A4F10";
 
-        public static ServiceContainer Services { get; private set; }
+        /// <summary>宿主服务容器。仅供 App 内部装配与回调使用，不再对外暴露静态门面。</summary>
+        private static ServiceContainer Services { get; set; }
+
         public static ModuleManager Modules { get; private set; }
 
         private ScreenLockModule _screenLockModule;
         private ConfigManager _configManager;
 
-        // 向后兼容各 View 的配置门面（全局 AppSettings，非模块专属）
-        public static ConfigService Config => (Services?.GetService<IConfigManager>() as ConfigManager)?.Underlying;
+        // 说明：原 `App.Config`（配置门面）与公开的 `App.Services` 已删除。
+        // 它们曾让 View/模块绕过依赖注入直访宿主静态状态，是"宿主零感知"铁律的主要破坏点；
+        // 0918 已完成调用点迁移，此处移除残留声明，避免后续再被误用为捷径。
+        // 各 View 现在经构造函数注入 IConfigManager / ServiceContainer。
         public static bool IsShuttingDown { get; private set; }
 
         private static Mutex _mutex;
@@ -192,7 +196,7 @@ namespace CarroDesk
         {
             UnregisterFloatingPanelHotkey();
             var hotkeys = Services?.GetService<IHotkeyService>();
-            var config = Config?.Current;
+            var config = _configManager?.Current;
             if (hotkeys != null && config != null && !string.IsNullOrWhiteSpace(config.FloatingPanelHotkey))
             {
                 try
@@ -224,7 +228,8 @@ namespace CarroDesk
         {
             var configMgr = Services?.GetService<IConfigManager>();
             configMgr?.Reload();
-            var c = Config.Current;
+            var c = _configManager?.Current;
+            if (c == null) return;
             I18nService.Instance.SetLanguage(c.Language);
             Modules?.ReloadAll();
             AutoStartService.Sync(c.AutoStart);
@@ -383,15 +388,24 @@ namespace CarroDesk
 
         internal void PromptExit()
         {
+            // 退出守卫协商可能逐个等待最长 3 秒，绝不能同步阻塞 UI 线程（托盘点击处），
+            // 否则多个守卫叠加会让"点退出"看起来像卡死。改为异步协商，完成后再回到 UI 线程。
+            _ = PromptExitAsync();
+        }
+
+        private async System.Threading.Tasks.Task PromptExitAsync()
+        {
             // 退出守卫协商（规范 §3.5）：任一守卫要求阻止时，展示 Host 持有的挑战 UI
             bool blocked = false;
             foreach (var module in Modules.Modules)
             {
                 var guard = module as IExitGuard;
                 if (guard == null) continue;
+
                 bool b = false;
-                bool ok = SafeInvoker.RunTimeout(module.Id, TimeSpan.FromSeconds(3),
-                    () => b = guard.RequestBlockExit(), (id, ex) => LogError(ex));
+                bool ok = await SafeInvoker.RunTimeoutAsync(module.Id, TimeSpan.FromSeconds(3),
+                    () => b = guard.RequestBlockExit(), (id, ex) => LogError(ex)).ConfigureAwait(true);
+
                 if (ok && b) { blocked = true; break; }
             }
 

@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Specialized;
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -70,7 +72,11 @@ namespace CarroDesk.Host.Services
 
             if (options?.RequestRefresh != null)
             {
-                node.Children.CollectionChanged += (s, e) =>
+                // 这些事件挂在**模块侧**的 node 上，而视觉元素（MenuItem）每次托盘重建都会新建。
+                // 用具名处理器而非裸 lambda，并以视觉元素的 Unloaded 作为订阅的生命周期边界：
+                // 若模块将来改为复用/缓存节点，订阅就不会随打开次数线性累积（否则会触发
+                // N 倍 RequestRefresh 的递归刷新风暴）。
+                NotifyCollectionChangedEventHandler onChildrenChanged = (s, e) =>
                 {
                     if (dispatcher != null && !dispatcher.CheckAccess())
                     {
@@ -81,16 +87,22 @@ namespace CarroDesk.Host.Services
                         options.RequestRefresh();
                     }
                 };
-            }
 
-            if (options?.BackgroundPropertyWarn != null && dispatcher != null)
-            {
-                node.PropertyChanged += (s, pc) =>
+                PropertyChangedEventHandler onPropertyChanged = (s, pc) =>
                 {
                     if (!dispatcher.CheckAccess())
                     {
                         options.BackgroundPropertyWarn(node, pc.PropertyName);
                     }
+                };
+
+                node.Children.CollectionChanged += onChildrenChanged;
+                node.PropertyChanged += onPropertyChanged;
+
+                menuItem.Unloaded += (s, e) =>
+                {
+                    node.Children.CollectionChanged -= onChildrenChanged;
+                    node.PropertyChanged -= onPropertyChanged;
                 };
             }
 

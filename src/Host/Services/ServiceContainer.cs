@@ -50,8 +50,21 @@ namespace CarroDesk.Host.Services
         public object GetService(Type serviceType)
         {
             if (serviceType == null) return null;
-            var resolved = ResolveAll(serviceType);
-            return resolved.Count > 0 ? resolved[0] : null;
+
+            // 定向解析：只构造第一个匹配的注册。
+            // 此前实现先调用 ResolveAll() 再取 [0]，会把该类型下**所有**注册都实例化一遍，
+            // 等于用一次解析的代价构造了全部实例（并可能触发不必要的副作用）。
+            lock (_lock)
+            {
+                if (!_registrations.TryGetValue(serviceType, out var list)) return null;
+
+                foreach (var reg in list)
+                {
+                    var value = Resolve(reg);
+                    if (value != null) return value;
+                }
+                return null;
+            }
         }
 
         public T GetService<T>() where T : class
@@ -72,8 +85,7 @@ namespace CarroDesk.Host.Services
 
         public bool TryGetService<T>(out T service) where T : class
         {
-            var resolved = ResolveAll(typeof(T));
-            service = resolved.OfType<T>().FirstOrDefault();
+            service = GetService(typeof(T)) as T;
             return service != null;
         }
 
@@ -87,6 +99,21 @@ namespace CarroDesk.Host.Services
             return list;
         }
 
+        /// <summary>解析单个注册（首次解析时执行工厂并缓存）。调用方须已持有 _lock。</summary>
+        private object Resolve(Registration reg)
+        {
+            if (reg == null) return null;
+            if (reg.Created) return reg.Instance;
+            if (reg.Factory == null) return null;
+
+            var created = reg.Factory(this);
+            if (created == null) return null;
+
+            reg.Instance = created;
+            reg.Created = true;
+            return created;
+        }
+
         private List<object> ResolveAll(Type serviceType)
         {
             var result = new List<object>();
@@ -95,21 +122,8 @@ namespace CarroDesk.Host.Services
                 if (!_registrations.TryGetValue(serviceType, out var list)) return result;
                 foreach (var reg in list)
                 {
-                    object value;
-                    if (reg.Created)
-                    {
-                        value = reg.Instance;
-                    }
-                    else
-                    {
-                        if (reg.Factory == null) continue;
-                        var created = reg.Factory(this);
-                        if (created == null) continue;
-                        reg.Instance = created;
-                        reg.Created = true;
-                        value = created;
-                    }
-                    result.Add(value);
+                    var value = Resolve(reg);
+                    if (value != null) result.Add(value);
                 }
             }
             return result;

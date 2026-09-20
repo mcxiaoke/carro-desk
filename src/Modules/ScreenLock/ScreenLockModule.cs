@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
@@ -65,6 +65,14 @@ namespace CarroDesk.Modules.ScreenLock
 
             Controller.Unlocked += OnControllerUnlocked;
             SystemEvents.SessionSwitch += OnSessionSwitch;
+        }
+
+        public override void Dispose()
+        {
+            // LockController 订阅了静态 SystemEvents.DisplaySettingsChanged，
+            // 并持有全局低级键盘钩子；不释放会同时泄漏事件引用与钩子句柄。
+            Controller?.Dispose();
+            base.Dispose();
         }
 
         protected override void OnStop()
