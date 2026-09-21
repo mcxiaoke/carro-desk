@@ -71,8 +71,32 @@ namespace CarroDesk.Modules.Awake.Views
             HotkeyBox.Text = config.Hotkey ?? "Win+Shift+W";
             ExitDelayBox.Text = config.AutoAwakeExitDelaySeconds.ToString();
 
+            // 必须先赋值再刷新可用性：Checked/Unchecked 事件会在赋值过程中触发
+            ProcessLinkEnabledBox.IsChecked = config.ProcessLinkEnabled;
+            UpdateProcessLinkPanelState();
+
             _processes = config.AutoAwakeProcesses != null ? ProcessHelper.NormalizeList(config.AutoAwakeProcesses) : new List<string>();
             ProcessListBox.ItemsSource = _processes;
+        }
+
+        /// <summary>总开关状态变化：仅做界面预览，实际生效在"保存并应用"</summary>
+        private void OnProcessLinkEnabledChanged(object sender, RoutedEventArgs e)
+        {
+            UpdateProcessLinkPanelState();
+        }
+
+        private void UpdateProcessLinkPanelState()
+        {
+            bool enabled = ProcessLinkEnabledBox.IsChecked == true;
+            if (ProcessLinkPanel != null)
+            {
+                ProcessLinkPanel.IsEnabled = enabled;
+                ProcessLinkPanel.Opacity = enabled ? 1.0 : 0.5;
+            }
+            if (ProcessLinkDisabledHint != null)
+            {
+                ProcessLinkDisabledHint.Visibility = enabled ? Visibility.Collapsed : Visibility.Visible;
+            }
         }
 
         private void UpdateStatusBadge()
@@ -229,6 +253,8 @@ namespace CarroDesk.Modules.Awake.Views
             BatteryThresholdBox.Text = def.BatteryThreshold.ToString();
             HotkeyBox.Text = def.Hotkey;
             ExitDelayBox.Text = def.AutoAwakeExitDelaySeconds.ToString();
+            ProcessLinkEnabledBox.IsChecked = def.ProcessLinkEnabled;
+            UpdateProcessLinkPanelState();
             _processes = new List<string>();
             ProcessListBox.ItemsSource = null;
             ProcessListBox.ItemsSource = _processes;
@@ -262,6 +288,7 @@ namespace CarroDesk.Modules.Awake.Views
             config.Hotkey = HotkeyBox.Text.Trim();
             config.AutoAwakeExitDelaySeconds = exitDelay;
             config.AutoAwakeProcesses = ProcessHelper.NormalizeList(_processes);
+            config.ProcessLinkEnabled = ProcessLinkEnabledBox.IsChecked == true;
 
             // 应用工作模式
             var service = _module.Service;

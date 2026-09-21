@@ -177,6 +177,50 @@ namespace CarroDesk.Modules.Awake
             RequestRefreshTray();
         }
 
+        /// <summary>智能进程联动总开关：在托盘菜单中一键启用/停用</summary>
+        public void ToggleProcessLink()
+        {
+            if (Config == null) return;
+            SetProcessLinkEnabled(!Config.ProcessLinkEnabled);
+        }
+
+        /// <summary>设置智能进程联动开关并立即生效（服务层会撤销进行中的联动）</summary>
+        public void SetProcessLinkEnabled(bool enabled)
+        {
+            if (Config == null) return;
+            Config.ProcessLinkEnabled = enabled;
+
+            Service?.UpdateConfig(Config);
+            SaveConfig();
+            UpdateTrayHeaderAndToolTip();
+            RequestRefreshTray();
+
+            if (enabled)
+            {
+                if (Config.AutoAwakeProcesses == null || Config.AutoAwakeProcesses.Count == 0)
+                {
+                    ShowNotify(Loc.T("Tray.AwakeProcessLinkOnNoTargets", "智能进程联动已启用，但名单为空，请先在设置中添加目标进程。"));
+                }
+                else
+                {
+                    ShowNotify(Loc.T("Tray.AwakeProcessLinkOnNotify", "智能进程联动已启用，检测到目标进程运行时会自动保持唤醒。"));
+                }
+            }
+            else
+            {
+                ShowNotify(Loc.T("Tray.AwakeProcessLinkOffNotify", "智能进程联动已停用，进程名单与缓冲设置已保留。"));
+            }
+        }
+
+        private string BuildProcessLinkToggleTip(bool enabled)
+        {
+            if (enabled)
+            {
+                return Loc.T("Tray.AwakeProcessLinkTipOn", "已启用：检测到名单中的进程运行时会自动保持唤醒，全部退出后自动恢复。点击可停用。");
+            }
+            return Loc.T("Tray.AwakeProcessLinkTipOff", "已停用：不再自动检测目标进程。名单与退出缓冲时间仍保留，点击可重新启用。");
+        }
+
         private void OnServiceExpired()
         {
             ShowNotify(Loc.T("Tray.AwakeNotifyExpired", "保持唤醒时间已结束，已恢复系统常规电源策略。"));
@@ -468,9 +512,23 @@ namespace CarroDesk.Modules.Awake
                 }
             });
 
+            // 6. 智能进程联动总开关 (复选开关)
+            bool processLinkOn = Config == null || Config.ProcessLinkEnabled;
+            root.Children.Add(new TrayMenuItem
+            {
+                Id = "awake_process_link",
+                Header = Loc.T("Tray.AwakeProcessLinkOn", "智能进程联动"),
+                IsChecked = processLinkOn,
+                ToolTip = BuildProcessLinkToggleTip(processLinkOn),
+                ClickAction = () =>
+                {
+                    ToggleProcessLink();
+                }
+            });
+
             root.Children.Add(TrayMenuItem.Separator());
 
-            // 6. 高级设置
+            // 7. 高级设置
             root.Children.Add(new TrayMenuItem
             {
                 Id = "awake_settings",

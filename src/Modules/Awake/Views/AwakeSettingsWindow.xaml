@@ -202,43 +202,54 @@
                 <!-- 3. 智能目标进程联动卡片 -->
                 <Border Style="{StaticResource CardBorderStyle}">
                     <StackPanel>
-                        <TextBlock Text="智能进程联动（检测到运行时自动保持唤醒）" FontSize="13" FontWeight="Bold" Foreground="#FF334155" Margin="0,0,0,4"/>
-                        <TextBlock Text="当名单中的程序在运行时自动进入保持唤醒；全部退出后自动恢复" FontSize="11" Foreground="#FF94A3B8" Margin="0,0,0,8"/>
-
-                        <Grid Margin="0,0,0,6">
+                        <Grid Margin="0,0,0,4">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <TextBox x:Name="ProcessInputBox" Height="26" Padding="6,2" ToolTip="输入进程名，如 devenv, blender, ffmpeg"/>
-                            <Button Content="📂 浏览 (.exe)..." Grid.Column="1" Height="26" Margin="4,0,0,0" Padding="8,0" Click="OnBrowseExeProcessClick" ToolTip="在本地磁盘中选择可执行文件"/>
-                            <Button Content="从运行进程中选取..." Grid.Column="2" Height="26" Margin="4,0,0,0" Padding="8,0" Click="OnPickRunningProcessClick"/>
-                            <Button Content="添加" Grid.Column="3" Height="26" Margin="4,0,0,0" Padding="12,0" Click="OnAddProcessClick"/>
-                            <Button Content="删除" Grid.Column="4" Height="26" Margin="4,0,0,0" Padding="12,0" Click="OnDeleteProcessClick"/>
+                            <TextBlock Text="智能进程联动（检测到运行时自动保持唤醒）" FontSize="13" FontWeight="Bold" Foreground="#FF334155" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                            <CheckBox x:Name="ProcessLinkEnabledBox" Grid.Column="1" Content="启用" FontWeight="SemiBold" VerticalAlignment="Center" Margin="10,0,0,0" IsChecked="True" Checked="OnProcessLinkEnabledChanged" Unchecked="OnProcessLinkEnabledChanged" ToolTip="总开关：关闭后不再检测目标进程，名单与缓冲设置保留"/>
                         </Grid>
+                        <TextBlock Text="当名单中的程序在运行时自动进入保持唤醒；全部退出后自动恢复" FontSize="11" Foreground="#FF94A3B8" Margin="0,0,0,8" TextWrapping="Wrap"/>
 
-                        <ListBox x:Name="ProcessListBox" Height="90" SelectionMode="Single">
-                            <ListBox.ContextMenu>
-                                <ContextMenu>
-                                    <MenuItem Header="删除所选" Click="OnDeleteProcessClick"/>
-                                    <MenuItem Header="清空列表" Click="OnClearProcessesClick"/>
-                                </ContextMenu>
-                            </ListBox.ContextMenu>
-                        </ListBox>
+                        <StackPanel x:Name="ProcessLinkPanel">
+                            <Grid Margin="0,0,0,6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="ProcessInputBox" Height="26" Padding="6,2" ToolTip="输入进程名，如 devenv, blender, ffmpeg"/>
+                                <Button Content="📂 浏览 (.exe)..." Grid.Column="1" Height="26" Margin="4,0,0,0" Padding="8,0" Click="OnBrowseExeProcessClick" ToolTip="在本地磁盘中选择可执行文件"/>
+                                <Button Content="从运行进程中选取..." Grid.Column="2" Height="26" Margin="4,0,0,0" Padding="8,0" Click="OnPickRunningProcessClick"/>
+                                <Button Content="添加" Grid.Column="3" Height="26" Margin="4,0,0,0" Padding="12,0" Click="OnAddProcessClick"/>
+                                <Button Content="删除" Grid.Column="4" Height="26" Margin="4,0,0,0" Padding="12,0" Click="OnDeleteProcessClick"/>
+                            </Grid>
 
-                        <Grid Margin="0,8,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="60"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="退出缓冲时间：" VerticalAlignment="Center" FontSize="12" Foreground="#FF475569"/>
-                            <TextBox x:Name="ExitDelayBox" Grid.Column="1" Height="24" Margin="6,0,4,0" TextAlignment="Center" Text="120"/>
-                            <TextBlock Grid.Column="2" Text="秒 (进程退出后延迟恢复的缓冲时间，设为 0 则立即恢复)" VerticalAlignment="Center" Foreground="#FF64748B" FontSize="11"/>
-                        </Grid>
+                            <ListBox x:Name="ProcessListBox" Height="90" SelectionMode="Single">
+                                <ListBox.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="删除所选" Click="OnDeleteProcessClick"/>
+                                        <MenuItem Header="清空列表" Click="OnClearProcessesClick"/>
+                                    </ContextMenu>
+                                </ListBox.ContextMenu>
+                            </ListBox>
+
+                            <Grid Margin="0,8,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="60"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="退出缓冲时间：" VerticalAlignment="Center" FontSize="12" Foreground="#FF475569"/>
+                                <TextBox x:Name="ExitDelayBox" Grid.Column="1" Height="24" Margin="6,0,4,0" TextAlignment="Center" Text="120"/>
+                                <TextBlock Grid.Column="2" Text="秒 (进程退出后延迟恢复的缓冲时间，设为 0 则立即恢复)" VerticalAlignment="Center" Foreground="#FF64748B" FontSize="11" TextWrapping="Wrap"/>
+                            </Grid>
+                        </StackPanel>
+
+                        <TextBlock x:Name="ProcessLinkDisabledHint" Text="智能进程联动已停用，名单与缓冲设置仍然保留；勾选上方“启用”即可恢复。" FontSize="11" Foreground="#FFB45309" Margin="0,8,0,0" TextWrapping="Wrap" Visibility="Collapsed"/>
                     </StackPanel>
                 </Border>
             </StackPanel>

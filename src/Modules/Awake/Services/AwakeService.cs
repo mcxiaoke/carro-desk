@@ -68,6 +68,13 @@ namespace CarroDesk.Modules.Awake.Services
         public bool IsProcessTriggered => _isProcessTriggered;
         public string ActiveProcessTrigger => _activeProcessTrigger;
 
+        /// <summary>智能进程联动是否启用（总开关 + 名单非空）</summary>
+        public bool IsProcessLinkEnabled => _config == null || _config.ProcessLinkEnabled;
+
+        /// <summary>名单中是否有可用的目标进程</summary>
+        public bool HasProcessTargets =>
+            _config?.AutoAwakeProcesses != null && _config.AutoAwakeProcesses.Count > 0;
+
         public TimeSpan RemainingTime
         {
             get
@@ -106,6 +113,23 @@ namespace CarroDesk.Modules.Awake.Services
         {
             _config = config ?? AwakeConfig.CreateDefault();
             _keepDisplayOn = _config.KeepDisplayOn;
+
+            // 开关被关闭时，立即撤销正在进行的进程联动，避免"已关闭但仍保持唤醒"的状态残留
+            if (!IsProcessLinkEnabled && _isProcessTriggered)
+            {
+                string oldProc = _activeProcessTrigger;
+                _isProcessTriggered = false;
+                _activeProcessTrigger = string.Empty;
+                _processExitPendingSeconds = 0;
+                if (_mode == AwakeMode.Indefinite)
+                {
+                    _mode = AwakeMode.Passive;
+                    _expireTime = DateTime.MinValue;
+                }
+                _logger?.LogInfo("Awake", $"智能进程联动已关闭，撤销进程 '{oldProc}' 触发的保持唤醒");
+                ProcessTriggered?.Invoke(false, oldProc);
+            }
+
             ApplyExecutionState();
             StateChanged?.Invoke();
         }
@@ -289,8 +313,8 @@ namespace CarroDesk.Modules.Awake.Services
                 CheckBatteryStatus();
             }
 
-            // 3. 自动唤醒进程监测（每 5 秒检查一次）
-            if (_config != null && _config.AutoAwakeProcesses != null && _config.AutoAwakeProcesses.Count > 0 && _tickCount % 5 == 0)
+            // 3. 自动唤醒进程监测（每 5 秒检查一次；开关关闭时完全不检测）
+            if (IsProcessLinkEnabled && HasProcessTargets && _tickCount % 5 == 0)
             {
                 CheckProcessTriggers();
             }
@@ -338,6 +362,9 @@ namespace CarroDesk.Modules.Awake.Services
 
         private void CheckProcessTriggers()
         {
+            // 总开关关闭时彻底不参与联动（含测试反射直调路径）
+            if (!IsProcessLinkEnabled) return;
+
             try
             {
                 string matchedProc = null;

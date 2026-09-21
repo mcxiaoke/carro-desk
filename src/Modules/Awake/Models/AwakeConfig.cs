@@ -29,6 +29,10 @@ namespace CarroDesk.Modules.Awake.Models
         /// <summary>常用定时预设（分钟）</summary>
         public List<int> CustomPresets { get; set; } = new List<int> { 15, 30, 60, 120, 240 };
 
+        /// <summary>是否启用智能进程联动（检测到目标进程运行时自动保持唤醒）。
+        /// 关闭后进程名单与退出缓冲时间均保留，仅暂停联动行为。</summary>
+        public bool ProcessLinkEnabled { get; set; } = true;
+
         /// <summary>检测到以下进程运行时自动保持唤醒</summary>
         public List<string> AutoAwakeProcesses { get; set; } = new List<string>();
 

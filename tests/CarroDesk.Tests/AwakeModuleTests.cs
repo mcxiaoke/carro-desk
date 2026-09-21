@@ -26,6 +26,7 @@ namespace CarroDesk.Tests
             Assert.IsTrue(config.DisableOnBattery);
             Assert.AreEqual(20, config.BatteryThreshold);
             Assert.AreEqual(120, config.AutoAwakeExitDelaySeconds);
+            Assert.IsTrue(config.ProcessLinkEnabled, "智能进程联动默认应启用");
             Assert.IsNotNull(config.CustomPresets);
             Assert.IsTrue(config.CustomPresets.Contains(30));
             Assert.IsNotNull(config.AutoAwakeProcesses);
@@ -61,6 +62,7 @@ namespace CarroDesk.Tests
             Assert.IsTrue(root.Children.Any(c => c.Id == "awake_mode_timed_root"), "应包含定时保持唤醒子菜单");
             Assert.IsTrue(root.Children.Any(c => c.Id == "awake_mode_until_root"), "应包含保持至指定时刻子菜单");
             Assert.IsTrue(root.Children.Any(c => c.Id == "awake_keep_display"), "应包含保持屏幕常亮选项");
+            Assert.IsTrue(root.Children.Any(c => c.Id == "awake_process_link"), "应包含智能进程联动开关");
             Assert.IsTrue(root.Children.Any(c => c.Id == "awake_settings"), "应包含设置选项");
 
             // 检查定时子菜单预设
@@ -168,6 +170,75 @@ namespace CarroDesk.Tests
             InvokeCheckProcessTriggers(service);
             Assert.AreEqual(AwakeMode.Passive, service.Mode,
                 "用户的关闭操作被守护进程联动自动反转了");
+
+            service.Dispose();
+        }
+
+        /// <summary>
+        /// 智能进程联动总开关：关闭后即使目标进程正在运行也不得触发联动；
+        /// 重新启用后应立即恢复联动能力。
+        /// </summary>
+        [TestMethod]
+        public void Awake_ProcessLinkDisabled_SuppressesAutoTrigger()
+        {
+            string selfProcess = System.Diagnostics.Process.GetCurrentProcess().ProcessName;
+
+            var config = AwakeConfig.CreateDefault();
+            config.AutoAwakeProcesses = new System.Collections.Generic.List<string> { selfProcess };
+            config.AutoAwakeExitDelaySeconds = 0;
+            config.ProcessLinkEnabled = false;
+
+            var service = new AwakeService(Dispatcher.CurrentDispatcher, null);
+            service.Initialize(config);
+
+            Assert.IsFalse(service.IsProcessLinkEnabled);
+            InvokeCheckProcessTriggers(service);
+            Assert.AreEqual(AwakeMode.Passive, service.Mode,
+                "总开关关闭时不得自动开启保持唤醒");
+            Assert.IsFalse(service.IsProcessTriggered);
+
+            // 重新启用后联动应恢复
+            config.ProcessLinkEnabled = true;
+            service.UpdateConfig(config);
+            Assert.IsTrue(service.IsProcessLinkEnabled);
+
+            InvokeCheckProcessTriggers(service);
+            Assert.AreEqual(AwakeMode.Indefinite, service.Mode,
+                "重新启用后应恢复自动联动");
+            Assert.IsTrue(service.IsProcessTriggered);
+
+            service.Dispose();
+        }
+
+        /// <summary>
+        /// 联动进行中关闭总开关：必须立即撤销保持唤醒，不得留下"已关闭却仍在唤醒"的残留状态。
+        /// </summary>
+        [TestMethod]
+        public void Awake_DisablingProcessLink_RevokesActiveLink()
+        {
+            string selfProcess = System.Diagnostics.Process.GetCurrentProcess().ProcessName;
+
+            var config = AwakeConfig.CreateDefault();
+            config.AutoAwakeProcesses = new System.Collections.Generic.List<string> { selfProcess };
+            config.AutoAwakeExitDelaySeconds = 0;
+
+            var service = new AwakeService(Dispatcher.CurrentDispatcher, null);
+            service.Initialize(config);
+
+            InvokeCheckProcessTriggers(service);
+            Assert.IsTrue(service.IsProcessTriggered);
+            Assert.AreEqual(AwakeMode.Indefinite, service.Mode);
+
+            config.ProcessLinkEnabled = false;
+            service.UpdateConfig(config);
+
+            Assert.IsFalse(service.IsProcessTriggered, "关闭开关应清除进程联动状态");
+            Assert.AreEqual(AwakeMode.Passive, service.Mode, "关闭开关应撤销联动触发的保持唤醒");
+            Assert.IsFalse(service.IsActive);
+
+            // 后续轮询不得把状态反转回来
+            InvokeCheckProcessTriggers(service);
+            Assert.AreEqual(AwakeMode.Passive, service.Mode);
 
             service.Dispose();
         }
