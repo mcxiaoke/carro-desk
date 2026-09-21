@@ -44,9 +44,10 @@
 
                         <!-- 圆角密码输入框容器 -->
                         <Border CornerRadius="6" Background="#FF0D1117" BorderBrush="#FF30363D" BorderThickness="1" Height="42">
-                            <PasswordBox x:Name="PinBox" FontSize="20" MaxLength="16"
-                                         HorizontalContentAlignment="Center" Background="Transparent" Foreground="White"
-                                         BorderThickness="0" Padding="8,6"/>
+<PasswordBox x:Name="PinBox" FontSize="20" MaxLength="16"
+                                             HorizontalContentAlignment="Center" Background="Transparent" Foreground="White"
+                                             BorderThickness="0" Padding="8,6"
+                                             CaretBrush="#FFF0F3F6" Cursor="IBeam"/>
                         </Border>
 
                         <!-- 键盘状态提示（CapsLock / NumLock） -->
