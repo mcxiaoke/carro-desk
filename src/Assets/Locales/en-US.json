@@ -143,7 +143,7 @@
     "LangZh": "简体中文 (Chinese)",
     "LangEn": "English",
     "Exit": "Exit...",
-    "ExitPrompt": "PIN verification is required to exit ScreenLock",
+    "ExitPrompt": "PIN verification is required to exit CarroDesk",
     "BalloonIdleWarn": "Locking in {0} minutes due to inactivity. Move mouse to cancel.",
     "BalloonPause": "Auto-lock paused. Will resume at {0:HH:mm}",
     "BalloonConfigReloaded": "Config reloaded: Auto-lock after {0} minutes idle",
@@ -153,9 +153,9 @@
     "BalloonTasksReloadedErrors": "Tasks reloaded: {0} active, {1} errors",
     "BalloonTasksErrorsHint": ", see logs/tasks.log for details",
     "BalloonTasksDisabledHint": " (Scheduler is disabled)",
-    "TooltipPaused": "ScreenLock - Auto-lock paused until {0:HH:mm}",
-    "TooltipDisabled": "ScreenLock - Idle lock disabled",
-    "TooltipIdle": "ScreenLock - Lock after {0} min idle",
+    "TooltipPaused": "CarroDesk - Auto-lock paused until {0:HH:mm}",
+    "TooltipDisabled": "CarroDesk - Idle lock disabled",
+    "TooltipIdle": "CarroDesk - Lock after {0} min idle",
     "NoRecentTasks": "No recent runs",
     "NoManualTasks": "No manual tasks",
     "TaskTriggered": "Task triggered: {0}",
@@ -176,9 +176,9 @@
     "PromptPauseMinutes": "Enter minutes to pause (1-1440):"
   },
   "FirstRun": {
-    "Title": "ScreenLock - Setup Security PIN",
-    "TitleChangePin": "ScreenLock - Change Security PIN",
-    "Heading": "Welcome to ScreenLock",
+    "Title": "CarroDesk - Setup Security PIN",
+    "TitleChangePin": "CarroDesk - Change Security PIN",
+    "Heading": "Welcome to CarroDesk",
     "HeadingChangePin": "Change Unlock PIN",
     "Subheading": "Please set an initial security PIN for unlocking and exiting",
     "PinPrompt": "Enter PIN (at least 4 digits) *",
@@ -189,14 +189,14 @@
     "CancelButton": "Cancel"
   },
   "VerifyPin": {
-    "Title": "ScreenLock - Security Verification",
+    "Title": "CarroDesk - Security Verification",
     "Heading": "Verify Identity",
     "Subheading": "Please enter your security PIN to continue",
     "IncorrectPin": "Incorrect PIN",
     "PenaltyWait": "Too many failed attempts. Wait {0}s before retrying"
   },
   "Config": {
-    "Title": "Settings - ScreenLock",
+    "Title": "Settings - CarroDesk",
     "SaveFailed": "Failed to save configuration",
     "ConfigLocation": "Configuration File Location",
     "PortableMode": "(Portable Mode: app_data)",
@@ -218,8 +218,8 @@
     "HotkeyDesc": "(Press to lock immediately, e.g. Ctrl+Alt+L)",
     "SystemIntegration": "System Integration",
     "AutoStartLabel": "Start with Windows (Registry Run)",
-    "UnlockOnResumeLabel": "Auto-unlock ScreenLock when Windows session is unlocked",
-    "UnlockOnResumeDesc": "When Windows is unlocked (Password/Hello), ScreenLock unlocks automatically without re-entering PIN",
+    "UnlockOnResumeLabel": "Auto-unlock CarroDesk when Windows session is unlocked",
+    "UnlockOnResumeDesc": "When Windows is unlocked (Password/Hello), CarroDesk unlocks automatically without re-entering PIN",
     "TasksEnabledLabel": "Enable Task Scheduler (Global Master Switch)",
     "TasksEnabledDesc": "When disabled, all automated background tasks and hotkeys will be suspended",
     "ExcludeTitle": "Excluded Processes (Prevent Locking during Games / Media)",
@@ -259,7 +259,7 @@
     "ExcludeNameInvalidChars": "Excluded process name contains invalid characters: {0}"
   },
   "Tasks": {
-    "Title": "Task Editor - ScreenLock",
+    "Title": "Task Editor - CarroDesk",
     "ListTitle": "Task List",
     "EmptyTitle": "No Tasks",
     "EmptyHint": "Click [Add] below to create a new task",

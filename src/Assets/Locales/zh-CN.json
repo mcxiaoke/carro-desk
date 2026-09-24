@@ -143,7 +143,7 @@
     "LangZh": "简体中文 (Chinese)",
     "LangEn": "English",
     "Exit": "退出...",
-    "ExitPrompt": "退出 ScreenLock 需要验证 PIN",
+    "ExitPrompt": "退出 CarroDesk 需要验证 PIN",
     "BalloonIdleWarn": "空闲 {0} 分钟后自动锁定，动一下鼠标可取消",
     "BalloonPause": "已暂停自动锁定，{0:HH:mm} 后恢复",
     "BalloonConfigReloaded": "配置已重新加载：空闲 {0} 分钟后锁定",
@@ -153,9 +153,9 @@
     "BalloonTasksReloadedErrors": "任务重载完成：{0} 个生效，{1} 个错误",
     "BalloonTasksErrorsHint": "，详见 logs/tasks.log",
     "BalloonTasksDisabledHint": "（总开关已禁用）",
-    "TooltipPaused": "ScreenLock - 自动锁定已暂停至 {0:HH:mm}",
-    "TooltipDisabled": "ScreenLock - 空闲锁定已禁用",
-    "TooltipIdle": "ScreenLock - 空闲 {0} 分钟锁定",
+    "TooltipPaused": "CarroDesk - 自动锁定已暂停至 {0:HH:mm}",
+    "TooltipDisabled": "CarroDesk - 空闲锁定已禁用",
+    "TooltipIdle": "CarroDesk - 空闲 {0} 分钟锁定",
     "NoRecentTasks": "暂无运行记录",
     "NoManualTasks": "暂无手动任务",
     "TaskTriggered": "已触发任务: {0}",
@@ -176,9 +176,9 @@
     "PromptPauseMinutes": "请输入暂停计时的分钟数 (1-1440)："
   },
   "FirstRun": {
-    "Title": "ScreenLock - 设置安全 PIN",
-    "TitleChangePin": "ScreenLock - 修改安全 PIN",
-    "Heading": "欢迎使用 ScreenLock",
+    "Title": "CarroDesk - 设置安全 PIN",
+    "TitleChangePin": "CarroDesk - 修改安全 PIN",
+    "Heading": "欢迎使用 CarroDesk",
     "HeadingChangePin": "修改解锁 PIN",
     "Subheading": "请设置初始安全 PIN（用于锁屏解锁及退出验证）",
     "PinPrompt": "输入 PIN (至少 4 位) *",
@@ -189,14 +189,14 @@
     "CancelButton": "取消"
   },
   "VerifyPin": {
-    "Title": "ScreenLock - 安全验证",
+    "Title": "CarroDesk - 安全验证",
     "Heading": "验证身份",
     "Subheading": "请输入安全 PIN 码继续操作",
     "IncorrectPin": "PIN 码不正确",
     "PenaltyWait": "输错过多，请等待 {0} 秒后重试"
   },
   "Config": {
-    "Title": "配置编辑器 - ScreenLock",
+    "Title": "配置编辑器 - CarroDesk",
     "SaveFailed": "保存配置失败",
     "ConfigLocation": "配置文件位置",
     "PortableMode": "（便携模式 app_data）",
@@ -219,7 +219,7 @@
     "SystemIntegration": "系统集成",
     "AutoStartLabel": "开机自启（写入注册表 Run）",
     "UnlockOnResumeLabel": "Windows 解锁后自动解除伪锁屏（推荐开启）",
-    "UnlockOnResumeDesc": "系统锁屏解锁（密码/人脸）后，自动解除 ScreenLock，无需重复输入 PIN 码",
+    "UnlockOnResumeDesc": "系统锁屏解锁（密码/人脸）后，自动解除 CarroDesk，无需重复输入 PIN 码",
     "TasksEnabledLabel": "启用任务调度（全局总开关）",
     "TasksEnabledDesc": "关闭后所有定时/热键/监听等自动化任务将全部暂停运行",
     "ExcludeTitle": "排除进程（防游戏 / 播放器挂机误锁）",
@@ -259,7 +259,7 @@
     "ExcludeNameInvalidChars": "排除进程名含非法字符: {0}"
   },
   "Tasks": {
-    "Title": "任务编辑器 - ScreenLock",
+    "Title": "任务编辑器 - CarroDesk",
     "ListTitle": "任务列表",
     "EmptyTitle": "暂无任务",
     "EmptyHint": "点击下方【新增】创建任务",

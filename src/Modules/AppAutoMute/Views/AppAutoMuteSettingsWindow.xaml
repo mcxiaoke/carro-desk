@@ -1,7 +1,7 @@
 <Window x:Class="CarroDesk.Modules.AppAutoMute.Views.AppAutoMuteSettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="应用后台自动静音设置" Height="700" Width="620"
+        Title="应用后台自动静音设置" Height="720" Width="660" MinWidth="620" MinHeight="680"
         WindowStartupLocation="CenterScreen" ResizeMode="CanResize"
         Background="#FFF6F7F9"
         FontFamily="Segoe UI, Microsoft YaHei UI">
@@ -118,7 +118,7 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <StackPanel>
+                <StackPanel Margin="0,0,16,0">
                     <TextBlock Text="🔇 后台智能静音配置" FontSize="16" FontWeight="Bold" Foreground="#FF1E293B"/>
                     <TextBlock Text="在应用失去前台焦点后自动降低或静音，切回前台时平滑恢复声音，避免背景声音干扰。" FontSize="12" Foreground="#FF64748B" Margin="0,4,0,0" TextWrapping="Wrap"/>
                 </StackPanel>

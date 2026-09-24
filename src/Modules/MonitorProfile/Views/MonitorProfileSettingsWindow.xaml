@@ -1,7 +1,7 @@
 <Window x:Class="CarroDesk.Modules.MonitorProfile.Views.MonitorProfileSettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="显示器亮度与情境模式设置" Height="680" Width="720"
+        Title="显示器亮度与情境模式设置" Height="700" Width="780" MinWidth="740" MinHeight="680"
         WindowStartupLocation="CenterScreen" ResizeMode="CanResize"
         Background="#FFF6F7F9"
         FontFamily="Segoe UI, Microsoft YaHei UI">
@@ -128,7 +128,7 @@
         <!-- 主工作区分栏：左侧模式列表，右侧时间设置与高级选项 -->
         <Grid Grid.Row="1" Margin="14,10,14,10">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="180"/>
+                <ColumnDefinition Width="205"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
@@ -170,9 +170,9 @@
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-                            <Button x:Name="BtnAddMode" Content="新建" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,2,0" Click="BtnAddMode_Click"/>
-                            <Button x:Name="BtnRenameMode" Grid.Column="1" Content="重命名" Style="{StaticResource SecondaryButtonStyle}" Margin="2,0,2,0" Click="BtnRenameMode_Click"/>
-                            <Button x:Name="BtnDeleteMode" Grid.Column="2" Content="删除" Style="{StaticResource SecondaryButtonStyle}" Margin="2,0,0,0" Click="BtnDeleteMode_Click"/>
+                            <Button x:Name="BtnAddMode" Content="新建" Style="{StaticResource SecondaryButtonStyle}" Padding="2,4" Margin="0,0,2,0" Click="BtnAddMode_Click"/>
+                            <Button x:Name="BtnRenameMode" Grid.Column="1" Content="重命名" Style="{StaticResource SecondaryButtonStyle}" Padding="2,4" Margin="2,0,2,0" Click="BtnRenameMode_Click"/>
+                            <Button x:Name="BtnDeleteMode" Grid.Column="2" Content="删除" Style="{StaticResource SecondaryButtonStyle}" Padding="2,4" Margin="2,0,0,0" Click="BtnDeleteMode_Click"/>
                         </Grid>
                     </StackPanel>
                 </Grid>
@@ -196,10 +196,10 @@
                                       SelectionChanged="GridTimeSettings_SelectionChanged"
                                       MouseDoubleClick="GridTimeSettings_MouseDoubleClick">
                                 <DataGrid.Columns>
-                                    <DataGridTextColumn Header="时间点" Binding="{Binding Time, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Width="90"/>
-                                    <DataGridTextColumn Header="亮度 (0-100)" Binding="{Binding Brightness, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Width="100"/>
-                                    <DataGridTextColumn Header="对比度 (0-100)" Binding="{Binding Contrast, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Width="100"/>
-                                    <DataGridTemplateColumn Header="操作" Width="*">
+                                    <DataGridTextColumn Header="时间点" Binding="{Binding Time, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Width="85"/>
+                                    <DataGridTextColumn Header="亮度 (0-100)" Binding="{Binding Brightness, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Width="105"/>
+                                    <DataGridTextColumn Header="对比度 (0-100)" Binding="{Binding Contrast, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Width="105"/>
+                                    <DataGridTemplateColumn Header="操作" Width="*" MinWidth="75">
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
                                                 <Button Content="删除" Style="{StaticResource SecondaryButtonStyle}" Padding="6,1" FontSize="11" Click="BtnDeleteTimeSetting_Click"/>

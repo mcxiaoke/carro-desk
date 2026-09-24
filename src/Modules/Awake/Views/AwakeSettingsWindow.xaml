@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:loc="clr-namespace:CarroDesk.Services.Localization"
-        Title="保持唤醒 (Awake) 设置" Height="680" Width="580"
+        Title="保持唤醒 (Awake) 设置" Height="760" Width="600" MinHeight="680" MinWidth="580"
         WindowStartupLocation="CenterScreen" ResizeMode="CanResize"
         Background="#FFF6F7F9"
         FontFamily="Segoe UI, Microsoft YaHei UI">
@@ -44,8 +44,8 @@
             <Setter Property="BorderBrush" Value="#FFE2E8F0"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="CornerRadius" Value="8"/>
-            <Setter Property="Padding" Value="16"/>
-            <Setter Property="Margin" Value="0,0,0,12"/>
+            <Setter Property="Padding" Value="13"/>
+            <Setter Property="Margin" Value="0,0,0,10"/>
         </Style>
 
         <!-- 主按钮样式 -->
@@ -135,12 +135,12 @@
                 <!-- 1. 工作模式选择卡片 -->
                 <Border Style="{StaticResource CardBorderStyle}">
                     <StackPanel>
-                        <TextBlock Text="工作模式" FontSize="13" FontWeight="Bold" Foreground="#FF334155" Margin="0,0,0,8"/>
+                        <TextBlock Text="工作模式" FontSize="13" FontWeight="Bold" Foreground="#FF334155" Margin="0,0,0,6"/>
                         
-                        <RadioButton x:Name="RadioPassive" Content="遵循系统默认电源策略（关闭保持唤醒）" Margin="0,4,0,4" GroupName="AwakeModeGroup"/>
-                        <RadioButton x:Name="RadioIndefinite" Content="无限期保持唤醒（直到手动关闭）" Margin="0,4,0,4" GroupName="AwakeModeGroup"/>
+                        <RadioButton x:Name="RadioPassive" Content="遵循系统默认电源策略（关闭保持唤醒）" Margin="0,2,0,2" GroupName="AwakeModeGroup"/>
+                        <RadioButton x:Name="RadioIndefinite" Content="无限期保持唤醒（直到手动关闭）" Margin="0,2,0,2" GroupName="AwakeModeGroup"/>
                         
-                        <Grid Margin="0,4,0,4">
+                        <Grid Margin="0,2,0,2">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="80"/>
@@ -151,7 +151,7 @@
                             <TextBlock Grid.Column="2" Text="分钟" VerticalAlignment="Center" Foreground="#FF64748B" FontSize="12"/>
                         </Grid>
 
-                        <Grid Margin="0,4,0,4">
+                        <Grid Margin="0,2,0,2">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="80"/>
@@ -167,15 +167,15 @@
                 <!-- 2. 选项与策略卡片 -->
                 <Border Style="{StaticResource CardBorderStyle}">
                     <StackPanel>
-                        <TextBlock Text="选项与电源策略" FontSize="13" FontWeight="Bold" Foreground="#FF334155" Margin="0,0,0,8"/>
+                        <TextBlock Text="选项与电源策略" FontSize="13" FontWeight="Bold" Foreground="#FF334155" Margin="0,0,0,6"/>
 
-                        <CheckBox x:Name="KeepDisplayOnBox" Content="保持显示器常亮" Margin="0,4,0,2" IsChecked="True"/>
-                        <TextBlock Text="未勾选时仅防止系统睡眠，允许显示器按 Windows 电源计划息屏（省电且防 OLED 烧屏）" FontSize="11" Foreground="#FF94A3B8" Margin="22,0,0,8" TextWrapping="Wrap"/>
+                        <CheckBox x:Name="KeepDisplayOnBox" Content="保持显示器常亮" Margin="0,2,0,2" IsChecked="True"/>
+                        <TextBlock Text="未勾选时仅防止系统睡眠，允许显示器按 Windows 电源计划息屏（省电且防 OLED 烧屏）" FontSize="11" Foreground="#FF94A3B8" Margin="22,0,0,4" TextWrapping="Wrap"/>
 
-                        <CheckBox x:Name="DisableOnBatteryBox" Content="使用笔记本电池供电时自动挂起保持唤醒" Margin="0,4,0,2" IsChecked="True"/>
-                        <TextBlock Text="断开交流电源时自动挂起，防止放进背包发热或意外耗尽电量" FontSize="11" Foreground="#FF94A3B8" Margin="22,0,0,6" TextWrapping="Wrap"/>
+                        <CheckBox x:Name="DisableOnBatteryBox" Content="使用笔记本电池供电时自动挂起保持唤醒" Margin="0,2,0,2" IsChecked="True"/>
+                        <TextBlock Text="断开交流电源时自动挂起，防止放进背包发热或意外耗尽电量" FontSize="11" Foreground="#FF94A3B8" Margin="22,0,0,4" TextWrapping="Wrap"/>
 
-                        <Grid Margin="22,2,0,8">
+                        <Grid Margin="22,2,0,4">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="60"/>
@@ -186,7 +186,7 @@
                             <TextBlock Grid.Column="2" Text="% (低于此值强制退出保持唤醒)" VerticalAlignment="Center" Foreground="#FF64748B" FontSize="11"/>
                         </Grid>
 
-                        <Grid Margin="0,6,0,2">
+                        <Grid Margin="0,4,0,2">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="160"/>
@@ -210,7 +210,7 @@
                             <TextBlock Text="智能进程联动（检测到运行时自动保持唤醒）" FontSize="13" FontWeight="Bold" Foreground="#FF334155" VerticalAlignment="Center" TextWrapping="Wrap"/>
                             <CheckBox x:Name="ProcessLinkEnabledBox" Grid.Column="1" Content="启用" FontWeight="SemiBold" VerticalAlignment="Center" Margin="10,0,0,0" IsChecked="True" Checked="OnProcessLinkEnabledChanged" Unchecked="OnProcessLinkEnabledChanged" ToolTip="总开关：关闭后不再检测目标进程，名单与缓冲设置保留"/>
                         </Grid>
-                        <TextBlock Text="当名单中的程序在运行时自动进入保持唤醒；全部退出后自动恢复" FontSize="11" Foreground="#FF94A3B8" Margin="0,0,0,8" TextWrapping="Wrap"/>
+                        <TextBlock Text="当名单中的程序在运行时自动进入保持唤醒；全部退出后自动恢复" FontSize="11" Foreground="#FF94A3B8" Margin="0,0,0,6" TextWrapping="Wrap"/>
 
                         <StackPanel x:Name="ProcessLinkPanel">
                             <Grid Margin="0,0,0,6">
@@ -228,7 +228,7 @@
                                 <Button Content="删除" Grid.Column="4" Height="26" Margin="4,0,0,0" Padding="12,0" Click="OnDeleteProcessClick"/>
                             </Grid>
 
-                            <ListBox x:Name="ProcessListBox" Height="90" SelectionMode="Single">
+                            <ListBox x:Name="ProcessListBox" Height="65" SelectionMode="Single">
                                 <ListBox.ContextMenu>
                                     <ContextMenu>
                                         <MenuItem Header="删除所选" Click="OnDeleteProcessClick"/>
@@ -237,7 +237,7 @@
                                 </ListBox.ContextMenu>
                             </ListBox>
 
-                            <Grid Margin="0,8,0,0">
+                            <Grid Margin="0,6,0,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="60"/>
