@@ -17,6 +17,7 @@ namespace CarroDesk.Services.Tasks
         private readonly object _lock = new object();
         private List<TaskDefinition> _tasks = new List<TaskDefinition>();
         private List<ITrigger> _triggers = new List<ITrigger>();
+        private readonly HashSet<string> _firedStartupTasks = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private Dictionary<string, bool> _running = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
         private bool _started;
         private bool _globalEnabled = true;
@@ -210,7 +211,13 @@ namespace CarroDesk.Services.Tasks
         {
             switch (task.Trigger.Type)
             {
-                case TaskTriggerType.Startup: return new StartupTrigger(task);
+                case TaskTriggerType.Startup:
+                    lock (_lock)
+                    {
+                        if (_firedStartupTasks.Contains(task.Name))
+                            return null;
+                    }
+                    return new StartupTrigger(task);
                 case TaskTriggerType.Interval: return new IntervalTrigger(task);
                 case TaskTriggerType.Daily: return new DailyTrigger(task);
                 case TaskTriggerType.Cron: return new CronTrigger(task);
@@ -220,7 +227,13 @@ namespace CarroDesk.Services.Tasks
                 case TaskTriggerType.Manual: return new ManualTrigger(task);
                 case TaskTriggerType.Hotkey: return new HotkeyTrigger(task, _hotkeyService);
                 case TaskTriggerType.Watch: return new FileWatcherTrigger(task);
-                default: return new StartupTrigger(task);
+                default:
+                    lock (_lock)
+                    {
+                        if (_firedStartupTasks.Contains(task.Name))
+                            return null;
+                    }
+                    return new StartupTrigger(task);
             }
         }
 
@@ -317,6 +330,15 @@ namespace CarroDesk.Services.Tasks
 
         private void OnTriggerFired(TaskDefinition task, string reason)
         {
+            if (task != null && !string.IsNullOrEmpty(task.Name) &&
+                reason != null && reason.StartsWith("startup", StringComparison.OrdinalIgnoreCase))
+            {
+                lock (_lock)
+                {
+                    _firedStartupTasks.Add(task.Name);
+                }
+            }
+
             // dispatch to thread pool, avoid blocking trigger thread (especially UI timer)
             var t = task;
             var r = reason;

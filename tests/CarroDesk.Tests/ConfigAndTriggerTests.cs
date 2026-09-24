@@ -216,5 +216,13 @@ namespace CarroDesk.Tests
                 Assert.AreEqual(0, matches.Count, $"业务与视图文件 {Path.GetFileName(file)} 中不应存在 App.* 静态门面引用！匹配数: {matches.Count}");
             }
         }
+
+        [TestMethod]
+        public void AutoStartService_GetCurrentExecutablePath_ReturnsValidPath()
+        {
+            string exe = CarroDesk.Services.AutoStartService.GetCurrentExecutablePath();
+            Assert.IsFalse(string.IsNullOrWhiteSpace(exe), "可执行文件路径不应为空");
+            Assert.IsTrue(File.Exists(exe), "可执行文件应真实存在于磁盘上: " + exe);
+        }
     }
 }

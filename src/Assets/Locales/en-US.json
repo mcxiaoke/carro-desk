@@ -45,6 +45,7 @@
     "Pause1Hour": "Pause for 1 hour",
     "ResumeTimer": "Resume Timer",
     "AutoStart": "Start with Windows",
+    "AutoStartFailed": "Failed to set auto-start. Operation may be blocked by security software.",
     "ConfigEditor": "Configuration...",
     "Tasks": "Tasks",
     "TasksEnabled": "Enable Task Scheduler",

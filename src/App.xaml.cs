@@ -46,6 +46,12 @@ namespace CarroDesk
         {
             base.OnStartup(e);
 
+            try
+            {
+                Environment.CurrentDirectory = AppDomain.CurrentDomain.BaseDirectory;
+            }
+            catch { /* intentionally ignored: environment directory reset */ }
+
             bool createdNew;
             _mutex = new Mutex(true, MutexName, out createdNew);
             if (!createdNew)

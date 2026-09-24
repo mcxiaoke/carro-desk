@@ -45,6 +45,7 @@
     "Pause1Hour": "暂停 1 小时",
     "ResumeTimer": "恢复计时",
     "AutoStart": "开机自启",
+    "AutoStartFailed": "设置开机自启失败，可能被安全软件拦截",
     "ConfigEditor": "配置编辑器...",
     "Tasks": "任务",
     "TasksEnabled": "启用任务调度",

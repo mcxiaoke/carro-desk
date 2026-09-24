@@ -97,9 +97,19 @@ namespace CarroDesk.Views
             if (config != null)
             {
                 bool newState = !config.AutoStart;
-                config.AutoStart = newState;
-                AutoStartService.Sync(newState);
-                _configManager?.Save();
+                bool success = AutoStartService.Sync(newState);
+                if (success)
+                {
+                    config.AutoStart = newState;
+                    _configManager?.Save();
+                }
+                else
+                {
+                    var logger = _services?.GetService<ILoggerService>();
+                    logger?.LogWarning("TrayContextMenu", "切换开机自启失败，可能被安全软件或权限拦截");
+                    var notif = _services?.GetService<INotificationService>();
+                    notif?.Show(Loc.T("Tray.AutoStartFailed", "设置开机自启失败，可能被安全软件拦截"), "CarroDesk");
+                }
                 RefreshHostChecks();
             }
         }
