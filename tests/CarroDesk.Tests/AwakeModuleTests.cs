@@ -160,16 +160,24 @@ namespace CarroDesk.Tests
             service.Initialize(config);
 
             InvokeCheckProcessTriggers(service);
-            Assert.AreEqual(AwakeMode.Indefinite, service.Mode,
-                "守护进程正在运行时应自动开启保持唤醒");
+            Assert.IsTrue(service.IsProcessTriggered,
+                "守护进程正在运行时应自动触发进程联动");
+            Assert.IsTrue(service.IsActive,
+                "守护进程正在运行时应保持唤醒生效");
+            Assert.AreEqual(AwakeMode.Passive, service.Mode,
+                "进程联动独立运行，不应篡改用户配置模式");
 
             service.SetPassiveByUser();
             Assert.AreEqual(AwakeMode.Passive, service.Mode);
+            Assert.IsFalse(service.IsProcessTriggered);
+            Assert.IsFalse(service.IsActive);
 
-            // 关键断言：下一个轮询周期不得把用户的"关闭"反转回 Indefinite
+            // 关键断言：下一个轮询周期不得把用户的"关闭"反转回保持唤醒
             InvokeCheckProcessTriggers(service);
             Assert.AreEqual(AwakeMode.Passive, service.Mode,
                 "用户的关闭操作被守护进程联动自动反转了");
+            Assert.IsFalse(service.IsProcessTriggered);
+            Assert.IsFalse(service.IsActive);
 
             service.Dispose();
         }
@@ -196,6 +204,7 @@ namespace CarroDesk.Tests
             Assert.AreEqual(AwakeMode.Passive, service.Mode,
                 "总开关关闭时不得自动开启保持唤醒");
             Assert.IsFalse(service.IsProcessTriggered);
+            Assert.IsFalse(service.IsActive);
 
             // 重新启用后联动应恢复
             config.ProcessLinkEnabled = true;
@@ -203,9 +212,12 @@ namespace CarroDesk.Tests
             Assert.IsTrue(service.IsProcessLinkEnabled);
 
             InvokeCheckProcessTriggers(service);
-            Assert.AreEqual(AwakeMode.Indefinite, service.Mode,
+            Assert.IsTrue(service.IsProcessTriggered,
                 "重新启用后应恢复自动联动");
-            Assert.IsTrue(service.IsProcessTriggered);
+            Assert.IsTrue(service.IsActive,
+                "重新启用后应保持唤醒生效");
+            Assert.AreEqual(AwakeMode.Passive, service.Mode,
+                "进程联动不改变用户模式");
 
             service.Dispose();
         }
@@ -227,18 +239,90 @@ namespace CarroDesk.Tests
 
             InvokeCheckProcessTriggers(service);
             Assert.IsTrue(service.IsProcessTriggered);
-            Assert.AreEqual(AwakeMode.Indefinite, service.Mode);
+            Assert.IsTrue(service.IsActive);
+            Assert.AreEqual(AwakeMode.Passive, service.Mode);
 
             config.ProcessLinkEnabled = false;
             service.UpdateConfig(config);
 
             Assert.IsFalse(service.IsProcessTriggered, "关闭开关应清除进程联动状态");
-            Assert.AreEqual(AwakeMode.Passive, service.Mode, "关闭开关应撤销联动触发的保持唤醒");
-            Assert.IsFalse(service.IsActive);
+            Assert.AreEqual(AwakeMode.Passive, service.Mode, "关闭开关后用户模式仍为 Passive");
+            Assert.IsFalse(service.IsActive, "关闭开关应撤销联动触发的保持唤醒");
 
             // 后续轮询不得把状态反转回来
             InvokeCheckProcessTriggers(service);
             Assert.AreEqual(AwakeMode.Passive, service.Mode);
+            Assert.IsFalse(service.IsActive);
+
+            service.Dispose();
+        }
+
+        /// <summary>
+        /// 用户手动开启永久模式后，进程联动不污染 Mode，进程退出后依然保持用户设置的永久模式。
+        /// </summary>
+        [TestMethod]
+        public void Awake_ProcessLink_DoesNotPolluteManualIndefiniteMode()
+        {
+            string selfProcess = System.Diagnostics.Process.GetCurrentProcess().ProcessName;
+
+            var config = AwakeConfig.CreateDefault();
+            config.AutoAwakeProcesses = new System.Collections.Generic.List<string> { selfProcess };
+            config.AutoAwakeExitDelaySeconds = 0;
+
+            var service = new AwakeService(Dispatcher.CurrentDispatcher, null);
+            service.Initialize(config);
+
+            // 用户手动开启永久
+            service.SetIndefinite();
+            Assert.AreEqual(AwakeMode.Indefinite, service.Mode);
+            Assert.IsTrue(service.IsActive);
+
+            // 检测到进程
+            InvokeCheckProcessTriggers(service);
+            Assert.IsTrue(service.IsProcessTriggered);
+            Assert.AreEqual(AwakeMode.Indefinite, service.Mode, "用户手动模式不得被进程联动篡改");
+
+            // 目标进程解除 (清空名单模拟所有进程退出)
+            config.AutoAwakeProcesses = new System.Collections.Generic.List<string>();
+            service.UpdateConfig(config);
+
+            Assert.IsFalse(service.IsProcessTriggered, "目标移除后联动状态应清除");
+            Assert.AreEqual(AwakeMode.Indefinite, service.Mode, "进程退出后用户的 Indefinite 模式必须保留");
+            Assert.IsTrue(service.IsActive, "用户的 Indefinite 模式仍应保持唤醒生效");
+
+            service.Dispose();
+        }
+
+        /// <summary>
+        /// 目标进程退出时，若设置了退出缓冲时间，应进入缓冲等待状态且 IsProcessExiting 为 true。
+        /// </summary>
+        [TestMethod]
+        public void Awake_ProcessExitDelay_BufferingState()
+        {
+            string selfProcess = System.Diagnostics.Process.GetCurrentProcess().ProcessName;
+
+            var config = AwakeConfig.CreateDefault();
+            config.AutoAwakeProcesses = new System.Collections.Generic.List<string> { selfProcess };
+            config.AutoAwakeExitDelaySeconds = 60;
+
+            var service = new AwakeService(Dispatcher.CurrentDispatcher, null);
+            service.Initialize(config);
+
+            // 触发联动
+            InvokeCheckProcessTriggers(service);
+            Assert.IsTrue(service.IsProcessTriggered);
+            Assert.IsFalse(service.IsProcessExiting);
+            Assert.IsTrue(service.IsActive);
+
+            // 切换为不存在的进程以模拟退出
+            config.AutoAwakeProcesses = new System.Collections.Generic.List<string> { "non_existent_proc_test_xyz" };
+            service.UpdateConfig(config);
+
+            InvokeCheckProcessTriggers(service);
+            Assert.IsTrue(service.IsProcessTriggered, "缓冲期间保持唤醒仍生效");
+            Assert.IsTrue(service.IsProcessExiting, "应处于退出缓冲状态");
+            Assert.AreEqual(60, service.ProcessExitPendingSeconds);
+            Assert.IsTrue(service.IsActive);
 
             service.Dispose();
         }

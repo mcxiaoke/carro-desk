@@ -110,12 +110,6 @@ namespace CarroDesk.Modules.Awake.Views
                 StatusBadgeText.Foreground = new SolidColorBrush(Color.FromRgb(0x92, 0x40, 0x0E));
                 StatusBadgeText.Text = Loc.T("Awake.StatusPausedBattery", "已暂停 (电池供电)");
             }
-            else if (service.IsProcessTriggered)
-            {
-                StatusBadge.Background = new SolidColorBrush(Color.FromRgb(0xDC, 0xFD, 0xE7));
-                StatusBadgeText.Foreground = new SolidColorBrush(Color.FromRgb(0x16, 0x65, 0x34));
-                StatusBadgeText.Text = Loc.T("Awake.StatusProcessAwake", "进程唤醒中 ({0})", service.ActiveProcessTrigger);
-            }
             else if (service.Mode == AwakeMode.Indefinite)
             {
                 StatusBadge.Background = new SolidColorBrush(Color.FromRgb(0xDB, 0xEA, 0xFE));
@@ -128,6 +122,18 @@ namespace CarroDesk.Modules.Awake.Views
                 StatusBadgeText.Foreground = new SolidColorBrush(Color.FromRgb(0x1E, 0x40, 0xAF));
                 var rem = service.RemainingTime;
                 StatusBadgeText.Text = Loc.T("Awake.StatusCountdown", "倒计时中 (剩余 {0}分)", (int)rem.TotalMinutes);
+            }
+            else if (service.IsProcessExiting)
+            {
+                StatusBadge.Background = new SolidColorBrush(Color.FromRgb(0xFE, 0xF3, 0xC7));
+                StatusBadgeText.Foreground = new SolidColorBrush(Color.FromRgb(0x92, 0x40, 0x0E));
+                StatusBadgeText.Text = Loc.T("Tray.AwakeStatusExitDelay", "缓冲中 ({0}s)", service.ProcessExitPendingSeconds);
+            }
+            else if (service.IsProcessTriggered)
+            {
+                StatusBadge.Background = new SolidColorBrush(Color.FromRgb(0xDC, 0xFD, 0xE7));
+                StatusBadgeText.Foreground = new SolidColorBrush(Color.FromRgb(0x16, 0x65, 0x34));
+                StatusBadgeText.Text = Loc.T("Awake.StatusProcessAwake", "进程唤醒中 ({0})", service.ActiveProcessTrigger);
             }
             else
             {
@@ -299,7 +305,8 @@ namespace CarroDesk.Modules.Awake.Views
                 if (RadioPassive.IsChecked == true)
                 {
                     config.Mode = AwakeMode.Passive;
-                    service.SetPassiveByUser();
+                    service.SetPassive();
+                    service.ResetUserSuppression();
                 }
                 else if (RadioIndefinite.IsChecked == true)
                 {

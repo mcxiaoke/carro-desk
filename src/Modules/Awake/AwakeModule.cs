@@ -147,7 +147,7 @@ namespace CarroDesk.Modules.Awake
         {
             if (Service == null) return;
 
-            if (Service.Mode == AwakeMode.Passive)
+            if (!Service.IsActive)
             {
                 int defaultMins = Config != null ? Config.DefaultDurationMinutes : 30;
                 if (defaultMins > 0)
@@ -190,6 +190,11 @@ namespace CarroDesk.Modules.Awake
             if (Config == null) return;
             Config.ProcessLinkEnabled = enabled;
 
+            if (enabled)
+            {
+                Service?.ResetUserSuppression();
+            }
+
             Service?.UpdateConfig(Config);
             SaveConfig();
             UpdateTrayHeaderAndToolTip();
@@ -216,6 +221,14 @@ namespace CarroDesk.Modules.Awake
         {
             if (enabled)
             {
+                if (Service != null && Service.IsProcessExiting)
+                {
+                    return Loc.T("Awake.StatusExitDelayTip", "目标进程已退出，缓冲期还剩 {0} 秒", Service.ProcessExitPendingSeconds);
+                }
+                if (Service != null && Service.IsProcessTriggered)
+                {
+                    return Loc.T("Awake.StatusProcessLinked", "进程 '{0}' 联动保持唤醒中", Service.ActiveProcessTrigger);
+                }
                 return Loc.T("Tray.AwakeProcessLinkTipOn", "已启用：检测到名单中的进程运行时会自动保持唤醒，全部退出后自动恢复。点击可停用。");
             }
             return Loc.T("Tray.AwakeProcessLinkTipOff", "已停用：不再自动检测目标进程。名单与退出缓冲时间仍保留，点击可重新启用。");
@@ -245,15 +258,20 @@ namespace CarroDesk.Modules.Awake
 
         private void OnProcessTriggered(bool isTriggered, string procName)
         {
-            if (isTriggered)
+            // 若用户本来就在保持唤醒期间（永久或定时），进程进出静默联动，不打扰用户
+            bool isAlreadyAwakeManually = Service != null && Service.Mode != AwakeMode.Passive;
+            if (!isAlreadyAwakeManually)
             {
-                // 必须走带格式化的重载：默认值里带 {0}，两参重载不会执行 string.Format，
-                // 会导致中文丢失进程名、英文显示字面量 {0}
-                ShowNotify(Loc.T("Tray.AwakeNotifyProcessActive", "检测到目标进程 '{0}' 正在运行，已自动开启保持唤醒。", procName));
-            }
-            else
-            {
-                ShowNotify(Loc.T("Tray.AwakeNotifyProcessEnded", "目标进程已退出，保持唤醒已自动恢复关闭。"));
+                if (isTriggered)
+                {
+                    // 必须走带格式化的重载：默认值里带 {0}，两参重载不会执行 string.Format，
+                    // 会导致中文丢失进程名、英文显示字面量 {0}
+                    ShowNotify(Loc.T("Tray.AwakeNotifyProcessActive", "检测到目标进程 '{0}' 正在运行，已自动开启保持唤醒。", procName));
+                }
+                else
+                {
+                    ShowNotify(Loc.T("Tray.AwakeNotifyProcessEnded", "目标进程已退出，保持唤醒已自动恢复关闭。"));
+                }
             }
             UpdateTrayHeaderAndToolTip();
             RequestRefreshTray();
@@ -261,11 +279,17 @@ namespace CarroDesk.Modules.Awake
 
         private void OnServiceTick()
         {
-            // 为避免频繁触发菜单重绘，每 10 秒或分钟数跨界时更新一次 Header 倒计时
-            if (Service != null && (Service.Mode == AwakeMode.Timed || Service.Mode == AwakeMode.UntilTime))
+            if (Service == null) return;
+
+            bool isTimed = Service.Mode == AwakeMode.Timed || Service.Mode == AwakeMode.UntilTime;
+            bool isExiting = Service.IsProcessExiting;
+
+            // 为避免频繁触发菜单重绘，每 5 秒（退出缓冲）或 10 秒（定时倒计时）更新一次 Header
+            if (isTimed || isExiting)
             {
                 var now = DateTime.Now;
-                if ((now - _lastHeaderUpdateTime).TotalSeconds >= 10)
+                int intervalSeconds = isExiting ? 5 : 10;
+                if ((now - _lastHeaderUpdateTime).TotalSeconds >= intervalSeconds)
                 {
                     _lastHeaderUpdateTime = now;
                     UpdateTrayHeaderAndToolTip();
@@ -283,36 +307,33 @@ namespace CarroDesk.Modules.Awake
             {
                 status = Loc.T("Tray.AwakeStatusBatteryPaused", "电池暂停");
             }
+            else if (Service.Mode == AwakeMode.Indefinite)
+            {
+                status = Loc.T("Tray.AwakeStatusIndefinite", "永久");
+            }
+            else if (Service.Mode == AwakeMode.Timed || Service.Mode == AwakeMode.UntilTime)
+            {
+                var rem = Service.RemainingTime;
+                if (rem.TotalHours >= 1)
+                {
+                    status = Loc.T("Awake.RemainingHours", "剩 {0}h{1:D2}m", (int)rem.TotalHours, rem.Minutes);
+                }
+                else
+                {
+                    status = Loc.T("Awake.RemainingMinutes", "剩 {0}m", Math.Max(1, (int)Math.Ceiling(rem.TotalMinutes)));
+                }
+            }
+            else if (Service.IsProcessExiting)
+            {
+                status = Loc.T("Tray.AwakeStatusExitDelay", "缓冲中 ({0}s)", Service.ProcessExitPendingSeconds);
+            }
             else if (Service.IsProcessTriggered)
             {
                 status = Loc.T("Tray.AwakeStatusProcess", "进程联动");
             }
             else
             {
-                switch (Service.Mode)
-                {
-                    case AwakeMode.Passive:
-                        status = Loc.T("Tray.Disabled", "已禁用");
-                        break;
-                    case AwakeMode.Indefinite:
-                        status = Loc.T("Tray.AwakeStatusIndefinite", "永久");
-                        break;
-                    case AwakeMode.Timed:
-                    case AwakeMode.UntilTime:
-                        var rem = Service.RemainingTime;
-                        if (rem.TotalHours >= 1)
-                        {
-                            status = Loc.T("Awake.RemainingHours", "剩 {0}h{1:D2}m", (int)rem.TotalHours, rem.Minutes);
-                        }
-                        else
-                        {
-                            status = Loc.T("Awake.RemainingMinutes", "剩 {0}m", Math.Max(1, (int)Math.Ceiling(rem.TotalMinutes)));
-                        }
-                        break;
-                    default:
-                        status = Loc.T("Tray.Disabled", "已禁用");
-                        break;
-                }
+                status = Loc.T("Tray.Disabled", "已禁用");
             }
             return $"{baseTitle} ({status})";
         }
@@ -326,29 +347,34 @@ namespace CarroDesk.Modules.Awake
             {
                 modeDesc = Loc.T("Awake.StatusBatterySuspended", "已因电池供电挂起保持唤醒");
             }
+            else if (Service.Mode == AwakeMode.Indefinite)
+            {
+                modeDesc = Loc.T("Awake.StatusIndefinite", "无限期保持唤醒");
+                if (Service.IsProcessTriggered)
+                {
+                    modeDesc += $" ({Loc.T("Awake.StatusProcessLinked", "进程 '{0}' 联动中", Service.ActiveProcessTrigger)})";
+                }
+            }
+            else if (Service.Mode == AwakeMode.Timed || Service.Mode == AwakeMode.UntilTime)
+            {
+                var rem = Service.RemainingTime;
+                modeDesc = Loc.T("Awake.StatusTimed", "定时保持唤醒 (剩余 {0} 分钟，到期时间 {1})", (int)rem.TotalMinutes, Service.ExpireTime.ToString("HH:mm"));
+                if (Service.IsProcessTriggered)
+                {
+                    modeDesc += $" ({Loc.T("Awake.StatusProcessLinked", "进程 '{0}' 联动中", Service.ActiveProcessTrigger)})";
+                }
+            }
+            else if (Service.IsProcessExiting)
+            {
+                modeDesc = Loc.T("Awake.StatusExitDelayTip", "目标进程已退出，缓冲期还剩 {0} 秒", Service.ProcessExitPendingSeconds);
+            }
             else if (Service.IsProcessTriggered)
             {
                 modeDesc = Loc.T("Awake.StatusProcessLinked", "进程 '{0}' 联动保持唤醒中", Service.ActiveProcessTrigger);
             }
             else
             {
-                switch (Service.Mode)
-                {
-                    case AwakeMode.Passive:
-                        modeDesc = Loc.T("Awake.StatusFollowingSystem", "遵循系统默认电源策略（已关闭）");
-                        break;
-                    case AwakeMode.Indefinite:
-                        modeDesc = Loc.T("Awake.StatusIndefinite", "无限期保持唤醒");
-                        break;
-                    case AwakeMode.Timed:
-                    case AwakeMode.UntilTime:
-                        var rem = Service.RemainingTime;
-                        modeDesc = Loc.T("Awake.StatusTimed", "定时保持唤醒 (剩余 {0} 分钟，到期时间 {1})", (int)rem.TotalMinutes, Service.ExpireTime.ToString("HH:mm"));
-                        break;
-                    default:
-                        modeDesc = Loc.T("Awake.StatusClosed", "已关闭");
-                        break;
-                }
+                modeDesc = Loc.T("Awake.StatusFollowingSystem", "遵循系统默认电源策略（已关闭）");
             }
 
             string displayDesc = Service.KeepDisplayOn ? Loc.T("Awake.DisplayOn", "保持屏幕常亮") : Loc.T("Awake.DisplayOff", "允许屏幕熄灭");
@@ -385,13 +411,14 @@ namespace CarroDesk.Modules.Awake
             _trayRoot = root;
 
             var currentMode = Service != null ? Service.Mode : AwakeMode.Passive;
+            bool isProcessLinked = Service != null && (Service.IsProcessTriggered || Service.IsProcessExiting);
 
             // 1. 关闭（遵循系统默认电源策略）
             root.Children.Add(new TrayMenuItem
             {
                 Id = "awake_mode_passive",
                 Header = Loc.T("Tray.AwakeModePassive", "关闭 (遵循系统电源计划)"),
-                IsChecked = currentMode == AwakeMode.Passive,
+                IsChecked = currentMode == AwakeMode.Passive && !isProcessLinked,
                 ClickAction = () =>
                 {
                     Service?.SetPassiveByUser();

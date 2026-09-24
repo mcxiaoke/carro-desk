@@ -13,11 +13,17 @@ namespace CarroDesk.Core.Models
         private bool _isEnabled = true;
         private bool _isVisible = true;
         private string _inputGestureText;
+        private string _toolTip;
 
         public string Id { get; set; }
         public bool IsSeparator { get; set; }
         public int Order { get; set; }       // 组内排序；不设者按添加顺序
-        public string ToolTip { get; set; }  // 可选，用于禁用原因等
+
+        public string ToolTip
+        {
+            get => _toolTip;
+            set { if (_toolTip != value) { _toolTip = value; OnPropertyChanged(); } }
+        }
 
         public string Header
         {
