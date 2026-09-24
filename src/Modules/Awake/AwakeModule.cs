@@ -22,9 +22,6 @@ namespace CarroDesk.Modules.Awake
 
         public AwakeService Service { get; private set; }
 
-        private IHotkeyService _hotkeys;
-        private TrayMenuItem _trayRoot;
-        private int _hotkeyId;
         private DateTime _lastHeaderUpdateTime = DateTime.MinValue;
 
         public AwakeModule()
@@ -48,16 +45,13 @@ namespace CarroDesk.Modules.Awake
 
         protected override void OnStart()
         {
-            _hotkeys = Context.GetService<IHotkeyService>();
             Service.Start();
-            RegisterHotkey();
+            RegisterManagedHotkey(() => Config?.Hotkey, ToggleAwakeQuick);
             UpdateTrayHeaderAndToolTip();
         }
 
         protected override void OnStop()
         {
-            UnregisterHotkey();
-            _hotkeys?.UnregisterAll(Id);
             Service.Stop();
         }
 
@@ -82,65 +76,25 @@ namespace CarroDesk.Modules.Awake
         {
             base.OnConfigReloaded();
             Service.UpdateConfig(Config);
-            UnregisterHotkey();
-            RegisterHotkey();
             UpdateTrayHeaderAndToolTip();
-            RequestRefreshTray();
+            RequestTrayRefresh();
         }
 
         public override void OnLanguageChanged()
         {
             base.OnLanguageChanged();
             UpdateTrayHeaderAndToolTip();
-            RequestRefreshTray();
+            RequestTrayRefresh();
         }
 
-        public void SaveConfig()
+        public override void SaveConfig()
         {
-            try
+            if (Config != null && Service != null)
             {
-                if (Config != null && Service != null)
-                {
-                    Config.Mode = Service.Mode;
-                    Config.KeepDisplayOn = Service.KeepDisplayOn;
-                }
-                var configMgr = Context?.GetService<IConfigManager>();
-                configMgr?.SaveModuleConfig(Id, Config);
+                Config.Mode = Service.Mode;
+                Config.KeepDisplayOn = Service.KeepDisplayOn;
             }
-            catch { }
-        }
-
-        public void RequestRefreshTray()
-        {
-            try { Context?.RequestTrayRefresh(); } catch { }
-        }
-
-        private void RegisterHotkey()
-        {
-            if (Config == null || string.IsNullOrWhiteSpace(Config.Hotkey) || _hotkeys == null)
-                return;
-
-            try
-            {
-                _hotkeyId = _hotkeys.Register(Id, Config.Hotkey, () =>
-                {
-                    ToggleAwakeQuick();
-                }, out _);
-            }
-            catch { }
-        }
-
-        private void UnregisterHotkey()
-        {
-            if (_hotkeyId > 0 && _hotkeys != null)
-            {
-                try
-                {
-                    _hotkeys.Unregister(Id, _hotkeyId);
-                    _hotkeyId = 0;
-                }
-                catch { }
-            }
+            base.SaveConfig();
         }
 
         private void ToggleAwakeQuick()
@@ -386,19 +340,6 @@ namespace CarroDesk.Modules.Awake
             SetTrayItemSelf(BuildAwakeHeader(), BuildAwakeToolTip());
         }
 
-        private void SetTrayItemSelf(string header, string toolTip)
-        {
-            if (_trayRoot == null) return;
-            var d = Context?.Dispatcher;
-            if (d != null && !d.CheckAccess())
-            {
-                d.BeginInvoke(new Action(() => SetTrayItemSelf(header, toolTip)));
-                return;
-            }
-            _trayRoot.Header = header;
-            _trayRoot.ToolTip = toolTip;
-        }
-
         public override IEnumerable<TrayMenuItem> GetTrayMenuItems()
         {
             var items = new List<TrayMenuItem>();
@@ -408,7 +349,7 @@ namespace CarroDesk.Modules.Awake
                 Header = BuildAwakeHeader(),
                 ToolTip = BuildAwakeToolTip()
             };
-            _trayRoot = root;
+            TrayRoot = root;
 
             var currentMode = Service != null ? Service.Mode : AwakeMode.Passive;
             bool isProcessLinked = Service != null && (Service.IsProcessTriggered || Service.IsProcessExiting);
@@ -572,15 +513,6 @@ namespace CarroDesk.Modules.Awake
 
             items.Add(root);
             return items;
-        }
-
-        private void ShowNotify(string msg)
-        {
-            try
-            {
-                Context?.ShowNotification(msg, "CarroDesk");
-            }
-            catch { }
         }
 
         private static bool PromptMinutes(out int minutes)

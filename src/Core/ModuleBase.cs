@@ -5,7 +5,7 @@ using CarroDesk.Core.Models;
 namespace CarroDesk.Core
 {
     /// <summary>
-    /// 模块基类：状态机与生命周期的统一实现。
+    /// 模块基类：状态机与生命周期的统一实现，兼具快捷键、配置存取与托盘刷新的通用基础设施托管。
     ///
     /// 状态迁移（仅允许以下路径，其余一律忽略）：
     ///   Created --Initialize--> Initialized --Start--> Running --Stop--> Stopped
@@ -13,7 +13,7 @@ namespace CarroDesk.Core
     ///
     /// 并发约定：模块的启停可能来自宿主启动流程、托盘操作与配置重载，
     /// 因此状态读写全部加锁，Start/Stop 均做幂等处理；Initialize 重复调用不会
-    /// 把已 Running 的模块打回 Initialized（此前会，属状态机漏洞）。
+    /// 把已 Running 的模块打回 Initialized。
     /// </summary>
     public abstract class ModuleBase<TConfig> : IModule where TConfig : class, new()
     {
@@ -41,7 +41,11 @@ namespace CarroDesk.Core
         }
 
         protected IModuleContext Context { get; private set; }
-        public TConfig Config { get; private set; }
+
+        /// <summary>
+        /// 模块配置实例。默认以空配置保底，防止初始化前或单元测试注入时产生空引用。
+        /// </summary>
+        public TConfig Config { get; protected set; } = new TConfig();
 
         public virtual void Initialize(IModuleContext context)
         {
@@ -50,8 +54,6 @@ namespace CarroDesk.Core
             lock (_stateLock)
             {
                 // 幂等：只有 Created 状态才允许初始化。
-                // 此前重复调用会把 Running 打回 Initialized，并让后续 Start 前的
-                // 状态判断全部失真。
                 if (_status != ModuleStatus.Created) return;
 
                 Context = context;
@@ -61,7 +63,7 @@ namespace CarroDesk.Core
             try
             {
                 var configMgr = Context.GetService<IConfigManager>();
-                Config = configMgr != null ? configMgr.GetModuleConfig<TConfig>(Id) : new TConfig();
+                Config = (configMgr != null ? configMgr.GetModuleConfig<TConfig>(Id) : null) ?? new TConfig();
             }
             catch
             {
@@ -84,12 +86,14 @@ namespace CarroDesk.Core
 
             try
             {
+                lock (_managedHotkeys) { _managedHotkeys.Clear(); }
                 OnStart();
                 lock (_stateLock)
                 {
                     _isRunning = true;
                     _status = ModuleStatus.Running;
                 }
+                SyncManagedHotkeys();
             }
             catch (Exception ex)
             {
@@ -117,6 +121,7 @@ namespace CarroDesk.Core
 
             try
             {
+                UnregisterAllManagedHotkeys();
                 OnStop();
             }
             catch (Exception ex)
@@ -134,8 +139,9 @@ namespace CarroDesk.Core
             var configMgr = Context?.GetService<IConfigManager>();
             if (configMgr != null)
             {
-                Config = configMgr.GetModuleConfig<TConfig>(Id);
+                Config = configMgr.GetModuleConfig<TConfig>(Id) ?? new TConfig();
             }
+            SyncManagedHotkeys();
         }
 
         public virtual void OnLanguageChanged()
@@ -154,5 +160,167 @@ namespace CarroDesk.Core
         {
             Stop();
         }
+
+        #region 基础设施通用封装（托管快捷键、配置存取、托盘与通知）
+
+        private sealed class ManagedHotkeyBinding
+        {
+            public Func<string> HotkeyGetter { get; }
+            public Action Action { get; }
+            public int CurrentHotkeyId { get; set; }
+            public string LastRegisteredKey { get; set; }
+
+            public ManagedHotkeyBinding(Func<string> hotkeyGetter, Action action)
+            {
+                HotkeyGetter = hotkeyGetter ?? throw new ArgumentNullException(nameof(hotkeyGetter));
+                Action = action ?? throw new ArgumentNullException(nameof(action));
+            }
+        }
+
+        private readonly List<ManagedHotkeyBinding> _managedHotkeys = new List<ManagedHotkeyBinding>();
+
+        /// <summary>
+        /// 注册受生命周期托管的快捷键。
+        /// 基类将在 OnStart 时自动注册、OnConfigReloaded 时自动同步热键变更、OnStop/Dispose 时自动注销。
+        /// </summary>
+        protected void RegisterManagedHotkey(Func<string> hotkeyGetter, Action action)
+        {
+            if (hotkeyGetter == null || action == null) return;
+            lock (_managedHotkeys)
+            {
+                var binding = new ManagedHotkeyBinding(hotkeyGetter, action);
+                _managedHotkeys.Add(binding);
+                if (IsRunning)
+                {
+                    ApplyHotkeyBinding(binding);
+                }
+            }
+        }
+
+        private void ApplyHotkeyBinding(ManagedHotkeyBinding binding)
+        {
+            var hotkeys = Context?.GetService<IHotkeyService>();
+            if (hotkeys == null) return;
+
+            string newKey = binding.HotkeyGetter()?.Trim();
+
+            if (binding.CurrentHotkeyId > 0)
+            {
+                if (string.Equals(binding.LastRegisteredKey, newKey, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+                try
+                {
+                    hotkeys.Unregister(Id, binding.CurrentHotkeyId);
+                }
+                catch { }
+                binding.CurrentHotkeyId = 0;
+                binding.LastRegisteredKey = null;
+            }
+
+            if (string.IsNullOrWhiteSpace(newKey)) return;
+
+            try
+            {
+                binding.CurrentHotkeyId = hotkeys.Register(Id, newKey, binding.Action, out _);
+                binding.LastRegisteredKey = newKey;
+            }
+            catch { }
+        }
+
+        private void SyncManagedHotkeys()
+        {
+            lock (_managedHotkeys)
+            {
+                foreach (var binding in _managedHotkeys)
+                {
+                    ApplyHotkeyBinding(binding);
+                }
+            }
+        }
+
+        private void UnregisterAllManagedHotkeys()
+        {
+            lock (_managedHotkeys)
+            {
+                var hotkeys = Context?.GetService<IHotkeyService>();
+                foreach (var binding in _managedHotkeys)
+                {
+                    if (binding.CurrentHotkeyId > 0 && hotkeys != null)
+                    {
+                        try
+                        {
+                            hotkeys.Unregister(Id, binding.CurrentHotkeyId);
+                        }
+                        catch { }
+                        binding.CurrentHotkeyId = 0;
+                        binding.LastRegisteredKey = null;
+                    }
+                }
+                try
+                {
+                    hotkeys?.UnregisterAll(Id);
+                }
+                catch { }
+                _managedHotkeys.Clear();
+            }
+        }
+
+        /// <summary>持久化当前模块配置（经 IConfigManager）</summary>
+        public virtual void SaveConfig()
+        {
+            try
+            {
+                var configMgr = Context?.GetService<IConfigManager>();
+                configMgr?.SaveModuleConfig(Id, Config);
+            }
+            catch { }
+        }
+
+        /// <summary>向宿主请求托盘菜单刷新</summary>
+        public void RequestTrayRefresh()
+        {
+            try
+            {
+                Context?.RequestTrayRefresh();
+            }
+            catch { }
+        }
+
+        /// <summary>向宿主请求托盘菜单刷新（与历史命名保持兼容）</summary>
+        public void RequestRefreshTray() => RequestTrayRefresh();
+
+        /// <summary>派发通知气泡</summary>
+        public void ShowNotify(string message, string title = "CarroDesk")
+        {
+            try
+            {
+                Context?.ShowNotification(message, title);
+            }
+            catch { }
+        }
+
+        /// <summary>当前模块托盘根项引用（供线程安全 Header/ToolTip 刷新）</summary>
+        protected TrayMenuItem TrayRoot { get; set; }
+
+        /// <summary>跨线程安全刷新当前模块托盘根项的 Header 与 ToolTip</summary>
+        protected void SetTrayItemSelf(string header, string toolTip = null)
+        {
+            if (TrayRoot == null) return;
+            var d = Context?.Dispatcher;
+            if (d != null && !d.CheckAccess())
+            {
+                d.BeginInvoke(new Action(() => SetTrayItemSelf(header, toolTip)));
+                return;
+            }
+            TrayRoot.Header = header;
+            if (toolTip != null)
+            {
+                TrayRoot.ToolTip = toolTip;
+            }
+        }
+
+        #endregion
     }
 }

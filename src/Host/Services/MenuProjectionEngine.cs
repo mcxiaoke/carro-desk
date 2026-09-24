@@ -109,7 +109,7 @@ namespace CarroDesk.Host.Services
             return menuItem;
         }
 
-        private static void AttachHoverBehavior(MenuItem mi)
+        public static void AttachHoverBehavior(MenuItem mi)
         {
             if (mi == null) return;
             mi.MouseEnter += (s, e) =>

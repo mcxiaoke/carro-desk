@@ -21,10 +21,6 @@ namespace CarroDesk.Modules.MonitorProfile
         public MonitorDdcService DdcService { get; private set; }
         public ProfileScheduleEngine ScheduleEngine { get; private set; }
 
-        private IHotkeyService _hotkeys;
-        private TrayMenuItem _trayRoot;
-        private readonly List<int> _registeredHotkeyIds = new List<int>();
-
         public MonitorProfileModule()
         {
         }
@@ -43,27 +39,19 @@ namespace CarroDesk.Modules.MonitorProfile
 
         protected override void OnStart()
         {
-            _hotkeys = Context.GetService<IHotkeyService>();
-            var cfg = Config ?? MonitorProfileConfig.CreateDefault();
-
-            ScheduleEngine.Start(cfg);
-            RegisterHotkeys();
+            ScheduleEngine.Start(Config);
+            RegisterManagedHotkeys();
             UpdateTrayHeaderAndTooltip();
         }
 
         protected override void OnStop()
         {
-            UnregisterHotkeys();
-            _hotkeys?.UnregisterAll(Id);
             ScheduleEngine.Stop();
         }
 
         public override void OnConfigReloaded()
         {
             base.OnConfigReloaded();
-            UnregisterHotkeys();
-            RegisterHotkeys();
-
             ScheduleEngine.UpdateConfig(Config);
             UpdateTrayHeaderAndTooltip();
         }
@@ -77,7 +65,7 @@ namespace CarroDesk.Modules.MonitorProfile
         private void OnEngineStateChanged()
         {
             UpdateTrayHeaderAndTooltip();
-            RequestRefreshSelf();
+            RequestTrayRefresh();
         }
 
         private void OnSettingApplied(string profile, int brightness, int contrast)
@@ -85,100 +73,55 @@ namespace CarroDesk.Modules.MonitorProfile
             UpdateTrayHeaderAndTooltip();
         }
 
-        public void SaveConfig()
-        {
-            try
-            {
-                var configMgr = Context?.GetService<IConfigManager>();
-                configMgr?.SaveModuleConfig(Id, Config);
-            }
-            catch { }
-        }
-
         public void SaveAndApplyConfig(MonitorProfileConfig newConfig)
         {
-            try
-            {
-                var configMgr = Context?.GetService<IConfigManager>();
-                configMgr?.SaveModuleConfig(Id, newConfig);
-                OnConfigReloaded();
-            }
-            catch { }
+            Config = newConfig ?? new MonitorProfileConfig();
+            SaveConfig();
+            OnConfigReloaded();
         }
 
         #region Global Hotkeys
 
-        private void RegisterHotkeys()
+        private void RegisterManagedHotkeys()
         {
-            if (_hotkeys == null || Config == null || !Config.Enabled || Config.Hotkeys == null)
-                return;
-
-            RegisterSingleHotkey(Config.Hotkeys.SwitchToDailyMode, () =>
+            RegisterManagedHotkey(() => Config?.Hotkeys?.SwitchToDailyMode, () =>
             {
-                ScheduleEngine.SwitchProfile("Daily");
+                ScheduleEngine?.SwitchProfile("Daily");
                 SaveConfig();
-                Context?.ShowNotification(Loc.T("Monitor.SwitchedDaily", "已切换至显示器日常模式"));
+                ShowNotify(Loc.T("Monitor.SwitchedDaily", "已切换至显示器日常模式"));
             });
 
-            RegisterSingleHotkey(Config.Hotkeys.SwitchToGameMode, () =>
+            RegisterManagedHotkey(() => Config?.Hotkeys?.SwitchToGameMode, () =>
             {
-                ScheduleEngine.SwitchProfile("Game");
+                ScheduleEngine?.SwitchProfile("Game");
                 SaveConfig();
-                Context?.ShowNotification(Loc.T("Monitor.SwitchedGame", "已切换至显示器游戏模式"));
+                ShowNotify(Loc.T("Monitor.SwitchedGame", "已切换至显示器游戏模式"));
             });
 
-            RegisterSingleHotkey(Config.Hotkeys.SwitchToNightMode, () =>
+            RegisterManagedHotkey(() => Config?.Hotkeys?.SwitchToNightMode, () =>
             {
-                ScheduleEngine.SwitchProfile("Night");
+                ScheduleEngine?.SwitchProfile("Night");
                 SaveConfig();
-                Context?.ShowNotification(Loc.T("Monitor.SwitchedNight", "已切换至显示器夜间模式"));
+                ShowNotify(Loc.T("Monitor.SwitchedNight", "已切换至显示器夜间模式"));
             });
 
-            RegisterSingleHotkey(Config.Hotkeys.ManualRefresh, () =>
+            RegisterManagedHotkey(() => Config?.Hotkeys?.ManualRefresh, () =>
             {
-                ScheduleEngine.ApplyCurrentSetting(force: true);
-                Context?.ShowNotification(Loc.T("Monitor.Refreshed", "已刷新并重新应用显示器设置"));
+                ScheduleEngine?.ApplyCurrentSetting(force: true);
+                ShowNotify(Loc.T("Monitor.Refreshed", "已刷新并重新应用显示器设置"));
             });
 
-            int step = Config.BrightnessStep > 0 ? Config.BrightnessStep : 5;
-            RegisterSingleHotkey(Config.Hotkeys.IncreaseBrightness, () =>
+            RegisterManagedHotkey(() => Config?.Hotkeys?.IncreaseBrightness, () =>
             {
-                ScheduleEngine.StepBrightness(step);
+                int step = Config?.BrightnessStep > 0 ? Config.BrightnessStep : 5;
+                ScheduleEngine?.StepBrightness(step);
             });
 
-            RegisterSingleHotkey(Config.Hotkeys.DecreaseBrightness, () =>
+            RegisterManagedHotkey(() => Config?.Hotkeys?.DecreaseBrightness, () =>
             {
-                ScheduleEngine.StepBrightness(-step);
+                int step = Config?.BrightnessStep > 0 ? Config.BrightnessStep : 5;
+                ScheduleEngine?.StepBrightness(-step);
             });
-        }
-
-        private void RegisterSingleHotkey(string hotkeyStr, Action action)
-        {
-            if (string.IsNullOrEmpty(hotkeyStr) || action == null || _hotkeys == null)
-                return;
-
-            try
-            {
-                string error;
-                int id = _hotkeys.Register(Id, hotkeyStr, action, out error);
-                if (id > 0)
-                {
-                    _registeredHotkeyIds.Add(id);
-                }
-            }
-            catch { }
-        }
-
-        private void UnregisterHotkeys()
-        {
-            if (_hotkeys != null)
-            {
-                foreach (var id in _registeredHotkeyIds)
-                {
-                    try { _hotkeys.Unregister(Id, id); } catch { }
-                }
-            }
-            _registeredHotkeyIds.Clear();
         }
 
         #endregion
@@ -205,22 +148,12 @@ namespace CarroDesk.Modules.MonitorProfile
 
         private void UpdateTrayHeaderAndTooltip()
         {
-            if (_trayRoot == null) return;
-
-            var d = Context?.Dispatcher;
-            if (d != null && !d.CheckAccess())
-            {
-                d.BeginInvoke(new Action(UpdateTrayHeaderAndTooltip));
-                return;
-            }
-
-            _trayRoot.Header = BuildTrayHeader();
             int curB = ScheduleEngine != null ? ScheduleEngine.CurrentBrightness : -1;
             int curC = ScheduleEngine != null ? ScheduleEngine.CurrentContrast : -1;
-            if (curB >= 0)
-            {
-                _trayRoot.ToolTip = Loc.T("Tray.MonitorProfileTipFormat", "当前显示器配置: {0} (亮度: {1}%, 对比度: {2}%)", Config?.ActiveProfile, curB, curC);
-            }
+            string tip = curB >= 0
+                ? Loc.T("Tray.MonitorProfileTipFormat", "当前显示器配置: {0} (亮度: {1}%, 对比度: {2}%)", Config?.ActiveProfile, curB, curC)
+                : null;
+            SetTrayItemSelf(BuildTrayHeader(), tip);
         }
 
         public override IEnumerable<TrayMenuItem> GetTrayMenuItems()
@@ -234,7 +167,7 @@ namespace CarroDesk.Modules.MonitorProfile
                 Header = BuildTrayHeader(),
                 ToolTip = Loc.T("Tray.MonitorProfileTooltip", "显示器亮度与情境模式")
             };
-            _trayRoot = root;
+            TrayRoot = root;
 
             // 1. 情境模式单选列表
             if (cfg.Profiles != null)
@@ -254,7 +187,7 @@ namespace CarroDesk.Modules.MonitorProfile
                         {
                             ScheduleEngine?.SwitchProfile(profileKey);
                             SaveConfig();
-                            RequestRefreshSelf();
+                            RequestTrayRefresh();
                         }
                     });
                 }
@@ -312,7 +245,7 @@ namespace CarroDesk.Modules.MonitorProfile
                     cfg.AutoSchedule = !cfg.AutoSchedule;
                     SaveConfig();
                     ScheduleEngine?.ApplyCurrentSetting(force: true);
-                    RequestRefreshSelf();
+                    RequestTrayRefresh();
                 }
             });
 
@@ -345,7 +278,7 @@ namespace CarroDesk.Modules.MonitorProfile
                             WindowStartupLocation = System.Windows.WindowStartupLocation.CenterScreen
                         };
                         win.ShowDialog();
-                        RequestRefreshSelf();
+                        RequestTrayRefresh();
                     }
                     catch { }
                 }
@@ -353,11 +286,6 @@ namespace CarroDesk.Modules.MonitorProfile
 
             items.Add(root);
             return items;
-        }
-
-        private void RequestRefreshSelf()
-        {
-            try { Context?.RequestTrayRefresh(); } catch { }
         }
 
         #endregion

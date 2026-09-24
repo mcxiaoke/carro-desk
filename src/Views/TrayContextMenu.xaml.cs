@@ -93,49 +93,17 @@ namespace CarroDesk.Views
 
         private void OnAutoStartClick(object sender, RoutedEventArgs e)
         {
-            var config = _configManager?.Current;
-            if (config != null)
-            {
-                bool newState = !config.AutoStart;
-                bool success = AutoStartService.Sync(newState);
-                if (success)
-                {
-                    config.AutoStart = newState;
-                    _configManager?.Save();
-                }
-                else
-                {
-                    var logger = _services?.GetService<ILoggerService>();
-                    logger?.LogWarning("TrayContextMenu", "切换开机自启失败，可能被安全软件或权限拦截");
-                    var notif = _services?.GetService<INotificationService>();
-                    notif?.Show(Loc.T("Tray.AutoStartFailed", "设置开机自启失败，可能被安全软件拦截"), "CarroDesk");
-                }
-                RefreshHostChecks();
-            }
+            HostMenuActions.ToggleAutoStart(_configManager, _services, RefreshHostChecks);
         }
 
         private void OnConfigEditorClick(object sender, RoutedEventArgs e)
         {
-            try
-            {
-                var pinService = _services?.GetService<IPinService>();
-                var win = new ConfigEditorWindow(pinService, _configManager, _reloadConfig)
-                {
-                    WindowStartupLocation = WindowStartupLocation.CenterScreen
-                };
-                win.ShowDialog();
-                RefreshTray();
-            }
-            catch { }
+            HostMenuActions.OpenConfigEditor(_services, _configManager, _reloadConfig, RefreshTray);
         }
 
         private void OnOpenConfigDirClick(object sender, RoutedEventArgs e)
         {
-            try
-            {
-                Process.Start(ConfigService.DirPath);
-            }
-            catch { }
+            HostMenuActions.OpenConfigDirectory();
         }
 
         private void OnReloadConfigClick(object sender, RoutedEventArgs e)
@@ -147,16 +115,11 @@ namespace CarroDesk.Views
         {
             if (sender is MenuItem mi && mi.Tag != null)
             {
-                string lang = mi.Tag.ToString();
-                var config = _configManager?.Current;
-                if (config != null)
+                HostMenuActions.SetLanguage(_configManager, mi.Tag.ToString(), () =>
                 {
-                    config.Language = lang;
-                    _configManager?.Save();
-                }
-                I18nService.Instance.SetLanguage(lang);
-                RefreshTray();
-                _updateTrayText?.Invoke();
+                    RefreshTray();
+                    _updateTrayText?.Invoke();
+                });
             }
         }
 

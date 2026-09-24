@@ -16,17 +16,8 @@ namespace CarroDesk.Modules.AudioSwitch
         public override string Description => Loc.T("Audio.ModuleDesc", "快速在扬声器与耳机之间一键切换默认音频输出端点");
 
         private IAudioService _audioService;
-        private IHotkeyService _hotkeys;
-        private TrayMenuItem _trayItem;
 
         public AudioDeviceItem CurrentDefaultDevice { get; private set; }
-
-        private AudioSwitchConfig _fallbackConfig;
-        public new AudioSwitchConfig Config
-        {
-            get => base.Config ?? _fallbackConfig ?? (_fallbackConfig = new AudioSwitchConfig());
-            internal set => _fallbackConfig = value;
-        }
 
         public AudioSwitchModule()
         {
@@ -35,13 +26,12 @@ namespace CarroDesk.Modules.AudioSwitch
         protected override void OnStart()
         {
             _audioService = Context.GetService<IAudioService>();
-            _hotkeys = Context.GetService<IHotkeyService>();
             if (_audioService != null)
             {
                 _audioService.DevicesChanged += OnDevicesChanged;
             }
             UpdateCurrentDevice();
-            RegisterHotkey();
+            RegisterManagedHotkey(() => Config?.Enabled == true ? Config.Hotkey : null, () => ToggleAudioDevice());
         }
 
         protected override void OnStop()
@@ -50,21 +40,17 @@ namespace CarroDesk.Modules.AudioSwitch
             {
                 _audioService.DevicesChanged -= OnDevicesChanged;
             }
-            UnregisterHotkey();
-            _hotkeys?.UnregisterAll(Id);
         }
 
         private void OnDevicesChanged()
         {
             UpdateCurrentDevice();
-            RequestRefreshSelf();
+            RequestTrayRefresh();
         }
 
         public override void OnConfigReloaded()
         {
             base.OnConfigReloaded();
-            UnregisterHotkey();
-            RegisterHotkey();
             UpdateCurrentDevice();
         }
 
@@ -72,36 +58,6 @@ namespace CarroDesk.Modules.AudioSwitch
         {
             base.OnLanguageChanged();
             UpdateCurrentDevice();
-        }
-
-        private int _hotkeyId;
-
-        private void RegisterHotkey()
-        {
-            if (Config == null || !Config.Enabled || string.IsNullOrEmpty(Config.Hotkey))
-                return;
-
-            try
-            {
-                _hotkeyId = _hotkeys.Register(Id, Config.Hotkey, () =>
-                {
-                    ToggleAudioDevice();
-                }, out _);
-            }
-            catch { }
-        }
-
-        private void UnregisterHotkey()
-        {
-            if (_hotkeyId > 0)
-            {
-                try
-                {
-                    _hotkeys?.Unregister(Id, _hotkeyId);
-                    _hotkeyId = 0;
-                }
-                catch { }
-            }
         }
 
         public List<AudioDeviceItem> GetPlaybackDevices()
@@ -117,7 +73,7 @@ namespace CarroDesk.Modules.AudioSwitch
             if (success)
             {
                 UpdateCurrentDevice();
-                RequestRefreshSelf();
+                RequestTrayRefresh();
 
                 if (Config != null && Config.PlayNotificationSound)
                 {
@@ -315,25 +271,6 @@ namespace CarroDesk.Modules.AudioSwitch
             return "🔈";
         }
 
-        /// <summary>节点属性变更若在后台线程触发，模块自行 Dispatcher 封送回 UI（规范 §4.3）。</summary>
-        private void SetTrayItemSelf(string header, string toolTip)
-        {
-            if (_trayItem == null) return;
-            var d = Context?.Dispatcher;
-            if (d != null && !d.CheckAccess())
-            {
-                d.BeginInvoke(new Action(() => SetTrayItemSelf(header, toolTip)));
-                return;
-            }
-            _trayItem.Header = header;
-            _trayItem.ToolTip = toolTip;
-        }
-
-        private void RequestRefreshSelf()
-        {
-            try { Context?.RequestTrayRefresh(); } catch { }
-        }
-
         public override IEnumerable<TrayMenuItem> GetTrayMenuItems()
         {
             var items = new List<TrayMenuItem>();
@@ -345,14 +282,14 @@ namespace CarroDesk.Modules.AudioSwitch
                 Header = BuildDeviceHeader(),
                 ToolTip = BuildDeviceToolTip()
             };
-            _trayItem = root;
+            TrayRoot = root;
 
             root.Children.Add(new TrayMenuItem
             {
                 Id = "audioswitch_fast_toggle",
                 Header = Loc.T("Tray.FastToggle", "快捷切换"),
                 InputGestureText = Config?.Hotkey ?? "Ctrl+`",
-                ClickAction = () => { ToggleAudioDevice(); RequestRefreshSelf(); }
+                ClickAction = () => { ToggleAudioDevice(); RequestTrayRefresh(); }
             });
 
             root.Children.Add(TrayMenuItem.Separator());
@@ -371,7 +308,7 @@ namespace CarroDesk.Modules.AudioSwitch
                     Id = "audioswitch_dev_" + devId,
                     Header = header,
                     IsChecked = string.Equals(d.Id, currentId, StringComparison.OrdinalIgnoreCase),
-                    ClickAction = () => { SwitchToDevice(devId); RequestRefreshSelf(); }
+                    ClickAction = () => { SwitchToDevice(devId); RequestTrayRefresh(); }
                 });
             }
 
@@ -391,7 +328,7 @@ namespace CarroDesk.Modules.AudioSwitch
                             WindowStartupLocation = System.Windows.WindowStartupLocation.CenterScreen
                         };
                         win.ShowDialog();
-                        RequestRefreshSelf();
+                        RequestTrayRefresh();
                     }
                     catch { }
                 }

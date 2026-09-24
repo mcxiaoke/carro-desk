@@ -19,20 +19,17 @@ namespace CarroDesk.Modules.AppAutoMute
 
         private IAudioService _audioService;
         private IForegroundTracker _foregroundTracker;
-        private IHotkeyService _hotkeys;
 
         private readonly DispatcherTimer _muteTimer;
         private readonly DispatcherTimer _unmuteTimer;
 
         private string _lastTargetProc;
-        private TrayMenuItem _trayRoot;
         private TrayMenuItem _toggleItem;
 
         public bool IsEnabledUser => Config != null && Config.Enabled;
 
         public AppAutoMuteModule()
         {
-
             _muteTimer = new DispatcherTimer();
             _muteTimer.Tick += OnMuteTimerTick;
 
@@ -44,7 +41,6 @@ namespace CarroDesk.Modules.AppAutoMute
         {
             _audioService = Context.GetService<IAudioService>();
             _foregroundTracker = Context.GetService<IForegroundTracker>();
-            _hotkeys = Context.GetService<IHotkeyService>();
 
             // 缺少核心依赖时显式失败并进入 Faulted：否则模块会"看似已启用"，
             // 但静音/白名单判定静默失效，用户只看到静音没生效而没有任何提示。
@@ -53,7 +49,7 @@ namespace CarroDesk.Modules.AppAutoMute
             if (_foregroundTracker == null)
                 throw new InvalidOperationException("IForegroundTracker 未注册，自动静音模块无法工作。");
 
-            RegisterHotkey();
+            RegisterManagedHotkey(() => Config?.Hotkey, ToggleEnabled);
             _foregroundTracker.ForegroundChanged += OnForegroundChanged;
             _foregroundTracker.UpdateCurrent();
             EvaluateForeground(_foregroundTracker.CurrentProcessName);
@@ -64,8 +60,6 @@ namespace CarroDesk.Modules.AppAutoMute
             _foregroundTracker.ForegroundChanged -= OnForegroundChanged;
             _muteTimer.Stop();
             _unmuteTimer.Stop();
-            UnregisterHotkey();
-            _hotkeys?.UnregisterAll(Id);
 
             // 核心安全保护：停用时强制全量解除目标应用静音
             UnmuteAllTargets();
@@ -74,8 +68,6 @@ namespace CarroDesk.Modules.AppAutoMute
         public override void OnConfigReloaded()
         {
             base.OnConfigReloaded();
-            UnregisterHotkey();
-            RegisterHotkey();
             SetCheckedSelf(IsEnabledUser);
         }
 
@@ -89,48 +81,16 @@ namespace CarroDesk.Modules.AppAutoMute
             }
         }
 
-        private int _hotkeyId;
-
-        private void RegisterHotkey()
-        {
-            if (Config == null || string.IsNullOrEmpty(Config.Hotkey))
-                return;
-
-            try
-            {
-                _hotkeyId = _hotkeys.Register(Id, Config.Hotkey, () =>
-                {
-                    ToggleEnabled();
-                }, out _);
-            }
-            catch { }
-        }
-
-        private void UnregisterHotkey()
-        {
-            if (_hotkeyId > 0)
-            {
-                try
-                {
-                    _hotkeys?.Unregister(Id, _hotkeyId);
-                    _hotkeyId = 0;
-                }
-                catch { }
-            }
-        }
-
         public void ToggleEnabled()
         {
             if (Config == null) return;
             Config.Enabled = !Config.Enabled;
 
             SetCheckedSelf(Config.Enabled);
-
-            var configMgr = Context?.GetService<IConfigManager>();
-            configMgr?.SaveModuleConfig(Id, Config);
+            SaveConfig();
 
             string msg = Config.Enabled ? Loc.T("AutoMute.EnabledNotify", "应用自动静音已启用") : Loc.T("AutoMute.DisabledNotify", "应用自动静音已禁用 (已恢复所有声音)");
-            Context?.ShowNotification(msg);
+            ShowNotify(msg);
 
             if (!Config.Enabled)
             {
@@ -153,14 +113,7 @@ namespace CarroDesk.Modules.AppAutoMute
 
         private void UpdateTrayHeader()
         {
-            if (_trayRoot == null) return;
-            var d = Context?.Dispatcher;
-            if (d != null && !d.CheckAccess())
-            {
-                d.BeginInvoke(new Action(UpdateTrayHeader));
-                return;
-            }
-            _trayRoot.Header = BuildAutoMuteHeader();
+            SetTrayItemSelf(BuildAutoMuteHeader());
         }
 
         /// <summary>节点属性变更若在后台线程触发，模块自行 Dispatcher 封送回 UI（规范 §4.3）。</summary>
@@ -173,7 +126,7 @@ namespace CarroDesk.Modules.AppAutoMute
                 return;
             }
             if (_toggleItem != null) _toggleItem.IsChecked = value;
-            if (_trayRoot != null) _trayRoot.Header = BuildAutoMuteHeader();
+            SetTrayItemSelf(BuildAutoMuteHeader());
         }
 
         private void OnForegroundChanged(IntPtr hwnd, string procName)
@@ -308,7 +261,7 @@ namespace CarroDesk.Modules.AppAutoMute
                 Header = BuildAutoMuteHeader(),
                 ToolTip = Loc.T("Tray.AppAutoMute", "应用后台自动静音")
             };
-            _trayRoot = root;
+            TrayRoot = root;
 
             // 1. 启用/禁用总开关
             _toggleItem = new TrayMenuItem
@@ -330,7 +283,7 @@ namespace CarroDesk.Modules.AppAutoMute
                 ClickAction = () =>
                 {
                     UnmuteAllTargets();
-                    Context?.ShowNotification(Loc.T("Tray.AutoMuteRestoredAll", "已恢复所有应用程序声音"));
+                    ShowNotify(Loc.T("Tray.AutoMuteRestoredAll", "已恢复所有应用程序声音"));
                 }
             });
 
@@ -345,7 +298,7 @@ namespace CarroDesk.Modules.AppAutoMute
                     string current = _foregroundTracker?.CurrentProcessName;
                     if (string.IsNullOrWhiteSpace(current))
                     {
-                        Context?.ShowNotification(Loc.T("Tray.AutoMuteCannotIdentify", "未能识别当前活动窗口进程"));
+                        ShowNotify(Loc.T("Tray.AutoMuteCannotIdentify", "未能识别当前活动窗口进程"));
                         return;
                     }
                     string norm = ProcessHelper.Normalize(current);
@@ -355,13 +308,12 @@ namespace CarroDesk.Modules.AppAutoMute
                     if (!Config.TargetApps.Any(x => ProcessHelper.IsMatch(x, norm)))
                     {
                         Config.TargetApps.Add(norm);
-                        var configMgr = Context?.GetService<IConfigManager>();
-                        configMgr?.SaveModuleConfig(Id, Config);
-                        Context?.ShowNotification(Loc.T("Tray.AutoMuteAdded", "已将【{0}】添加到后台静音列表", norm));
+                        SaveConfig();
+                        ShowNotify(Loc.T("Tray.AutoMuteAdded", "已将【{0}】添加到后台静音列表", norm));
                     }
                     else
                     {
-                        Context?.ShowNotification(Loc.T("Tray.AutoMuteAlreadyInList", "【{0}】已在列表中", norm));
+                        ShowNotify(Loc.T("Tray.AutoMuteAlreadyInList", "【{0}】已在列表中", norm));
                     }
                 }
             });
@@ -384,7 +336,7 @@ namespace CarroDesk.Modules.AppAutoMute
                             WindowStartupLocation = System.Windows.WindowStartupLocation.CenterScreen
                         };
                         win.ShowDialog();
-                        RequestRefreshSelf();
+                        RequestTrayRefresh();
                     }
                     catch { }
                 }
@@ -392,11 +344,6 @@ namespace CarroDesk.Modules.AppAutoMute
 
             items.Add(root);
             return items;
-        }
-
-        private void RequestRefreshSelf()
-        {
-            try { Context?.RequestTrayRefresh(); } catch { }
         }
     }
 }

@@ -23,7 +23,6 @@ namespace CarroDesk.Modules.ClipboardHistory
         private ClipboardHistoryService _service;
         private IClipboardListener _listener;
         private ClipboardHistoryWindow _window;
-        private int _hotkeyId;
 
         /// <summary>模块自建存储（测试注入 service 时为 null），仅用于退出前 Flush。</summary>
         private IClipboardHistoryStorage _ownedStorage;
@@ -70,13 +69,11 @@ namespace CarroDesk.Modules.ClipboardHistory
                 _listener?.Start();
             }
 
-            RegisterHotkey();
+            RegisterManagedHotkey(() => Config?.Hotkey, SummonWindow);
         }
 
         protected override void OnStop()
         {
-            UnregisterHotkey();
-
             _listener?.Stop();
 
             Context?.Dispatcher?.Invoke(() =>
@@ -126,8 +123,7 @@ namespace CarroDesk.Modules.ClipboardHistory
                 _listener?.Stop();
             }
 
-            RegisterHotkey();
-            Context?.RequestTrayRefresh();
+            RequestTrayRefresh();
         }
 
         public override IEnumerable<TrayMenuItem> GetTrayMenuItems()
@@ -262,27 +258,6 @@ namespace CarroDesk.Modules.ClipboardHistory
                     // 忽略剪贴板争夺异常
                 }
             });
-        }
-
-        private void RegisterHotkey()
-        {
-            UnregisterHotkey();
-
-            var hotkeys = Context?.GetService<IHotkeyService>();
-            if (hotkeys != null && !string.IsNullOrWhiteSpace(Config?.Hotkey))
-            {
-                _hotkeyId = hotkeys.Register(Id, Config.Hotkey, SummonWindow, out _);
-            }
-        }
-
-        private void UnregisterHotkey()
-        {
-            if (_hotkeyId != 0)
-            {
-                var hotkeys = Context?.GetService<IHotkeyService>();
-                hotkeys?.Unregister(Id, _hotkeyId);
-                _hotkeyId = 0;
-            }
         }
 
         public override void Dispose()

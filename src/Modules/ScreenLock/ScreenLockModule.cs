@@ -22,8 +22,6 @@ namespace CarroDesk.Modules.ScreenLock
 
         private bool _sessionLocked;
         private DateTime _pauseUntil = DateTime.MinValue;
-        private IHotkeyService _hotkeys;
-        private int _hotkeyId;
 
         // 闲时业务状态机（规范 §3.4）：纯 IIdleService 广播 + 模块内复刻 IdleDetector 语义
         private const double IdleIntervalMs = 1000;
@@ -52,9 +50,6 @@ namespace CarroDesk.Modules.ScreenLock
 
         protected override void OnStart()
         {
-            var configMgr = Context.GetService<IConfigManager>();
-            var config = Config ?? new ScreenLockConfig();
-
             _idleService = Context.GetService<IIdleService>();
             if (_idleService != null)
             {
@@ -62,8 +57,7 @@ namespace CarroDesk.Modules.ScreenLock
                 _idleService.UserActiveDetected += OnUserActive;
             }
 
-            _hotkeys = Context.GetService<IHotkeyService>();
-            RegisterHotkey();
+            RegisterManagedHotkey(() => Config?.Hotkey, () => LockSafe());
 
             // 宿主退出状态契约化（P2-12）：模块经抽象解析，不再由 App 直插
             Controller.IsShuttingDownProvider = () =>
@@ -93,8 +87,6 @@ namespace CarroDesk.Modules.ScreenLock
                 _idleService.UserActiveDetected -= OnUserActive;
                 _idleService = null;
             }
-            UnregisterHotkey();
-            _hotkeys?.UnregisterAll(Id);
             if (Controller != null)
             {
                 Controller.Unlocked -= OnControllerUnlocked;
@@ -105,41 +97,11 @@ namespace CarroDesk.Modules.ScreenLock
         {
             base.OnConfigReloaded();
             ResetIdleMachine();
-            UnregisterHotkey();
-            RegisterHotkey();
             if (Controller != null)
             {
                 Controller.ApplyPinFromConfig();
             }
             UpdateTrayHeaderAndToolTip();
-        }
-
-        private void RegisterHotkey()
-        {
-            if (Config == null || string.IsNullOrWhiteSpace(Config.Hotkey) || _hotkeys == null)
-                return;
-
-            try
-            {
-                _hotkeyId = _hotkeys.Register(Id, Config.Hotkey, () =>
-                {
-                    LockSafe();
-                }, out _);
-            }
-            catch { }
-        }
-
-        private void UnregisterHotkey()
-        {
-            if (_hotkeyId > 0 && _hotkeys != null)
-            {
-                try
-                {
-                    _hotkeys.Unregister(Id, _hotkeyId);
-                    _hotkeyId = 0;
-                }
-                catch { }
-            }
         }
 
         public override void OnLanguageChanged()
@@ -245,7 +207,7 @@ namespace CarroDesk.Modules.ScreenLock
         {
             ResetIdleMachine();
             // 解锁后自行刷新托盘状态，宿主无需再订阅（P2-12 移除 App 的 Unlocked 钩子）
-            RequestTrayRefreshSelf();
+            RequestTrayRefresh();
         }
 
         public void OnSessionSwitch(object sender, SessionSwitchEventArgs e)
@@ -309,26 +271,23 @@ namespace CarroDesk.Modules.ScreenLock
             return pinService?.IsConfigured ?? false;
         }
 
-        private TrayMenuItem _trayRoot;
-
         public void SetIdleMinutes(int mins)
         {
             if (Config != null)
             {
                 Config.IdleMinutes = mins;
-                var configMgr = Context?.GetService<IConfigManager>();
-                configMgr?.SaveModuleConfig(Id, Config);
+                SaveConfig();
             }
             ResetIdleMachine();
             UpdateTrayHeaderAndToolTip();
-            RequestTrayRefreshSelf();
+            RequestTrayRefresh();
         }
 
         public void PauseFor(TimeSpan span)
         {
             _pauseUntil = DateTime.Now.Add(span);
             UpdateTrayHeaderAndToolTip();
-            RequestTrayRefreshSelf();
+            RequestTrayRefresh();
         }
 
         public void ResumeIdle()
@@ -336,7 +295,7 @@ namespace CarroDesk.Modules.ScreenLock
             _pauseUntil = DateTime.MinValue;
             ResetIdleMachine();
             UpdateTrayHeaderAndToolTip();
-            RequestTrayRefreshSelf();
+            RequestTrayRefresh();
         }
 
         public string BuildScreenLockHeader()
@@ -381,24 +340,6 @@ namespace CarroDesk.Modules.ScreenLock
             SetTrayItemSelf(BuildScreenLockHeader(), BuildScreenLockToolTip());
         }
 
-        private void SetTrayItemSelf(string header, string toolTip)
-        {
-            if (_trayRoot == null) return;
-            var d = Context?.Dispatcher;
-            if (d != null && !d.CheckAccess())
-            {
-                d.BeginInvoke(new Action(() => SetTrayItemSelf(header, toolTip)));
-                return;
-            }
-            _trayRoot.Header = header;
-            _trayRoot.ToolTip = toolTip;
-        }
-
-        private void RequestTrayRefreshSelf()
-        {
-            try { Context?.RequestTrayRefresh(); } catch { }
-        }
-
         public override IEnumerable<TrayMenuItem> GetTrayMenuItems()
         {
             // 按模块二级聚合规范：本模块仅输出单一根节点，所有控制项收敛入二级菜单
@@ -411,7 +352,7 @@ namespace CarroDesk.Modules.ScreenLock
                 Header = BuildScreenLockHeader(),
                 ToolTip = BuildScreenLockToolTip()
             };
-            _trayRoot = root;
+            TrayRoot = root;
 
             // 1. 核心动作置顶：立即锁定
             var lockItem = new TrayMenuItem
@@ -450,13 +391,13 @@ namespace CarroDesk.Modules.ScreenLock
             {
                 Id = "screenlock_pause_30",
                 Header = Loc.T("Tray.Pause30Min", "暂停 30 分钟"),
-                ClickAction = () => { PauseFor(TimeSpan.FromMinutes(30)); ShowNotifySelf(Loc.T("Tray.BalloonPause", PauseUntil)); }
+                ClickAction = () => { PauseFor(TimeSpan.FromMinutes(30)); ShowNotify(Loc.T("Tray.BalloonPause", PauseUntil)); }
             });
             pauseRoot.Children.Add(new TrayMenuItem
             {
                 Id = "screenlock_pause_1h",
                 Header = Loc.T("Tray.Pause1Hour", "暂停 1 小时"),
-                ClickAction = () => { PauseFor(TimeSpan.FromHours(1)); ShowNotifySelf(Loc.T("Tray.BalloonPause", PauseUntil)); }
+                ClickAction = () => { PauseFor(TimeSpan.FromHours(1)); ShowNotify(Loc.T("Tray.BalloonPause", PauseUntil)); }
             });
             pauseRoot.Children.Add(new TrayMenuItem
             {
@@ -475,7 +416,7 @@ namespace CarroDesk.Modules.ScreenLock
                     if (PromptPauseMinutes(out int mins))
                     {
                         PauseFor(TimeSpan.FromMinutes(mins));
-                        ShowNotifySelf(Loc.T("Tray.BalloonPause", PauseUntil));
+                        ShowNotify(Loc.T("Tray.BalloonPause", PauseUntil));
                     }
                 }
             });
@@ -515,11 +456,6 @@ namespace CarroDesk.Modules.ScreenLock
                 IsChecked = mins == currentMinutes,
                 ClickAction = () => SetIdleMinutes(mins)
             });
-        }
-
-        private void ShowNotifySelf(string msg)
-        {
-            try { Context?.ShowNotification(msg, "CarroDesk"); } catch { }
         }
 
         private static bool PromptPauseMinutes(out int minutes)

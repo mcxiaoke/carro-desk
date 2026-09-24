@@ -436,28 +436,13 @@ namespace CarroDesk.Views
                 Header = Loc.T("Tray.AutoStart", "开机自启"),
                 IsChecked = config != null && config.AutoStart
             };
-            AttachHoverBehavior(autoStartItem);
+            MenuProjectionEngine.AttachHoverBehavior(autoStartItem);
             autoStartItem.Click += (s, e) =>
             {
-                var cfg = CurrentSettings;
-                if (cfg != null)
+                HostMenuActions.ToggleAutoStart(_configManager, _services, () =>
                 {
-                    bool newState = !cfg.AutoStart;
-                    bool success = AutoStartService.Sync(newState);
-                    if (success)
-                    {
-                        cfg.AutoStart = newState;
-                        PersistSettings();
-                        autoStartItem.IsChecked = newState;
-                    }
-                    else
-                    {
-                        var logger = _services?.GetService<ILoggerService>();
-                        logger?.LogWarning("FloatingPanel", "切换开机自启失败，可能被安全软件或权限拦截");
-                        var notif = _services?.GetService<INotificationService>();
-                        notif?.Show(Loc.T("Tray.AutoStartFailed", "设置开机自启失败，可能被安全软件拦截"), "CarroDesk");
-                    }
-                }
+                    autoStartItem.IsChecked = CurrentSettings?.AutoStart ?? false;
+                });
                 CloseAllTopLevelSubmenus();
                 DismissIfNotPinned();
             };
@@ -468,22 +453,12 @@ namespace CarroDesk.Views
             {
                 Header = Loc.T("Tray.ConfigEditor", "配置编辑器...")
             };
-            AttachHoverBehavior(configEditorItem);
+            MenuProjectionEngine.AttachHoverBehavior(configEditorItem);
             configEditorItem.Click += (s, e) =>
             {
                 CloseAllTopLevelSubmenus();
                 DismissIfNotPinned();
-                try
-                {
-                    var pinService = _services?.GetService<IPinService>();
-                    var win = new ConfigEditorWindow(pinService, _configManager, _reloadConfig)
-                    {
-                        WindowStartupLocation = WindowStartupLocation.CenterScreen
-                    };
-                    win.ShowDialog();
-                    RebuildMenu();
-                }
-                catch { }
+                HostMenuActions.OpenConfigEditor(_services, _configManager, _reloadConfig, RebuildMenu);
             };
             ItemsHostMenu.Items.Add(configEditorItem);
 
@@ -492,12 +467,12 @@ namespace CarroDesk.Views
             {
                 Header = Loc.T("Tray.OpenConfigDir", "打开配置目录")
             };
-            AttachHoverBehavior(openConfigDirItem);
+            MenuProjectionEngine.AttachHoverBehavior(openConfigDirItem);
             openConfigDirItem.Click += (s, e) =>
             {
                 CloseAllTopLevelSubmenus();
                 DismissIfNotPinned();
-                try { Process.Start(ConfigService.DirPath); } catch { }
+                HostMenuActions.OpenConfigDirectory();
             };
             ItemsHostMenu.Items.Add(openConfigDirItem);
 
@@ -506,7 +481,7 @@ namespace CarroDesk.Views
             {
                 Header = Loc.T("Tray.ReloadConfig", "重载配置")
             };
-            AttachHoverBehavior(reloadConfigItem);
+            MenuProjectionEngine.AttachHoverBehavior(reloadConfigItem);
             reloadConfigItem.Click += (s, e) =>
             {
                 _reloadConfig?.Invoke();
@@ -521,28 +496,35 @@ namespace CarroDesk.Views
             {
                 Header = Loc.T("Tray.Language", "语言 / Language")
             };
-            AttachHoverBehavior(langRoot);
+            MenuProjectionEngine.AttachHoverBehavior(langRoot);
             string currentLang = config?.Language ?? "auto";
 
-            var langAuto = new MenuItem { Header = Loc.T("Tray.LangAuto", "自动跟随系统 (Auto)"), IsChecked = string.Equals(currentLang, "auto", StringComparison.OrdinalIgnoreCase) };
-            AttachHoverBehavior(langAuto);
-            langAuto.Click += (s, e) => SwitchLanguage("auto");
-            langRoot.Items.Add(langAuto);
+            void AddLangItem(string langKey, string header)
+            {
+                var item = new MenuItem
+                {
+                    Header = header,
+                    IsChecked = string.Equals(currentLang, langKey, StringComparison.OrdinalIgnoreCase)
+                };
+                MenuProjectionEngine.AttachHoverBehavior(item);
+                item.Click += (s, e) =>
+                {
+                    HostMenuActions.SetLanguage(_configManager, langKey, () =>
+                    {
+                        RebuildMenu();
+                        _updateTrayText?.Invoke();
+                    });
+                    DismissIfNotPinned();
+                };
+                langRoot.Items.Add(item);
+            }
 
+            AddLangItem("auto", Loc.T("Tray.LangAuto", "自动跟随系统 (Auto)"));
             langRoot.Items.Add(new Separator());
-
-            var langZh = new MenuItem { Header = Loc.T("Tray.LangZh", "简体中文 (Chinese)"), IsChecked = string.Equals(currentLang, "zh-CN", StringComparison.OrdinalIgnoreCase) };
-            AttachHoverBehavior(langZh);
-            langZh.Click += (s, e) => SwitchLanguage("zh-CN");
-            langRoot.Items.Add(langZh);
-
-            var langEn = new MenuItem { Header = Loc.T("Tray.LangEn", "English"), IsChecked = string.Equals(currentLang, "en-US", StringComparison.OrdinalIgnoreCase) };
-            AttachHoverBehavior(langEn);
-            langEn.Click += (s, e) => SwitchLanguage("en-US");
-            langRoot.Items.Add(langEn);
+            AddLangItem("zh-CN", Loc.T("Tray.LangZh", "简体中文 (Chinese)"));
+            AddLangItem("en-US", Loc.T("Tray.LangEn", "English"));
 
             ItemsHostMenu.Items.Add(langRoot);
-
             ItemsHostMenu.Items.Add(new Separator());
 
             // 退出
@@ -550,27 +532,13 @@ namespace CarroDesk.Views
             {
                 Header = Loc.T("Tray.Exit", "退出...")
             };
-            AttachHoverBehavior(exitItem);
+            MenuProjectionEngine.AttachHoverBehavior(exitItem);
             exitItem.Click += (s, e) =>
             {
                 HidePanel();
                 _promptExit?.Invoke();
             };
             ItemsHostMenu.Items.Add(exitItem);
-        }
-
-        private void SwitchLanguage(string lang)
-        {
-            var cfg = CurrentSettings;
-            if (cfg != null)
-            {
-                cfg.Language = lang;
-                PersistSettings();
-            }
-            I18nService.Instance.SetLanguage(lang);
-            RebuildMenu();
-            _updateTrayText?.Invoke();
-            DismissIfNotPinned();
         }
 
         private object CreateVisual(TrayMenuItem node)
@@ -591,24 +559,6 @@ namespace CarroDesk.Views
             return MenuProjectionEngine.CreateVisual(node, options, Dispatcher);
         }
 
-        private void AttachHoverBehavior(MenuItem mi)
-        {
-            if (mi == null) return;
-            mi.MouseEnter += (s, e) =>
-            {
-                CloseSiblingSubmenus(mi);
-                if (mi.HasItems)
-                {
-                    mi.IsSubmenuOpen = true;
-                }
-            };
-        }
-
-        private static void CloseSiblingSubmenus(MenuItem current)
-        {
-            MenuProjectionEngine.CloseSiblingSubmenus(current);
-        }
-
         private void CloseAllTopLevelSubmenus()
         {
             foreach (var item in ItemsHostMenu.Items)
@@ -626,18 +576,6 @@ namespace CarroDesk.Views
             {
                 HidePanel();
             }
-        }
-
-        private static void SetBinding(FrameworkElement element, DependencyProperty dp, string path, object source,
-            BindingMode mode = BindingMode.OneWay, IValueConverter converter = null)
-        {
-            var binding = new Binding(path)
-            {
-                Source = source,
-                Mode = mode,
-                Converter = converter
-            };
-            element.SetBinding(dp, binding);
         }
 
         #endregion
