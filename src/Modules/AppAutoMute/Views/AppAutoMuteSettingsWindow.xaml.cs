@@ -244,7 +244,7 @@ namespace CarroDesk.Modules.AppAutoMute.Views
                     }
                 }
                 TxtNotice.Text = Loc.T("AutoMute.UnmutedAll", "已立即恢复所有声音");
-                _notifier?.Invoke(Loc.T("AutoMute.UnmutedAllApplications", "已恢复所有应用程序声音"));
+                _module?.LogInfo("设置界面触发恢复所有应用程序声音");
             }
             catch (Exception ex)
             {
@@ -303,8 +303,7 @@ namespace CarroDesk.Modules.AppAutoMute.Views
             }
 
             _module?.OnConfigReloaded();
-            string saveMsg = Loc.T("AutoMute.ConfigSaved", "后台智能静音配置已保存并生效");
-            _notifier?.Invoke(saveMsg);
+            _module?.LogInfo("后台智能静音配置已保存并生效");
 
             DialogResult = true;
             Close();

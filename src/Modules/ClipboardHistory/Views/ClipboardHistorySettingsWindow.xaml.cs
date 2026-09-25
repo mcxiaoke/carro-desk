@@ -82,7 +82,7 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
             }
 
             _module?.OnConfigReloaded();
-            _notifier?.Invoke(Loc.T("Clipboard.ConfigSaved", "剪贴板历史配置已保存并生效"));
+            _module?.LogInfo("剪贴板历史配置已保存并生效");
 
             DialogResult = true;
             Close();

@@ -102,7 +102,7 @@ namespace CarroDesk.Modules.AppAutoMute
 
             SetCheckedSelf(Config.Enabled);
             string msg = Config.Enabled ? Loc.T("AutoMute.EnabledNotify", "应用自动静音已启用") : Loc.T("AutoMute.DisabledNotify", "应用自动静音已禁用 (已恢复所有声音)");
-            ShowNotify(msg);
+            LogInfo(msg);
 
             if (!Config.Enabled)
             {
@@ -302,7 +302,7 @@ namespace CarroDesk.Modules.AppAutoMute
                 ClickAction = () =>
                 {
                     UnmuteAllTargets();
-                    ShowNotify(Loc.T("Tray.AutoMuteRestoredAll", "已恢复所有应用程序声音"));
+                    LogInfo("已恢复所有应用程序声音 (应急恢复)");
                 }
             });
 
@@ -317,7 +317,7 @@ namespace CarroDesk.Modules.AppAutoMute
                     string current = _foregroundTracker?.CurrentProcessName;
                     if (string.IsNullOrWhiteSpace(current))
                     {
-                        ShowNotify(Loc.T("Tray.AutoMuteCannotIdentify", "未能识别当前活动窗口进程"));
+                        LogWarning("未能识别当前活动窗口进程");
                         return;
                     }
                     string norm = ProcessHelper.Normalize(current);
@@ -328,11 +328,11 @@ namespace CarroDesk.Modules.AppAutoMute
                     {
                         Config.TargetApps.Add(norm);
                         SaveConfig();
-                        ShowNotify(Loc.T("Tray.AutoMuteAdded", "已将【{0}】添加到后台静音列表", norm));
+                        LogInfo($"已将【{norm}】添加到后台静音列表");
                     }
                     else
                     {
-                        ShowNotify(Loc.T("Tray.AutoMuteAlreadyInList", "【{0}】已在列表中", norm));
+                        LogInfo($"【{norm}】已在后台静音列表中");
                     }
                 }
             });

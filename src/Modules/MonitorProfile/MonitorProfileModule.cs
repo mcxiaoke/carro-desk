@@ -94,27 +94,27 @@ namespace CarroDesk.Modules.MonitorProfile
             {
                 ScheduleEngine?.SwitchProfile("Daily");
                 SaveConfig();
-                ShowNotify(Loc.T("Monitor.SwitchedDaily", "已切换至显示器日常模式"));
+                LogInfo("已切换至显示器日常模式 (Daily)");
             });
 
             RegisterManagedHotkey(() => Config?.Hotkeys?.SwitchToGameMode, () =>
             {
                 ScheduleEngine?.SwitchProfile("Game");
                 SaveConfig();
-                ShowNotify(Loc.T("Monitor.SwitchedGame", "已切换至显示器游戏模式"));
+                LogInfo("已切换至显示器游戏模式 (Game)");
             });
 
             RegisterManagedHotkey(() => Config?.Hotkeys?.SwitchToNightMode, () =>
             {
                 ScheduleEngine?.SwitchProfile("Night");
                 SaveConfig();
-                ShowNotify(Loc.T("Monitor.SwitchedNight", "已切换至显示器夜间模式"));
+                LogInfo("已切换至显示器夜间模式 (Night)");
             });
 
             RegisterManagedHotkey(() => Config?.Hotkeys?.ManualRefresh, () =>
             {
                 ScheduleEngine?.ApplyCurrentSetting(force: true);
-                ShowNotify(Loc.T("Monitor.Refreshed", "已刷新并重新应用显示器设置"));
+                LogInfo("已刷新并重新应用显示器设置");
             });
 
             RegisterManagedHotkey(() => Config?.Hotkeys?.IncreaseBrightness, () =>
@@ -264,7 +264,7 @@ namespace CarroDesk.Modules.MonitorProfile
                 ClickAction = () =>
                 {
                     ScheduleEngine?.ApplyCurrentSetting(force: true);
-                    Context?.ShowNotification(Loc.T("Tray.MonitorProfileApplied", "已重新校准并应用显示器设置"));
+                    LogInfo("已重新探测并应用显示器设置");
                 }
             });
 

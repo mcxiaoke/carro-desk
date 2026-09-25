@@ -348,6 +348,36 @@ namespace CarroDesk.Core
             catch { }
         }
 
+        /// <summary>记录普通日志（由宿主 ILoggerService 分发）</summary>
+        public void LogInfo(string message)
+        {
+            try
+            {
+                Context?.GetService<ILoggerService>()?.LogInfo(Id, message);
+            }
+            catch { }
+        }
+
+        /// <summary>记录警告日志（由宿主 ILoggerService 分发）</summary>
+        public void LogWarning(string message)
+        {
+            try
+            {
+                Context?.GetService<ILoggerService>()?.LogWarning(Id, message);
+            }
+            catch { }
+        }
+
+        /// <summary>记录错误日志（由宿主 ILoggerService 分发）</summary>
+        public void LogError(string message, Exception ex = null)
+        {
+            try
+            {
+                Context?.GetService<ILoggerService>()?.LogError(Id, message, ex);
+            }
+            catch { }
+        }
+
         /// <summary>当前模块托盘根项引用（供线程安全 Header/ToolTip 刷新）</summary>
         protected TrayMenuItem TrayRoot { get; set; }
 

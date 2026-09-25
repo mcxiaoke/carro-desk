@@ -241,14 +241,10 @@ namespace CarroDesk
             FloatingPanelWindow.Instance?.RefreshSettings();
             _trayController?.RequestRefresh();
             UpdateTrayText();
-            if (_tbIcon != null)
-            {
-                // 经 Core 契约读取屏锁状态，宿主不 import 模块私有 Model（P2-12）
-                var slStatus = Modules.Modules.OfType<IScreenLockStatus>().FirstOrDefault();
-                int idleMins = slStatus?.IdleMinutes ?? 5;
-                string balloonMsg = Loc.T("Tray.BalloonConfigReloaded", idleMins);
-                _tbIcon.ShowBalloonTip("CarroDesk", balloonMsg, BalloonIcon.Info);
-            }
+
+            var slStatus = Modules.Modules.OfType<IScreenLockStatus>().FirstOrDefault();
+            int idleMins = slStatus?.IdleMinutes ?? 5;
+            Services?.GetService<ILoggerService>()?.LogInfo("App", $"配置重载成功（屏锁空闲阈值: {idleMins} 分钟）");
         }
 
         internal void ReloadTasks()
@@ -262,14 +258,19 @@ namespace CarroDesk
             var result = scheduler.Reload();
             try { RefreshTaskMenu(); } catch { /* intentionally ignored: UI task refresh */ }
             try { RefreshMenuChecks(); } catch { /* intentionally ignored: UI checks refresh */ }
-            var msg = result.Errors == 0
-                ? Loc.T("Tray.BalloonTasksReloadedSuccess", result.Tasks)
-                : Loc.T("Tray.BalloonTasksReloadedErrors", result.Tasks, result.Errors);
-            if (result.Errors > 0)
-                msg += Loc.T("Tray.BalloonTasksErrorsHint");
-            if (!scheduler.IsGlobalEnabled)
-                msg += Loc.T("Tray.BalloonTasksDisabledHint");
-            ShowBalloon(msg);
+
+            if (result.Errors > 0 || !scheduler.IsGlobalEnabled)
+            {
+                var msg = result.Errors == 0
+                    ? Loc.T("Tray.BalloonTasksReloadedSuccess", result.Tasks)
+                    : Loc.T("Tray.BalloonTasksReloadedErrors", result.Tasks, result.Errors);
+                if (result.Errors > 0)
+                    msg += Loc.T("Tray.BalloonTasksErrorsHint");
+                if (!scheduler.IsGlobalEnabled)
+                    msg += Loc.T("Tray.BalloonTasksDisabledHint");
+                ShowBalloon(msg);
+            }
+            Services?.GetService<ILoggerService>()?.LogInfo("App", $"任务重载完成: {result.Tasks} 个生效，{result.Errors} 个错误 (全局启用={scheduler.IsGlobalEnabled})");
         }
 
         public void RefreshTaskMenu()

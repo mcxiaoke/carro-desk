@@ -156,7 +156,7 @@ namespace CarroDesk.Modules.TaskScheduler
                 {
                     bool enabled = !IsGlobalEnabled;
                     if (SetGlobalEnabled(enabled))
-                        NotifySelf(enabled ? Loc.T("Tray.TasksEnabledMsg", "任务调度已启用") : Loc.T("Tray.TasksDisabledMsg", "任务调度已禁用"));
+                        LogInfo(enabled ? "任务调度总开关已启用" : "任务调度总开关已禁用");
                 }
             });
 
@@ -199,7 +199,7 @@ namespace CarroDesk.Modules.TaskScheduler
                     mi.ClickAction = () =>
                     {
                         bool ok = RunManual(name);
-                        NotifySelf(ok ? Loc.T("Tray.TaskTriggered", name) : Loc.T("Tray.TaskTriggerFailed", name));
+                        LogInfo($"用户手动触发任务 '{name}'，结果: {(ok ? "成功" : "失败")}");
                     };
                     manual.Children.Add(mi);
                 }

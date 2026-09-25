@@ -150,13 +150,11 @@ namespace CarroDesk.Modules.Awake
             if (!wasActive)
             {
                 int defaultMins = Config.DefaultDurationMinutes;
-                ShowNotify(defaultMins > 0
-                    ? Loc.T("Tray.AwakeNotifyTimed", $"已开启保持唤醒 ({defaultMins} 分钟)")
-                    : Loc.T("Tray.AwakeNotifyIndefinite", "已开启无限期保持唤醒"));
+                LogInfo(defaultMins > 0 ? $"已开启保持唤醒 ({defaultMins} 分钟)" : "已开启无限期保持唤醒");
             }
             else
             {
-                ShowNotify(Loc.T("Tray.AwakeNotifyPassive", "已关闭保持唤醒，恢复系统默认电源策略"));
+                LogInfo("已关闭保持唤醒，恢复系统默认电源策略");
             }
             UpdateTrayHeaderAndToolTip();
             RequestRefreshTray();
@@ -201,16 +199,16 @@ namespace CarroDesk.Modules.Awake
             {
                 if (Config.AutoAwakeProcesses == null || Config.AutoAwakeProcesses.Count == 0)
                 {
-                    ShowNotify(Loc.T("Tray.AwakeProcessLinkOnNoTargets", "智能进程联动已启用，但名单为空，请先在设置中添加目标进程。"));
+                    LogWarning("智能进程联动已启用，但名单为空");
                 }
                 else
                 {
-                    ShowNotify(Loc.T("Tray.AwakeProcessLinkOnNotify", "智能进程联动已启用，检测到目标进程运行时会自动保持唤醒。"));
+                    LogInfo("智能进程联动已启用，检测到目标进程运行时会自动保持唤醒");
                 }
             }
             else
             {
-                ShowNotify(Loc.T("Tray.AwakeProcessLinkOffNotify", "智能进程联动已停用，进程名单与缓冲设置已保留。"));
+                LogInfo("智能进程联动已停用");
             }
         }
 
@@ -233,7 +231,7 @@ namespace CarroDesk.Modules.Awake
 
         private void OnServiceExpired()
         {
-            ShowNotify(Loc.T("Tray.AwakeNotifyExpired", "保持唤醒时间已结束，已恢复系统常规电源策略。"));
+            LogInfo("保持唤醒时间已结束，已恢复系统常规电源策略");
             SaveConfig();
             UpdateTrayHeaderAndToolTip();
             RequestRefreshTray();
@@ -243,11 +241,11 @@ namespace CarroDesk.Modules.Awake
         {
             if (isPaused)
             {
-                ShowNotify(Loc.T("Tray.AwakeNotifyBatteryPaused", "检测到使用电池供电/电量不足，已临时挂起保持唤醒以保护电池。"));
+                LogWarning($"检测到使用电池供电/电量不足 ({percent}%)，已临时挂起保持唤醒");
             }
             else
             {
-                ShowNotify(Loc.T("Tray.AwakeNotifyBatteryResumed", "已恢复交流电源供电，继续保持唤醒。"));
+                LogInfo("已恢复交流电源供电，继续保持唤醒");
             }
             UpdateTrayHeaderAndToolTip();
             RequestRefreshTray();
@@ -255,21 +253,7 @@ namespace CarroDesk.Modules.Awake
 
         private void OnProcessTriggered(bool isTriggered, string procName)
         {
-            // 若用户本来就在保持唤醒期间（永久或定时），进程进出静默联动，不打扰用户
-            bool isAlreadyAwakeManually = Service != null && Service.Mode != AwakeMode.Passive;
-            if (!isAlreadyAwakeManually)
-            {
-                if (isTriggered)
-                {
-                    // 必须走带格式化的重载：默认值里带 {0}，两参重载不会执行 string.Format，
-                    // 会导致中文丢失进程名、英文显示字面量 {0}
-                    ShowNotify(Loc.T("Tray.AwakeNotifyProcessActive", "检测到目标进程 '{0}' 正在运行，已自动开启保持唤醒。", procName));
-                }
-                else
-                {
-                    ShowNotify(Loc.T("Tray.AwakeNotifyProcessEnded", "目标进程已退出，保持唤醒已自动恢复关闭。"));
-                }
-            }
+            // 后台静默联动，不弹 Windows Toast 打扰用户
             UpdateTrayHeaderAndToolTip();
             RequestRefreshTray();
         }
@@ -424,7 +408,7 @@ namespace CarroDesk.Modules.Awake
                     SaveConfig();
                     UpdateTrayHeaderAndToolTip();
                     RequestRefreshTray();
-                    ShowNotify(Loc.T("Tray.AwakeNotifyIndefinite", "已开启无限期保持唤醒"));
+                    LogInfo("已开启无限期保持唤醒");
                 }
             });
 
@@ -450,7 +434,7 @@ namespace CarroDesk.Modules.Awake
                         SaveConfig();
                         UpdateTrayHeaderAndToolTip();
                         RequestRefreshTray();
-                        ShowNotify(Loc.T("Awake.TimedOn", "已开启保持唤醒 ({0})", label));
+                        LogInfo($"已开启保持唤醒 ({label})");
                     }
                 });
             }
@@ -468,7 +452,7 @@ namespace CarroDesk.Modules.Awake
                         SaveConfig();
                         UpdateTrayHeaderAndToolTip();
                         RequestRefreshTray();
-                        ShowNotify(Loc.T("Awake.TimedCustom", "已开启保持唤醒 ({0} 分钟)", customMins));
+                        LogInfo($"已开启保持唤醒 ({customMins} 分钟)");
                     }
                 }
             });
@@ -498,7 +482,7 @@ namespace CarroDesk.Modules.Awake
                         SaveConfig();
                         UpdateTrayHeaderAndToolTip();
                         RequestRefreshTray();
-                        ShowNotify(Loc.T("Awake.UntilTime", "已设置保持唤醒至 {0:D2}:00", h));
+                        LogInfo($"已设置保持唤醒至 {h:D2}:00");
                     }
                 });
             }

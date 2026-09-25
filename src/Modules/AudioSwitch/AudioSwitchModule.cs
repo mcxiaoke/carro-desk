@@ -89,6 +89,7 @@ namespace CarroDesk.Modules.AudioSwitch
                     else if (devName.IndexOf(Config.SpeakerPattern ?? "扬声器", StringComparison.OrdinalIgnoreCase) >= 0) icon = "🔊";
                 }
                 string msg = Loc.T("Tray.AudioSwitchSwitched", "已切换音频输出至: {0} {1}", icon, devName);
+                LogInfo($"已切换默认音频输出设备: {devName} (Id: {deviceId})");
                 Context?.ShowNotification(msg);
                 return true;
             }
@@ -126,6 +127,7 @@ namespace CarroDesk.Modules.AudioSwitch
             var all = _audioService.GetPlaybackDevices();
             if (all == null || all.Count == 0)
             {
+                LogWarning("未找到可用的音频输出设备");
                 Context?.ShowNotification(Loc.T("Audio.NoDevice", "未找到可用的音频输出设备"));
                 return false;
             }
@@ -142,6 +144,7 @@ namespace CarroDesk.Modules.AudioSwitch
             {
                 if (CurrentDefaultDevice != null && CurrentDefaultDevice.Id == available[0].Id)
                 {
+                    LogInfo($"当前仅有一个可用的音频输出设备: {available[0].Name}");
                     Context?.ShowNotification(Loc.T("Audio.OnlyOneDevice", "当前仅有一个可用的音频输出设备: {0}", available[0].Name));
                     return false;
                 }

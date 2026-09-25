@@ -452,8 +452,7 @@ namespace CarroDesk.Modules.AudioSwitch.Views
 
             _module?.OnConfigReloaded();
             _commitChanges = true;
-            string msg = Loc.T("Audio.ConfigSaved", "音频输出设备切换配置已保存并生效");
-            _notifier?.Invoke(msg);
+            _module?.LogInfo("音频输出设备切换配置已保存并生效");
 
             DialogResult = true;
             Close();

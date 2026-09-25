@@ -218,6 +218,7 @@ namespace CarroDesk.Modules.ScreenLock
 
         private void OnIdleWarning()
         {
+            LogInfo($"空闲达到预警阈值，即将自动锁定（空闲阈值: {Config?.IdleMinutes ?? 5} 分钟）");
             Context?.ShowNotification(Loc.T("Tray.BalloonIdleWarn", Config?.IdleMinutes ?? 5));
         }
 
@@ -333,6 +334,7 @@ namespace CarroDesk.Modules.ScreenLock
         public void PauseFor(TimeSpan span)
         {
             _pauseUntil = DateTime.Now.Add(span);
+            LogInfo($"自动锁定已暂停至 {_pauseUntil:yyyy-MM-dd HH:mm:ss}");
             UpdateTrayHeaderAndToolTip();
             RequestTrayRefresh();
         }
@@ -341,6 +343,7 @@ namespace CarroDesk.Modules.ScreenLock
         {
             _pauseUntil = DateTime.MinValue;
             ResetIdleMachine();
+            LogInfo("自动锁定已恢复计时");
             UpdateTrayHeaderAndToolTip();
             RequestTrayRefresh();
         }
@@ -438,13 +441,13 @@ namespace CarroDesk.Modules.ScreenLock
             {
                 Id = "screenlock_pause_30",
                 Header = Loc.T("Tray.Pause30Min", "暂停 30 分钟"),
-                ClickAction = () => { PauseFor(TimeSpan.FromMinutes(30)); ShowNotify(Loc.T("Tray.BalloonPause", PauseUntil)); }
+                ClickAction = () => PauseFor(TimeSpan.FromMinutes(30))
             });
             pauseRoot.Children.Add(new TrayMenuItem
             {
                 Id = "screenlock_pause_1h",
                 Header = Loc.T("Tray.Pause1Hour", "暂停 1 小时"),
-                ClickAction = () => { PauseFor(TimeSpan.FromHours(1)); ShowNotify(Loc.T("Tray.BalloonPause", PauseUntil)); }
+                ClickAction = () => PauseFor(TimeSpan.FromHours(1))
             });
             pauseRoot.Children.Add(new TrayMenuItem
             {
@@ -463,7 +466,6 @@ namespace CarroDesk.Modules.ScreenLock
                     if (PromptPauseMinutes(out int mins))
                     {
                         PauseFor(TimeSpan.FromMinutes(mins));
-                        ShowNotify(Loc.T("Tray.BalloonPause", PauseUntil));
                     }
                 }
             });
