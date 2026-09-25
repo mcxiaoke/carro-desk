@@ -18,13 +18,15 @@ namespace CarroDesk.Views
         private AppSettings _editing;
         private bool _isInitializing = false;
         private readonly IPinService _pinService;
+        private readonly PinGuard _pinGuard;
         private readonly ConfigManager _configManager;
         private readonly Action _onApplied;
 
-        public ConfigEditorWindow(IPinService pinService, ConfigManager configManager = null, Action onApplied = null)
+        public ConfigEditorWindow(IPinService pinService, ConfigManager configManager = null, Action onApplied = null, PinGuard pinGuard = null)
         {
             InitializeComponent();
             _pinService = pinService;
+            _pinGuard = pinGuard;
             _configManager = configManager;
             _onApplied = onApplied;
             Loaded += OnLoaded;
@@ -92,8 +94,9 @@ namespace CarroDesk.Views
             if (LanguageBox.SelectedItem is ComboBoxItem item && item.Tag != null)
             {
                 string lang = item.Tag.ToString();
+                // 语言是草稿字段，只在“保存并应用”成功后切换运行时语言。
+                // 旧实现立即 SetLanguage，关闭窗口也不会回滚，导致本次进程与磁盘配置分叉。
                 _editing.Language = lang;
-                I18nService.Instance.SetLanguage(lang);
                 RefreshDynamicTexts();
             }
         }
@@ -155,42 +158,49 @@ namespace CarroDesk.Views
         private bool DoSave(bool apply)
         {
             SyncFromUI();
+            AppSettings previous = null;
+            var target = _configManager?.Current;
+            if (target != null) previous = target.Clone();
+
             try
             {
                 if (_configManager != null)
                 {
-                    var target = _configManager.Current;
-                    if (target != null)
-                    {
-                        _editing.CopyTo(target);
-                        _editing = target.Clone();
-                    }
+                    if (target == null) return false;
+                    _editing.CopyTo(target);
+                    _editing = target.Clone();
                     _configManager.Save();
                 }
                 ValidateText.Text = Loc.T("Common.Success");
 
-                if (apply)
+                if (apply && !ApplyRuntime())
                 {
-                    ApplyRuntime();
+                    MessageBox.Show(Loc.T("Config.ApplyFailed", "配置已保存，但运行时应用失败"), Loc.T("Common.Error"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return false;
                 }
                 return true;
             }
             catch (Exception ex)
             {
+                if (target != null && previous != null) previous.CopyTo(target);
                 MessageBox.Show(Loc.T("Config.SaveFailed", ex.Message), Loc.T("Common.Error"), MessageBoxButton.OK, MessageBoxImage.Error);
                 return false;
             }
         }
 
-        private void ApplyRuntime()
+        private bool ApplyRuntime()
         {
             // 规范 M9：Config 编辑器不越权直驱模块/Controller。
             // 仅在持久化后向 Host 发一次重载通知，由各模块 OnConfigReloaded 自行应用。
             try
             {
                 _onApplied?.Invoke();
+                return true;
             }
-            catch { }
+            catch
+            {
+                return false;
+            }
         }
 
         private void OnPinChangeClick(object sender, RoutedEventArgs e)
@@ -198,7 +208,7 @@ namespace CarroDesk.Views
             // verify old pin first if exists
             if (_editing.HasPin())
             {
-                var verify = new VerifyPinWindow(_pinService, Loc.T("Config.VerifyOldPinPrompt"));
+                var verify = new VerifyPinWindow(_pinService, Loc.T("Config.VerifyOldPinPrompt"), _pinGuard);
                 verify.WindowStartupLocation = WindowStartupLocation.CenterOwner;
                 verify.Owner = this;
                 if (verify.ShowDialog() != true)

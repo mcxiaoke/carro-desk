@@ -46,7 +46,7 @@ namespace CarroDesk.Modules.Awake
         protected override void OnStart()
         {
             Service.Start();
-            RegisterManagedHotkey(() => Config?.Hotkey, ToggleAwakeQuick);
+            RegisterManagedHotkey(() => Config?.Enabled == true ? Config.Hotkey : null, ToggleAwakeQuick);
             UpdateTrayHeaderAndToolTip();
         }
 
@@ -87,40 +87,77 @@ namespace CarroDesk.Modules.Awake
             RequestTrayRefresh();
         }
 
-        public override void SaveConfig()
+        public bool SaveAndApplyConfig(AwakeConfig candidate)
+        {
+            var previous = Config?.Clone();
+            Config = candidate ?? new AwakeConfig();
+            Service?.UpdateConfig(Config);
+            if (SaveConfig())
+                return true;
+
+            if (previous != null)
+            {
+                Config = previous;
+                Service?.UpdateConfig(Config);
+            }
+            return false;
+        }
+
+        public override bool SaveConfig()
         {
             if (Config != null && Service != null)
             {
                 Config.Mode = Service.Mode;
+                Config.ExpireAtLocal = (Service.Mode == AwakeMode.Timed || Service.Mode == AwakeMode.UntilTime)
+                    ? Service.ExpireTime
+                    : (DateTime?)null;
                 Config.KeepDisplayOn = Service.KeepDisplayOn;
             }
-            base.SaveConfig();
+            return base.SaveConfig();
         }
 
         private void ToggleAwakeQuick()
         {
-            if (Service == null) return;
-
-            if (!Service.IsActive)
+            if (Service == null || Config == null) return;
+            var candidate = Config.Clone();
+            bool wasActive = Service.IsActive;
+            if (!wasActive)
             {
-                int defaultMins = Config != null ? Config.DefaultDurationMinutes : 30;
+                int defaultMins = Config.DefaultDurationMinutes;
                 if (defaultMins > 0)
                 {
-                    Service.SetTimed(defaultMins);
-                    ShowNotify(Loc.T("Tray.AwakeNotifyTimed", $"已开启保持唤醒 ({defaultMins} 分钟)"));
+                    candidate.Mode = AwakeMode.Timed;
+                    candidate.ExpireAtLocal = DateTime.Now.AddMinutes(defaultMins);
                 }
                 else
                 {
-                    Service.SetIndefinite();
-                    ShowNotify(Loc.T("Tray.AwakeNotifyIndefinite", "已开启无限期保持唤醒"));
+                    candidate.Mode = AwakeMode.Indefinite;
+                    candidate.ExpireAtLocal = null;
                 }
             }
             else
             {
-                Service.SetPassiveByUser();
+                candidate.Mode = AwakeMode.Passive;
+                candidate.ExpireAtLocal = null;
+            }
+
+            if (!SaveAndApplyConfig(candidate))
+            {
+                ShowNotify(Loc.T("Config.SaveFailed"), Loc.T("Common.Error", "错误"));
+                return;
+            }
+            if (wasActive) Service.SetPassiveByUser();
+            if (!wasActive)
+            {
+                int defaultMins = Config.DefaultDurationMinutes;
+                ShowNotify(defaultMins > 0
+                    ? Loc.T("Tray.AwakeNotifyTimed", $"已开启保持唤醒 ({defaultMins} 分钟)")
+                    : Loc.T("Tray.AwakeNotifyIndefinite", "已开启无限期保持唤醒"));
+            }
+            else
+            {
                 ShowNotify(Loc.T("Tray.AwakeNotifyPassive", "已关闭保持唤醒，恢复系统默认电源策略"));
             }
-            SaveConfig();
             UpdateTrayHeaderAndToolTip();
             RequestRefreshTray();
         }
@@ -142,7 +179,14 @@ namespace CarroDesk.Modules.Awake
         public void SetProcessLinkEnabled(bool enabled)
         {
             if (Config == null) return;
+            bool previous = Config.ProcessLinkEnabled;
             Config.ProcessLinkEnabled = enabled;
+            if (!SaveConfig())
+            {
+                Config.ProcessLinkEnabled = previous;
+                ShowNotify(Loc.T("Config.SaveFailed"), Loc.T("Common.Error", "错误"));
+                return;
+            }
 
             if (enabled)
             {
@@ -150,7 +194,6 @@ namespace CarroDesk.Modules.Awake
             }
 
             Service?.UpdateConfig(Config);
-            SaveConfig();
             UpdateTrayHeaderAndToolTip();
             RequestRefreshTray();
 

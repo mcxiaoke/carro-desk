@@ -1,6 +1,7 @@
 using System;
 using System.Security.Cryptography;
 using System.Text;
+using CarroDesk.Models;
 using CarroDesk.Services;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -90,6 +91,18 @@ namespace CarroDesk.Tests
 
             Assert.AreEqual(hash1, hash2);
             Assert.AreNotEqual(hash1, hash3);
+        }
+
+        [TestMethod]
+        public void AppSettings_HasPin_RejectsMalformedCredentialAndAcceptsValidOne()
+        {
+            var malformed = new AppSettings { PinSalt = "not-base64", PinHash = "broken" };
+            Assert.IsFalse(malformed.HasPin(), "损坏 PIN 必须进入恢复流程，不能显示为已配置");
+
+            var service = new PinService();
+            service.SetNewPin("1234");
+            var valid = new AppSettings { PinSalt = service.Salt, PinHash = service.Hash };
+            Assert.IsTrue(valid.HasPin());
         }
 
         [TestMethod]

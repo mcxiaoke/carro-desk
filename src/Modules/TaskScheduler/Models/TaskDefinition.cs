@@ -17,12 +17,13 @@ namespace CarroDesk.Models
         Idle,
         Manual,
         Hotkey,
-        Watch
+        Watch,
+        Unknown
     }
 
     public class TaskTrigger
     {
-        public TaskTriggerType Type { get; set; } = TaskTriggerType.Startup;
+        public TaskTriggerType Type { get; set; } = TaskTriggerType.Unknown;
         public int DelaySec { get; set; } = 5;
         public int EverySec { get; set; } = 0;
         public string Every { get; set; } = "";
@@ -175,7 +176,10 @@ namespace CarroDesk.Models
                 if (!ok) return "name invalid char: " + c;
             }
             if (Trigger == null) return "trigger required";
+            if (Trigger.Type == TaskTriggerType.Unknown) return "trigger.type missing or unknown";
             if (Action == null || string.IsNullOrWhiteSpace(Action.File)) return "action.file required";
+            if (Trigger.Type == TaskTriggerType.Startup && (Trigger.DelaySec < 0 || Trigger.DelaySec > 365 * 24 * 60 * 60))
+                return "startup delaySec must be between 0 and 31536000";
             if (Trigger.Type == TaskTriggerType.Interval)
             {
                 int sec = Trigger.EverySec;

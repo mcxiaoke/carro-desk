@@ -92,7 +92,7 @@ namespace CarroDesk.Host.Services
                 {
                     if (!dispatcher.CheckAccess())
                     {
-                        options.BackgroundPropertyWarn(node, pc.PropertyName);
+                        options?.BackgroundPropertyWarn?.Invoke(node, pc.PropertyName);
                     }
                 };
 

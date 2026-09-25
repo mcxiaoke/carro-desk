@@ -14,8 +14,7 @@ namespace CarroDesk.Tests
     /// <summary>
     /// 热键解析行为测试（P1-12）。此前 HotkeyHelper 完全没有测试覆盖。
     ///
-    /// 已知限制（本次审查发现、未在本批次改动）：解析时先把 '-' 统一替换为 '+'
-    /// 作为分隔符，因此字面量减号键（如 `Ctrl+-`）无法表达，单字符分支里的 '-' 实际不可达。
+    /// 解析优先使用“+”分隔，同时兼容不含“+”的“-”分隔，因此 `Ctrl+-` 可正确表达。
     /// </summary>
     [TestClass]
     public class HotkeyHelperTests
@@ -115,6 +114,16 @@ namespace CarroDesk.Tests
 
             Assert.IsFalse(HotkeyHelper.TryParse("Bogus+A", out mods, out vk, out error));
             Assert.IsFalse(string.IsNullOrEmpty(error));
+        }
+
+        [TestMethod]
+        public void Validate_RejectsBareCharacterButAllowsFunctionKeysAndMinus()
+        {
+            string error;
+            Assert.IsFalse(HotkeyHelper.Validate("A", out error));
+            Assert.IsFalse(HotkeyHelper.Validate("Space", out error));
+            Assert.IsTrue(HotkeyHelper.Validate("F1", out error), error);
+            Assert.IsTrue(HotkeyHelper.Validate("Ctrl+-", out error), error);
         }
 
         [TestMethod]
@@ -225,7 +234,7 @@ namespace CarroDesk.Tests
             {
                 controller.Lock();
                 Assert.IsFalse(controller.IsLocked, "缺少 PIN 服务时不应进入锁定状态");
-                Assert.IsTrue(controller.LockSafe(), "无操作路径应返回成功");
+                Assert.IsFalse(controller.LockSafe(), "缺少 PIN 服务必须报告锁定失败，让闲时状态机重试");
             }
         }
 
@@ -235,7 +244,7 @@ namespace CarroDesk.Tests
             var pinService = new FakePinService { IsConfigured = false };
             using (var controller = new LockController(() => pinService, () => new ScreenLockConfig()))
             {
-                controller.LockSafe();
+                Assert.IsFalse(controller.LockSafe(), "未配置 PIN 时必须报告失败");
                 Assert.IsFalse(controller.IsLocked, "未配置 PIN 时不应锁定，否则用户无法解锁");
             }
         }

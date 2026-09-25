@@ -14,6 +14,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
     public partial class TaskEditorWindow : Window
     {
         private List<TaskDefinition> _tasks = new List<TaskDefinition>();
+        private List<string> _loadErrors = new List<string>();
         private bool _isUpdating = false;
         private readonly ITaskSchedulerService _scheduler;
         private readonly Action _onReloadCompleted;
@@ -57,7 +58,9 @@ namespace CarroDesk.Modules.TaskScheduler.Views
         {
             if (_isUpdating) return;
             bool enabled = GlobalEnabledBox.IsChecked == true;
-            _scheduler?.SetGlobalEnabled(enabled);
+            bool success = _scheduler?.SetGlobalEnabled(enabled) ?? false;
+            if (_scheduler != null) GlobalEnabledBox.IsChecked = _scheduler.IsGlobalEnabled;
+            if (!success) return;
             _onReloadCompleted?.Invoke();
         }
 
@@ -65,11 +68,14 @@ namespace CarroDesk.Modules.TaskScheduler.Views
         {
             try
             {
-                var res = TaskConfigService.Load();
+                var res = TaskConfigService.LoadOrCreate();
                 _tasks = res.Tasks ?? new List<TaskDefinition>();
-                if (_tasks.Count == 0 && res.Errors.Count > 0)
+                _loadErrors = res.Errors ?? new List<string>();
+                if (_loadErrors.Count > 0)
                 {
-                    MessageBox.Show(Loc.T("Tasks.LoadErrors", string.Join("\n", res.Errors)), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                    // 任意加载错误都必须在编辑器中可见。旧实现只在有效任务为 0 时提示，
+                    // 随后保存会把非法/未来 schema 任务从 tasks.json 中永久删除。
+                    MessageBox.Show(Loc.T("Tasks.LoadErrors", string.Join("\n", _loadErrors)), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
                 RefreshList();
             }
@@ -213,7 +219,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             NameBox.Text = task.Name;
             EnabledBox.IsChecked = task.Enabled;
             // trigger type
-            string tag = task.Trigger.RawType != "" ? task.Trigger.RawType : task.Trigger.Type.ToString().ToLowerInvariant();
+            string tag = TaskConfigService.GetCanonicalTriggerTag(task.Trigger.Type);
             SelectTriggerTag(tag);
             DelayBox.Text = task.Trigger.DelaySec.ToString();
             EveryBox.Text = !string.IsNullOrWhiteSpace(task.Trigger.Every) ? task.Trigger.Every : (task.Trigger.EverySec > 0 ? task.Trigger.EverySec.ToString() : "");
@@ -506,21 +512,8 @@ namespace CarroDesk.Modules.TaskScheduler.Views
 
         private TaskTriggerType ParseType(string tag)
         {
-            tag = tag.ToLowerInvariant();
-            switch (tag)
-            {
-                case "startup": return TaskTriggerType.Startup;
-                case "interval": return TaskTriggerType.Interval;
-                case "daily": return TaskTriggerType.Daily;
-                case "cron": return TaskTriggerType.Cron;
-                case "sessionlock": return TaskTriggerType.SessionLock;
-                case "sessionunlock": return TaskTriggerType.SessionUnlock;
-                case "idle": return TaskTriggerType.Idle;
-                case "manual": return TaskTriggerType.Manual;
-                case "hotkey": return TaskTriggerType.Hotkey;
-                case "watch": return TaskTriggerType.Watch;
-                default: return TaskTriggerType.Manual;
-            }
+            TaskTriggerType type;
+            return TaskConfigService.TryParseTriggerType(tag, out type) ? type : TaskTriggerType.Unknown;
         }
 
         private bool ValidateForm(TaskDefinition built, TaskDefinition cur, out string error, out Control controlToFocus)
@@ -574,7 +567,14 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                 return false;
             }
 
-            if (built.Trigger.Type == TaskTriggerType.Interval)
+            if (built.Trigger.Type == TaskTriggerType.Startup &&
+                (built.Trigger.DelaySec < 0 || built.Trigger.DelaySec > 365 * 24 * 60 * 60))
+            {
+                error = Loc.T("Tasks.ValStartupDelay", "启动延迟必须在 0 到 31536000 秒之间");
+                controlToFocus = DelayBox;
+                return false;
+            }
+            else if (built.Trigger.Type == TaskTriggerType.Interval)
             {
                 int sec = built.Trigger.EverySec;
                 if (sec <= 0 && !string.IsNullOrWhiteSpace(built.Trigger.Every))
@@ -703,6 +703,12 @@ namespace CarroDesk.Modules.TaskScheduler.Views
 
         private bool SaveTasksInternal()
         {
+            if (_loadErrors != null && _loadErrors.Count > 0)
+            {
+                MessageBox.Show(Loc.T("Tasks.LoadErrors", string.Join("\n", _loadErrors)), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                return false;
+            }
+
             var cur = TaskList.SelectedItem as TaskDefinition;
             var built = BuildCurrent();
 
@@ -741,12 +747,20 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                 return false;
             }
 
-            // 3. 校验通过，原子性提交到任务列表中
+            // 3. 校验通过，先提交到内存列表；持久化失败时恢复原引用/移除新增项。
             TaskDefinition targetTask = cur;
+            var previousTrigger = cur?.Trigger;
+            var previousAction = cur?.Action;
+            var previousOptions = cur?.Options;
+            var previousWhen = cur?.When;
+            string previousName = cur?.Name;
+            bool previousEnabled = cur?.Enabled ?? false;
+            bool addedNewTask = false;
             if (targetTask == null)
             {
                 targetTask = built;
                 _tasks.Add(targetTask);
+                addedNewTask = true;
             }
             else
             {
@@ -776,6 +790,16 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             }
             catch (Exception ex)
             {
+                if (addedNewTask) _tasks.Remove(targetTask);
+                else if (targetTask != null)
+                {
+                    targetTask.Name = previousName;
+                    targetTask.Enabled = previousEnabled;
+                    targetTask.Trigger = previousTrigger;
+                    targetTask.Action = previousAction;
+                    targetTask.Options = previousOptions;
+                    targetTask.When = previousWhen;
+                }
                 MessageBox.Show(Loc.T("Tasks.SaveFailed", ex.Message), Loc.T("Common.Error", "错误"), MessageBoxButton.OK, MessageBoxImage.Error);
                 return false;
             }
@@ -913,8 +937,14 @@ namespace CarroDesk.Modules.TaskScheduler.Views
 
         private void OnItemEnabledToggleClick(object sender, RoutedEventArgs e)
         {
+            if (_loadErrors != null && _loadErrors.Count > 0)
+            {
+                MessageBox.Show(Loc.T("Tasks.LoadErrors", string.Join("\n", _loadErrors)), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
             if (sender is CheckBox cb && cb.DataContext is TaskDefinition task)
             {
+                bool previousEnabled = !(cb.IsChecked == true);
                 try
                 {
                     TaskConfigService.Save(_tasks);
@@ -927,6 +957,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                 }
                 catch (Exception ex)
                 {
+                    task.Enabled = previousEnabled;
                     MessageBox.Show(Loc.T("Tasks.SaveStatusFailed", "保存任务状态失败: {0}", ex.Message), Loc.T("Common.Error", "错误"), MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }

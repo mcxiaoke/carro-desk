@@ -20,7 +20,7 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
         private bool _isListening;
         private bool _disposed;
 
-        public event Action ClipboardUpdated;
+        public event Action<string> ClipboardUpdated;
 
         public bool IsListening => _isListening;
 
@@ -84,7 +84,11 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
             {
                 try
                 {
-                    ClipboardUpdated?.Invoke();
+                    string text;
+                    // 在 WM_CLIPBOARDUPDATE 到达时立即捕获文本，避免连续 A→B 更新时
+                    // 两个延迟回调都读取到 B 而丢失 A。
+                    if (ClipboardHelper.TryGetText(out text, 0) && !string.IsNullOrWhiteSpace(text))
+                        ClipboardUpdated?.Invoke(text);
                 }
                 catch
                 {

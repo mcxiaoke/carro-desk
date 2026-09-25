@@ -296,7 +296,8 @@ namespace CarroDesk.Services.Tasks
             if (compiled == null) return null;
 
             var cur = new DateTime(fromTime.Year, fromTime.Month, fromTime.Day, fromTime.Hour, fromTime.Minute, 0).AddMinutes(1);
-            DateTime limit = cur.AddYears(1);
+            // 需覆盖 2 月 29 日（相邻两次最长可相隔四年）；八年也可识别常见永不可达日期。
+            DateTime limit = cur.AddYears(8);
 
             while (cur < limit)
             {

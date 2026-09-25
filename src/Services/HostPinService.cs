@@ -56,7 +56,8 @@ namespace CarroDesk.Services
                     // 已持久化，pending 使命结束，回到单一来源
                     _pendingSalt = _inner.Salt;
                     _pendingHash = _inner.Hash;
-                    _config?.Save();
+                    try { _config?.Save(); }
+                    catch { /* 旧哈希升级落盘失败不应把正确 PIN 验证变成崩溃；下次仍可重试升级。 */ }
                     _inner.ClearUpgraded();
                 }
             }

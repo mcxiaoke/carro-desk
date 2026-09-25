@@ -9,11 +9,13 @@ namespace CarroDesk.Views
     public partial class VerifyPinWindow : Window
     {
         private readonly IPinService _pinService;
+        private readonly PinGuard _pinGuard;
 
-        public VerifyPinWindow(IPinService pinService, string title)
+        public VerifyPinWindow(IPinService pinService, string title, PinGuard pinGuard = null)
         {
             InitializeComponent();
             _pinService = pinService;
+            _pinGuard = pinGuard;
             if (!string.IsNullOrWhiteSpace(title))
                 TitleText.Text = title;
 
@@ -44,13 +46,30 @@ namespace CarroDesk.Views
                 return;
             }
 
-            if (_pinService != null && _pinService.Verify(PinBox.Password))
+            bool verified;
+            string error;
+            if (_pinGuard != null)
+            {
+                TimeSpan remaining;
+                var result = _pinGuard.Try(PinBox.Password, out remaining);
+                verified = result == PinAttemptResult.Success;
+                error = result == PinAttemptResult.Blocked
+                    ? Loc.T("Lock.PenaltyWait", remaining)
+                    : Loc.T("VerifyPin.IncorrectPin");
+            }
+            else
+            {
+                verified = _pinService != null && _pinService.Verify(PinBox.Password);
+                error = Loc.T("VerifyPin.IncorrectPin");
+            }
+
+            if (verified)
             {
                 DialogResult = true;
                 Close();
                 return;
             }
-            MessageText.Text = Loc.T("VerifyPin.IncorrectPin");
+            MessageText.Text = error;
             ShakeCard();
             PinBox.Clear();
             PinBox.Focus();

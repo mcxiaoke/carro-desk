@@ -59,7 +59,9 @@ namespace CarroDesk.Host.Services
                 }
                 catch (Exception ex)
                 {
-                    // ModuleBase.Initialize 已把 Status 置为 Faulted 并重抛，此处只记日志
+                    // 派生 Initialize 在 base.Initialize 之后失败时，基类无法自动感知；
+                    // Manager 必须显式标记 Faulted，避免 StartAll 再启动半初始化模块。
+                    try { module.MarkFaulted(); } catch { }
                     logger?.LogError(module.Id, $"初始化模块 '{module.Name}' 失败", ex);
                 }
             }
@@ -105,7 +107,8 @@ namespace CarroDesk.Host.Services
             var logger = GetLogger();
             foreach (var module in Modules)
             {
-                if (module.Status == ModuleStatus.Faulted) continue;
+                // 配置重载不得绕过生命周期重新激活已停止模块；仅运行中的模块可接收回调。
+                if (module.Status != ModuleStatus.Running) continue;
                 SafeInvoker.Run(module.Id, () => module.OnConfigReloaded(), (id, ex) => logger?.LogError(id, "重载模块配置失败", ex));
             }
         }

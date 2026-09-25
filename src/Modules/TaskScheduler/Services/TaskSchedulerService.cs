@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Threading;
 using Microsoft.Win32;
@@ -55,7 +56,7 @@ namespace CarroDesk.Services.Tasks
             _globalEnabled = GetCurrentTasksEnabled() ?? true;
 
             TaskLoadResult result = null;
-            try { result = TaskConfigService.Load(); } catch { result = new TaskLoadResult(); }
+            try { result = TaskConfigService.LoadOrCreate(); } catch { result = new TaskLoadResult(); }
             if (result == null) result = new TaskLoadResult();
 
             Apply(result);
@@ -86,11 +87,11 @@ namespace CarroDesk.Services.Tasks
             return null;
         }
 
-        public void SetGlobalEnabled(bool enabled)
+        public bool SetGlobalEnabled(bool enabled)
         {
             bool changed = false;
             lock (_lock) { if (_globalEnabled != enabled) { _globalEnabled = enabled; changed = true; } }
-            if (!changed) return;
+            if (!changed) return true;
             if (enabled)
             {
                 // re-apply current tasks to recreate triggers
@@ -113,11 +114,22 @@ namespace CarroDesk.Services.Tasks
                     if (cfg.GlobalEnabled != enabled)
                     {
                         cfg.GlobalEnabled = enabled;
-                        _configManager.SaveModuleConfig("TaskScheduler", cfg);
+                        if (!_configManager.SaveModuleConfig("TaskScheduler", cfg))
+                        {
+                            // 持久化失败时恢复运行时开关和触发器，避免本次进程与下次启动状态分叉。
+                            SetGlobalEnabled(!enabled);
+                            TaskLogger.Error("system", "TaskScheduler global switch persistence failed; runtime state rolled back");
+                            return false;
+                        }
                     }
                 }
             }
-            catch { }
+            catch
+            {
+                SetGlobalEnabled(!enabled);
+                return false;
+            }
+            return true;
         }
 
         public void Stop()
@@ -171,13 +183,26 @@ namespace CarroDesk.Services.Tasks
 
         private void Apply(TaskLoadResult result)
         {
-            lock (_applyLock)
+            var dispatcher = _dispatcher;
+            if (dispatcher != null && !dispatcher.CheckAccess())
             {
-                ApplyCore(result);
+                // DispatcherTimer 必须在有消息泵的 UI Dispatcher 上创建；公开 Reload/SetGlobalEnabled
+                // 可能从后台线程调用，统一封送避免创建永远不会 Tick 的后台 Dispatcher。
+                dispatcher.Invoke(new Action(() => Apply(result)));
+                return;
             }
+            ApplyCore(result);
         }
 
         private void ApplyCore(TaskLoadResult result)
+        {
+            lock (_applyLock)
+            {
+                ApplyCoreLocked(result);
+            }
+        }
+
+        private void ApplyCoreLocked(TaskLoadResult result)
         {
             StopTriggers();
             lock (_lock)
@@ -313,6 +338,12 @@ namespace CarroDesk.Services.Tasks
 
         private void StopTriggers()
         {
+            var dispatcher = _dispatcher;
+            if (dispatcher != null && !dispatcher.CheckAccess())
+            {
+                dispatcher.Invoke(new Action(StopTriggers));
+                return;
+            }
             // 与 Apply 共用同一把串行化锁：否则 Stop()/禁用总开关 与 Apply 交错时，
             // 可能释放掉对方刚创建的触发器。Monitor 可重入，ApplyCore 内部再次进入是安全的。
             lock (_applyLock)
@@ -347,6 +378,9 @@ namespace CarroDesk.Services.Tasks
 
         private async Task ExecuteAsync(TaskDefinition task, string reason)
         {
+            if (!_globalEnabled || !IsTaskStillEnabled(task))
+                return;
+
             // condition check
             string skipReason;
             if (!TaskConditionEvaluator.ShouldRun(task, out skipReason))
@@ -378,6 +412,11 @@ namespace CarroDesk.Services.Tasks
                 int attempt = 0;
                 while (true)
                 {
+                    if (!_globalEnabled || !IsTaskStillEnabled(task))
+                    {
+                        TaskLogger.Info(task.Name, "retry cancelled because task was disabled, removed, or scheduler stopped");
+                        return;
+                    }
                     attempt++;
                     int code = 0;
                     try
@@ -417,6 +456,16 @@ namespace CarroDesk.Services.Tasks
                 }
             }
             catch { }
+        }
+
+        private bool IsTaskStillEnabled(TaskDefinition task)
+        {
+            if (task == null) return false;
+            lock (_lock)
+            {
+                return _started && _globalEnabled && _tasks.Any(t =>
+                    ReferenceEquals(t, task) && t.Enabled);
+            }
         }
 
         private List<string> _recent = new List<string>();

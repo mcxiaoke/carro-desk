@@ -30,6 +30,7 @@ namespace CarroDesk.Modules.ScreenLock
         private IIdleService _idleService;
         private bool _idleFired;
         private bool _warnedIdle;
+        private int _idleGeneration;
         private double _effectiveMs;
         private double _lastRawMs = -1;
 
@@ -50,6 +51,7 @@ namespace CarroDesk.Modules.ScreenLock
 
         protected override void OnStart()
         {
+            Controller?.SetPinGuard(Context?.GetService<PinGuard>());
             _idleService = Context.GetService<IIdleService>();
             if (_idleService != null)
             {
@@ -57,7 +59,7 @@ namespace CarroDesk.Modules.ScreenLock
                 _idleService.UserActiveDetected += OnUserActive;
             }
 
-            RegisterManagedHotkey(() => Config?.Hotkey, () => LockSafe());
+            RegisterManagedHotkey(() => Config?.Enabled == true ? Config.Hotkey : null, () => LockSafe());
 
             // 宿主退出状态契约化（P2-12）：模块经抽象解析，不再由 App 直插
             Controller.IsShuttingDownProvider = () =>
@@ -68,6 +70,7 @@ namespace CarroDesk.Modules.ScreenLock
 
             Controller.Unlocked += OnControllerUnlocked;
             SystemEvents.SessionSwitch += OnSessionSwitch;
+            SystemEvents.PowerModeChanged += OnPowerModeChanged;
         }
 
         public override void Dispose()
@@ -81,6 +84,7 @@ namespace CarroDesk.Modules.ScreenLock
         protected override void OnStop()
         {
             SystemEvents.SessionSwitch -= OnSessionSwitch;
+            SystemEvents.PowerModeChanged -= OnPowerModeChanged;
             if (_idleService != null)
             {
                 _idleService.IdleTick -= OnIdleTick;
@@ -90,6 +94,8 @@ namespace CarroDesk.Modules.ScreenLock
             if (Controller != null)
             {
                 Controller.Unlocked -= OnControllerUnlocked;
+                // Stop 是公开生命周期边界，不能只停事件而留下锁窗和全局键盘钩子。
+                Controller.Unlock();
             }
         }
 
@@ -97,6 +103,7 @@ namespace CarroDesk.Modules.ScreenLock
         {
             base.OnConfigReloaded();
             ResetIdleMachine();
+            if (Config != null && !Config.Enabled) Controller?.Unlock();
             if (Controller != null)
             {
                 Controller.ApplyPinFromConfig();
@@ -112,11 +119,13 @@ namespace CarroDesk.Modules.ScreenLock
 
         private void OnIdleTick(TimeSpan rawIdle)
         {
+            if (Config == null || !Config.Enabled) return;
             double thresholdMs = (Config != null ? Config.IdleMinutes : 0) * 60000.0;
             if (thresholdMs <= 0) return;
 
             bool fireThreshold = false;
             bool fireWarn = false;
+            int generation = 0;
             lock (_idleLock)
             {
                 if (_idleFired) return;
@@ -131,6 +140,7 @@ namespace CarroDesk.Modules.ScreenLock
                 if (_effectiveMs >= thresholdMs)
                 {
                     _idleFired = true;
+                    generation = _idleGeneration;
                     fireThreshold = true;
                 }
                 else if (WarnBefore.TotalMilliseconds > 0 && thresholdMs > WarnBefore.TotalMilliseconds
@@ -147,7 +157,7 @@ namespace CarroDesk.Modules.ScreenLock
             if (fireThreshold)
             {
                 var d = Context?.Dispatcher;
-                if (d != null) d.BeginInvoke(new Action(OnIdleThresholdReached));
+                if (d != null) d.BeginInvoke(new Action(() => OnIdleThresholdReached(generation)));
             }
             else if (fireWarn)
             {
@@ -167,6 +177,7 @@ namespace CarroDesk.Modules.ScreenLock
             {
                 _idleFired = false;
                 _warnedIdle = false;
+                _idleGeneration++;
                 _effectiveMs = 0;
                 _lastRawMs = -1;
             }
@@ -187,9 +198,16 @@ namespace CarroDesk.Modules.ScreenLock
             return false;
         }
 
-        private void OnIdleThresholdReached()
+        private void OnIdleThresholdReached(int generation)
         {
-            if (_sessionLocked) return;
+            lock (_idleLock)
+            {
+                if (generation != _idleGeneration || _idleFired == false) return;
+            }
+            // Dispatcher 排队期间用户可能已恢复活动、暂停计时或切换会话；执行前必须复核。
+            if (_sessionLocked || Config == null || !Config.Enabled || ShouldSuspendIdle()) return;
+            if (_idleService == null || _idleService.RawIdle.TotalMilliseconds < Config.IdleMinutes * 60000.0) return;
+
             if (!Controller.LockSafe())
             {
                 // 锁定失败（已内部回滚，不会有半锁定状态）。重置空闲状态机，
@@ -208,6 +226,28 @@ namespace CarroDesk.Modules.ScreenLock
             ResetIdleMachine();
             // 解锁后自行刷新托盘状态，宿主无需再订阅（P2-12 移除 App 的 Unlocked 钩子）
             RequestTrayRefresh();
+        }
+
+        private void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
+        {
+            if (e.Mode != PowerModes.Resume) return;
+            var dispatcher = Context?.Dispatcher;
+            if (dispatcher == null) return;
+            dispatcher.BeginInvoke(new Action(OnPowerResume));
+        }
+
+        private void OnPowerResume()
+        {
+            if (_idleService == null || Config == null || !Config.Enabled) return;
+            ResetIdleMachine();
+            lock (_idleLock)
+            {
+                double rawMs = _idleService.RawIdle.TotalMilliseconds;
+                _effectiveMs = rawMs;
+                _lastRawMs = rawMs;
+            }
+            // 用最新 raw idle 立即复检，避免睡眠跨过阈值后重新等待完整时长。
+            OnIdleTick(_idleService.RawIdle);
         }
 
         public void OnSessionSwitch(object sender, SessionSwitchEventArgs e)
@@ -250,6 +290,7 @@ namespace CarroDesk.Modules.ScreenLock
 
         public bool LockSafe()
         {
+            if (Config == null || !Config.Enabled) return false;
             var controller = Controller;
             if (controller == null) return false;
             if (controller.LockSafe()) return true;
@@ -275,8 +316,14 @@ namespace CarroDesk.Modules.ScreenLock
         {
             if (Config != null)
             {
+                int previous = Config.IdleMinutes;
                 Config.IdleMinutes = mins;
-                SaveConfig();
+                if (!SaveConfig())
+                {
+                    Config.IdleMinutes = previous;
+                    ShowNotify(Loc.T("Config.SaveFailed"), Loc.T("Common.Error", "错误"));
+                    return;
+                }
             }
             ResetIdleMachine();
             UpdateTrayHeaderAndToolTip();

@@ -40,29 +40,45 @@ namespace CarroDesk.Services.Tasks
                         return false;
                     }
                 }
-                catch { }
+                catch
+                {
+                    skipReason = "when.onlyIdle: idle state unavailable";
+                    return false;
+                }
             }
 
             if (c.AcPower)
             {
                 try
                 {
-                    if (GetSystemPowerStatus(out var status))
+                    if (!GetSystemPowerStatus(out var status))
                     {
-                        if (status.ACLineStatus != 1)
-                        {
-                            skipReason = "when.acPower: not on AC";
-                            return false;
-                        }
+                        skipReason = "when.acPower: power state unavailable";
+                        return false;
+                    }
+                    if (status.ACLineStatus != 1)
+                    {
+                        skipReason = "when.acPower: not on AC";
+                        return false;
                     }
                 }
-                catch { }
+                catch
+                {
+                    skipReason = "when.acPower: power state unavailable";
+                    return false;
+                }
             }
 
             if (!string.IsNullOrWhiteSpace(c.FileExists))
             {
                 string p = Expand(c.FileExists);
-                bool exists = File.Exists(p) || Directory.Exists(p);
+                bool exists;
+                try { exists = PathExistsChecked(p); }
+                catch
+                {
+                    skipReason = "when.fileExists: path state unavailable";
+                    return false;
+                }
                 if (!exists)
                 {
                     skipReason = "when.fileExists: not found " + p;
@@ -73,7 +89,13 @@ namespace CarroDesk.Services.Tasks
             if (!string.IsNullOrWhiteSpace(c.FileNotExists))
             {
                 string p = Expand(c.FileNotExists);
-                bool exists = File.Exists(p) || Directory.Exists(p);
+                bool exists;
+                try { exists = PathExistsChecked(p); }
+                catch
+                {
+                    skipReason = "when.fileNotExists: path state unavailable";
+                    return false;
+                }
                 if (exists)
                 {
                     skipReason = "when.fileNotExists: exists " + p;
@@ -91,10 +113,25 @@ namespace CarroDesk.Services.Tasks
                         return false;
                     }
                 }
-                catch { }
+                catch
+                {
+                    skipReason = "when.networkAvailable: network state unavailable";
+                    return false;
+                }
             }
 
             return true;
+        }
+
+        private static bool PathExistsChecked(string path)
+        {
+            try
+            {
+                File.GetAttributes(path);
+                return true;
+            }
+            catch (FileNotFoundException) { return false; }
+            catch (DirectoryNotFoundException) { return false; }
         }
 
         private static string Expand(string path)

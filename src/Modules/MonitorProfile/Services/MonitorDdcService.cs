@@ -15,6 +15,13 @@ namespace CarroDesk.Modules.MonitorProfile.Services
     /// 若无物理显示器或设置失败则回退至 WMI (支持笔记本内置屏幕)。
     /// 包含后台异步队列与并发防抖，杜绝阻塞主线程。
     /// </summary>
+    public sealed class DdcApplyResult
+    {
+        public int AppliedCount { get; set; }
+        public int Brightness { get; set; }
+        public int Contrast { get; set; }
+    }
+
     public class MonitorDdcService
     {
         private readonly ILoggerService _logger;
@@ -93,6 +100,7 @@ namespace CarroDesk.Modules.MonitorProfile.Services
         private int _pendingBrightness = -1;
         private int _pendingContrast = -1;
         private bool _isApplying = false;
+        private Task<DdcApplyResult> _applyTask;
 
         /// <summary>
         /// 物理显示器（DDC/CI over I2C）访问串行化锁。
@@ -127,7 +135,7 @@ namespace CarroDesk.Modules.MonitorProfile.Services
         /// <summary>
         /// 异步队列设置显示器亮度和对比度，自动并发合并防抖。
         /// </summary>
-        public Task<int> SetBrightnessAndContrastAsync(int brightness, int contrast)
+        public Task<DdcApplyResult> SetBrightnessAndContrastAsync(int brightness, int contrast)
         {
             brightness = Math.Max(0, Math.Min(100, brightness));
             contrast = Math.Max(0, Math.Min(100, contrast));
@@ -139,42 +147,54 @@ namespace CarroDesk.Modules.MonitorProfile.Services
 
                 if (_isApplying)
                 {
-                    return Task.FromResult(0);
+                    // 合并请求必须共享同一个 Task；旧实现立即返回 Task.FromResult(0)，
+                    // 上层会把“排队”误判成硬件应用失败/成功。
+                    return _applyTask;
                 }
 
                 _isApplying = true;
-            }
-
-            return Task.Run(() =>
-            {
-                int totalApplied = 0;
-                while (true)
+                _applyTask = Task.Run(() =>
                 {
-                    int b, c;
-                    lock (_syncLock)
+                    int totalApplied = 0;
+                    int finalBrightness = brightness;
+                    int finalContrast = contrast;
+                    while (true)
                     {
-                        b = _pendingBrightness;
-                        c = _pendingContrast;
-                        _pendingBrightness = -1;
-                        _pendingContrast = -1;
-                    }
-
-                    if (b >= 0 && c >= 0)
-                    {
-                        totalApplied = SetBrightnessAndContrastSync(b, c);
-                    }
-
-                    lock (_syncLock)
-                    {
-                        if (_pendingBrightness < 0 && _pendingContrast < 0)
+                        int b, c;
+                        lock (_syncLock)
                         {
-                            _isApplying = false;
-                            break;
+                            b = _pendingBrightness;
+                            c = _pendingContrast;
+                            _pendingBrightness = -1;
+                            _pendingContrast = -1;
+                        }
+
+                        if (b >= 0 && c >= 0)
+                        {
+                            totalApplied = SetBrightnessAndContrastSync(b, c);
+                            finalBrightness = b;
+                            finalContrast = c;
+                        }
+
+                        lock (_syncLock)
+                        {
+                            if (_pendingBrightness < 0 && _pendingContrast < 0)
+                            {
+                                _isApplying = false;
+                                _applyTask = null;
+                                break;
+                            }
                         }
                     }
-                }
-                return totalApplied;
-            });
+                    return new DdcApplyResult
+                    {
+                        AppliedCount = totalApplied,
+                        Brightness = finalBrightness,
+                        Contrast = finalContrast
+                    };
+                });
+                return _applyTask;
+            }
         }
 
         /// <summary>
@@ -210,14 +230,14 @@ namespace CarroDesk.Modules.MonitorProfile.Services
                     bool bOk = SetBrightnessValue(handle, brightness);
                     bool cOk = SetContrastValue(handle, contrast);
 
-                    if (bOk || cOk)
+                    if (bOk && cOk)
                     {
                         successCount++;
                     }
                     else
                     {
                         int err = Marshal.GetLastWin32Error();
-                        Log($"DDC: 显示器句柄 {handle} 设置失败 (Win32错误: {err})");
+                        Log($"DDC: 显示器句柄 {handle} 部分设置失败 (brightness={bOk}, contrast={cOk}, Win32错误: {err})");
                     }
                 }
             }
@@ -603,17 +623,26 @@ namespace CarroDesk.Modules.MonitorProfile.Services
                 using (var searcher = new ManagementObjectSearcher(@"root\WMI", "SELECT * FROM WmiMonitorBrightnessMethods"))
                 using (var results = searcher.Get())
                 {
+                    bool anyApplied = false;
                     foreach (ManagementObject obj in results)
                     {
                         using (obj)
                         {
-                            obj.InvokeMethod("WmiSetBrightness", new object[] { (uint)1, (byte)brightness });
-                            Log($"WMI: 亮度已成功设置为 {brightness}");
-                            return true;
+                            object invokeResult = obj.InvokeMethod("WmiSetBrightness", new object[] { (uint)1, (byte)brightness });
+                            uint returnCode = invokeResult == null ? 0u : Convert.ToUInt32(invokeResult, System.Globalization.CultureInfo.InvariantCulture);
+                            if (returnCode == 0)
+                            {
+                                anyApplied = true;
+                                Log($"WMI: 亮度已成功设置为 {brightness}");
+                            }
+                            else
+                            {
+                                Log($"WMI: 亮度设置返回错误码 {returnCode}");
+                            }
                         }
                     }
+                    return anyApplied;
                 }
-                return false;
             }
             catch (Exception ex)
             {

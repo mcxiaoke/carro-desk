@@ -69,12 +69,11 @@ namespace CarroDesk.Services.Tasks
             {
                 try { workDir = Path.GetDirectoryName(Path.GetFullPath(file)); } catch { workDir = ""; }
             }
-            if (!string.IsNullOrWhiteSpace(workDir) && !Directory.Exists(workDir))
-            {
-                try { Directory.CreateDirectory(workDir); } catch { }
-            }
             if (string.IsNullOrWhiteSpace(workDir) || !Directory.Exists(workDir))
-                workDir = ConfigService.DirPath;
+            {
+                TaskLogger.Error(task.Name, "workDir does not exist: " + (workDir ?? "<empty>"));
+                return -1;
+            }
 
             // script wrapping - all scripts default hidden (no black window)
             // 包装时必须做正确的引号化/转义：原先直接字符串相加，路径含空格或引号会被拆错，

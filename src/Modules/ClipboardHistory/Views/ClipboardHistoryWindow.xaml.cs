@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -21,6 +22,10 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
         private double _normalHeight = 540;
         private double _normalLeft;
         private double _normalTop;
+        private IntPtr _pasteTargetWindow;
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetForegroundWindow();
 
         public bool AutoCloseOnDeactivate { get; set; } = true;
 
@@ -62,6 +67,8 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
 
             if (!IsVisible)
             {
+                // 在历史浮窗抢前台前记录原目标，提交时只允许粘贴回该 HWND。
+                _pasteTargetWindow = GetForegroundWindow();
                 Show();
             }
 
@@ -195,11 +202,20 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
         {
             if (HistoryList.SelectedItem is ClipboardItem item && !string.IsNullOrEmpty(item.FullText))
             {
-                // 1. 抑制下一次系统广播防自环录入
-                _service.SuppressNext(item.FullText);
+                // 1. 先回写至系统剪贴板；失败时绝不能隐藏窗口或发送全局 Ctrl+V，
+                // 否则可能把剪贴板中的旧内容误粘贴到当前活动应用。
+                if (!ClipboardHelper.TrySetText(item.FullText))
+                {
+                    MessageBox.Show(this,
+                        Loc.T("Clipboard.WriteFailed", "无法写入系统剪贴板，请稍后重试"),
+                        Loc.T("Common.Error", "错误"),
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                    return;
+                }
 
-                // 2. 回写至系统剪贴板
-                ClipboardHelper.TrySetText(item.FullText);
+                // 2. 抑制由本次成功回写产生的下一次系统广播，避免自环录入。
+                _service.SuppressNext(item.FullText);
 
                 // 3. 隐藏浮窗
                 Hide();
@@ -207,7 +223,7 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
                 // 4. 若需要自动粘贴，异步模拟 Ctrl+V 发送至原前台活动应用
                 if (autoPaste)
                 {
-                    ClipboardHelper.SimulatePaste();
+                    ClipboardHelper.SimulatePaste(_pasteTargetWindow);
                 }
             }
         }

@@ -19,7 +19,28 @@ namespace CarroDesk.Models
 
         public bool HasPin()
         {
-            return !string.IsNullOrEmpty(PinHash) && !string.IsNullOrEmpty(PinSalt);
+            if (string.IsNullOrEmpty(PinHash) || string.IsNullOrEmpty(PinSalt)) return false;
+            try
+            {
+                byte[] salt = Convert.FromBase64String(PinSalt);
+                if (salt.Length < 8) return false;
+
+                if (PinHash.StartsWith("pbkdf2$", StringComparison.OrdinalIgnoreCase))
+                {
+                    string[] parts = PinHash.Split('$');
+                    if (parts.Length != 3) return false;
+                    int iterations;
+                    if (!int.TryParse(parts[1], out iterations) || iterations <= 0) return false;
+                    return Convert.FromBase64String(parts[2]).Length > 0;
+                }
+
+                // 兼容旧版单轮 SHA-256(Base64(salt):pin)。
+                return Convert.FromBase64String(PinHash).Length > 0;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         public AppSettings Clone()

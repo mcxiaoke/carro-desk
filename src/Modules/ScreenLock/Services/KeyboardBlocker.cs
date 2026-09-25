@@ -68,10 +68,11 @@ namespace CarroDesk.Services
 
         public bool Installed { get { return _hook != IntPtr.Zero; } }
 
-        public void Install()
+        public bool Install()
         {
-            if (_hook != IntPtr.Zero) return;
+            if (_hook != IntPtr.Zero) return true;
             _hook = SetWindowsHookEx(WH_KEYBOARD_LL, _proc, _module, 0);
+            return _hook != IntPtr.Zero;
         }
 
         public void Remove()
@@ -122,6 +123,10 @@ namespace CarroDesk.Services
 
                     if (vk == VK_ESCAPE && (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0)
                         return (IntPtr)1;
+
+                    // 锁屏期间只允许数字、NumPad、Backspace、Enter、Shift；
+                    // 其它普通字符/Tab/空格/功能键也必须吞掉，避免输入泄漏到下层窗口。
+                    return (IntPtr)1;
                 }
             }
             return CallNextHookEx(_hook, nCode, wParam, lParam);

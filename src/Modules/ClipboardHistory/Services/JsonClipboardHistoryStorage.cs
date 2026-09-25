@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -61,11 +62,22 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
                     }
 
                     var items = JsonConvert.DeserializeObject<List<ClipboardItem>>(json);
+                    if (items != null && items.Any(x => x == null))
+                        throw new InvalidDataException("clipboard history contains null item");
                     return items ?? new List<ClipboardItem>();
                 }
                 catch (Exception ex)
                 {
                     Debug.WriteLine("[ClipboardStorage] load failed: " + ex.Message);
+                    try
+                    {
+                        string dir = Path.GetDirectoryName(_filePath);
+                        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+                        string backup = _filePath + ".corrupt-" + DateTime.Now.ToString("yyyyMMddHHmmss") + ".json";
+                        File.Copy(_filePath, backup, true);
+                        Debug.WriteLine("[ClipboardStorage] corrupt history backed up to: " + backup);
+                    }
+                    catch { }
                     return new List<ClipboardItem>();
                 }
             }

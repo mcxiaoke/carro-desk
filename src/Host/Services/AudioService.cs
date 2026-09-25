@@ -39,9 +39,10 @@ namespace CarroDesk.Host.Services
             var list = new List<AudioDeviceItem>();
             if (_deviceEnumerator == null) return list;
 
+            IMMDeviceCollection collection = null;
             try
             {
-                if (_deviceEnumerator.EnumAudioEndpoints(EDataFlow.eRender, DeviceState.Active, out var collection) == 0 && collection != null)
+                if (_deviceEnumerator.EnumAudioEndpoints(EDataFlow.eRender, DeviceState.Active, out collection) == 0 && collection != null)
                 {
                     collection.GetCount(out uint count);
                     for (uint i = 0; i < count; i++)
@@ -53,23 +54,23 @@ namespace CarroDesk.Host.Services
                                 device.GetId(out string id);
                                 string name = GetDeviceFriendlyName(device);
                                 if (!string.IsNullOrEmpty(id))
-                                {
                                     list.Add(new AudioDeviceItem { Id = id, Name = name ?? id });
-                                }
                             }
                             finally
                             {
-                                Marshal.ReleaseComObject(device);
+                                if (Marshal.IsComObject(device)) Marshal.ReleaseComObject(device);
                             }
                         }
                     }
-                    Marshal.ReleaseComObject(collection);
                 }
             }
             catch (Exception ex)
             {
-                /* intentionally ignored: CoreAudio device enumeration may fail if audio service is stopped */
                 Debug.WriteLine($"[AudioService] GetPlaybackDevices failed: {ex.Message}");
+            }
+            finally
+            {
+                if (collection != null && Marshal.IsComObject(collection)) Marshal.ReleaseComObject(collection);
             }
 
             return list;
@@ -77,10 +78,15 @@ namespace CarroDesk.Host.Services
 
         public AudioDeviceItem GetDefaultPlaybackDevice()
         {
+            return GetDefaultPlaybackDevice(ERole.eMultimedia);
+        }
+
+        private AudioDeviceItem GetDefaultPlaybackDevice(ERole role)
+        {
             if (_deviceEnumerator == null) return null;
             try
             {
-                if (_deviceEnumerator.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eMultimedia, out var device) == 0 && device != null)
+                if (_deviceEnumerator.GetDefaultAudioEndpoint(EDataFlow.eRender, role, out var device) == 0 && device != null)
                 {
                     try
                     {
@@ -97,7 +103,7 @@ namespace CarroDesk.Host.Services
             catch (Exception ex)
             {
                 /* intentionally ignored: default audio endpoint may be missing if no audio device is connected */
-                Debug.WriteLine($"[AudioService] GetDefaultPlaybackDevice failed: {ex.Message}");
+                Debug.WriteLine($"[AudioService] GetDefaultPlaybackDevice({role}) failed: {ex.Message}");
             }
             return null;
         }
@@ -115,11 +121,39 @@ namespace CarroDesk.Host.Services
 
                 try
                 {
-                    // 设置 Console, Multimedia 以及 Communications 默认输出端点
-                    int hr1 = policyConfig.SetDefaultEndpoint(deviceId, ERole.eConsole);
-                    int hr2 = policyConfig.SetDefaultEndpoint(deviceId, ERole.eMultimedia);
-                    int hr3 = policyConfig.SetDefaultEndpoint(deviceId, ERole.eCommunications);
-                    return hr1 == 0 || hr2 == 0;
+                    // 三个默认角色必须保持一致。任一角色失败时，尽力回滚已成功角色，
+                    // 禁止 UI 报成功但播放器/通信软件实际使用不同端点。
+                    var roles = new[] { ERole.eConsole, ERole.eMultimedia, ERole.eCommunications };
+                    string[] previousIds = new string[roles.Length];
+                    for (int i = 0; i < roles.Length; i++)
+                    {
+                        var previous = GetDefaultPlaybackDevice(roles[i]);
+                        previousIds[i] = previous?.Id;
+                    }
+
+                    int[] results = new int[roles.Length];
+                    for (int i = 0; i < roles.Length; i++)
+                    {
+                        try { results[i] = policyConfig.SetDefaultEndpoint(deviceId, roles[i]); }
+                        catch { results[i] = -1; }
+                    }
+
+                    bool allSucceeded = true;
+                    for (int i = 0; i < results.Length; i++)
+                    {
+                        if (results[i] == 0) continue;
+                        allSucceeded = false;
+                    }
+                    if (!allSucceeded)
+                    {
+                        // 任意角色失败都回滚全部角色，不能只恢复“失败角色”而留下已成功的新状态。
+                        for (int i = 0; i < roles.Length; i++)
+                        {
+                            if (string.IsNullOrEmpty(previousIds[i])) continue;
+                            try { policyConfig.SetDefaultEndpoint(previousIds[i], roles[i]); } catch { }
+                        }
+                    }
+                    return allSucceeded;
                 }
                 finally
                 {
@@ -204,8 +238,9 @@ namespace CarroDesk.Host.Services
                                                                 if (sessionControl is ISimpleAudioVolume volume)
                                                                 {
                                                                     Guid ctx = Guid.Empty;
-                                                                    volume.SetMute(mute, ref ctx);
-                                                                    anyModified = true;
+                                                                    int hr = volume.SetMute(mute, ref ctx);
+                                                                    if (hr == 0) anyModified = true;
+                                                                    else Debug.WriteLine($"[AudioService] SetMute failed for pid={pid}, hr=0x{hr:X8}");
                                                                 }
                                                             }
                                                         }

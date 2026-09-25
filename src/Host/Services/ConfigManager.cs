@@ -35,10 +35,11 @@ namespace CarroDesk.Host.Services
             _underlying.Save();
         }
 
-        public void Reload()
+        public bool Reload()
         {
-            _underlying.Reload();
+            if (!_underlying.Reload()) return false;
             ConfigReloaded?.Invoke();
+            return true;
         }
 
         public T GetModuleConfig<T>(string moduleId) where T : class, new()
@@ -105,9 +106,9 @@ namespace CarroDesk.Host.Services
             return new T();
         }
 
-        public void SaveModuleConfig<T>(string moduleId, T config) where T : class
+        public bool SaveModuleConfig<T>(string moduleId, T config) where T : class
         {
-            SaveModuleConfig(moduleId, config, true);
+            return SaveModuleConfig(moduleId, config, true);
         }
 
         /// <summary>
@@ -115,21 +116,28 @@ namespace CarroDesk.Host.Services
         /// <paramref name="persist"/> 为 false 时只更新内存态并由调用方统一落盘，
         /// 供"一次保存多个模块"的批量场景使用，避免连续多次全量写盘。
         /// </summary>
-        public void SaveModuleConfig<T>(string moduleId, T config, bool persist) where T : class
+        public bool SaveModuleConfig<T>(string moduleId, T config, bool persist) where T : class
         {
-            if (string.IsNullOrEmpty(moduleId) || config == null) return;
+            if (string.IsNullOrEmpty(moduleId) || config == null) return false;
 
             try
             {
                 var token = JToken.FromObject(config);
-                _underlying.SetModuleToken(moduleId, token);
-                if (persist) _underlying.Save();
+                if (persist)
+                {
+                    // ConfigService 在同一锁内完成替换、落盘和失败回滚，避免并发保存互相覆盖回滚快照。
+                    _underlying.SaveModuleTokenAndSave(moduleId, token);
+                }
+                else
+                {
+                    _underlying.SetModuleToken(moduleId, token);
+                }
+                return true;
             }
             catch (Exception ex)
             {
-                // 不向上抛：调用方遍布 UI 事件与定时器回调，抛出会形成新的崩溃面。
-                // 但绝不允许无声失败——必须落盘日志，否则表现为"保存成功但配置未变"。
                 LogError($"保存模块 '{moduleId}' 配置失败（改动未持久化）", ex);
+                return false;
             }
         }
 

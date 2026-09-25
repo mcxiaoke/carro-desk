@@ -48,9 +48,9 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
                 MessageBox.Show(Loc.T("Clipboard.InvalidMaxItems", "最大保留条数必须是大于 0 的整数。"), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
-            if (!int.TryParse(TxtRetentionDays.Text.Trim(), out int retentionDays) || retentionDays < 0)
+            if (!int.TryParse(TxtRetentionDays.Text.Trim(), out int retentionDays) || retentionDays < 0 || retentionDays > 3650)
             {
-                MessageBox.Show(Loc.T("Clipboard.InvalidRetentionDays", "最大保留天数必须是大于等于 0 的整数。"), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(Loc.T("Clipboard.InvalidRetentionDays", "最大保留天数必须是 0 到 3650 之间的整数。"), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
             if (!int.TryParse(TxtMaxPreviewChars.Text.Trim(), out int maxPreview) || maxPreview < 1)
@@ -62,6 +62,7 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
             var configMgr = _configManager;
             var config = _module?.Config
                          ?? (configMgr != null ? configMgr.GetModuleConfig<ClipboardHistoryConfig>("ClipboardHistory") : new ClipboardHistoryConfig());
+            var previous = config.Clone();
 
             config.AutoRecord = ChkAutoRecord.IsChecked == true;
             config.MaxItems = maxItems;
@@ -69,9 +70,15 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
             config.MaxPreviewChars = maxPreview;
             config.Hotkey = TxtHotkey.Text.Trim();
 
-            if (configMgr != null)
+            if (configMgr == null || !configMgr.SaveModuleConfig("ClipboardHistory", config))
             {
-                configMgr.SaveModuleConfig("ClipboardHistory", config);
+                config.AutoRecord = previous.AutoRecord;
+                config.MaxItems = previous.MaxItems;
+                config.RetentionDays = previous.RetentionDays;
+                config.MaxPreviewChars = previous.MaxPreviewChars;
+                config.Hotkey = previous.Hotkey;
+                MessageBox.Show(this, Loc.T("Config.SaveFailed"), Loc.T("Common.Error", "错误"), MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
             }
 
             _module?.OnConfigReloaded();

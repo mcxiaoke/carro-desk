@@ -67,6 +67,7 @@ namespace CarroDesk.Modules.AudioSwitch
 
         public bool SwitchToDevice(string deviceId)
         {
+            if (Config == null || !Config.Enabled) return false;
             if (_audioService == null || string.IsNullOrEmpty(deviceId)) return false;
 
             bool success = _audioService.SetDefaultPlaybackDevice(deviceId);
@@ -118,6 +119,7 @@ namespace CarroDesk.Modules.AudioSwitch
 
         public bool ToggleAudioDevice()
         {
+            if (Config == null || !Config.Enabled) return false;
             if (_audioService == null) return false;
 
             UpdateCurrentDevice();

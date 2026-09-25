@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using CarroDesk.Common;
 using CarroDesk.Models;
@@ -64,6 +65,8 @@ namespace CarroDesk.Services.Tasks
                 if (!Directory.Exists(scriptsDir)) Directory.CreateDirectory(scriptsDir);
             }
             catch { }
+
+            AtomicFile.TryRestoreLatestBackup(FilePath);
 
             if (!File.Exists(FilePath))
             {
@@ -129,10 +132,18 @@ namespace CarroDesk.Services.Tasks
                 if (result.SchemaVersion > CurrentSchemaVersion)
                 {
                     result.Errors.Add("tasks.json schema version " + result.SchemaVersion +
-                                      " is newer than supported " + CurrentSchemaVersion + " (best-effort read)");
+                                      " is newer than supported " + CurrentSchemaVersion + " (read-only; file preserved)");
+                    // 未来版本可能改变根结构，不能按 v1 解析失败后当作“损坏”重建，
+                    // 否则一次旧版启动就可能把新版任务文件重写为空数组。
+                    return result;
                 }
 
                 var tasks = ParseTasksJson(json, result.Errors);
+                if (result.Errors.Any(e => e.StartsWith("[root]", StringComparison.OrdinalIgnoreCase)))
+                {
+                    RecoverFromCorruptFile(result);
+                    return result;
+                }
                 // dedup by name
                 var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var t in tasks)
@@ -384,12 +395,12 @@ namespace CarroDesk.Services.Tasks
                         }
                         else
                         {
-                            // empty object or unknown
+                            errors.Add("[root] object must contain a tasks array or a task name");
                         }
                     }
                     else
                     {
-                        errors.Add("tasks.json must be array or object");
+                        errors.Add("[root] tasks.json must be array or object");
                     }
                 }
             }
@@ -414,7 +425,10 @@ namespace CarroDesk.Services.Tasks
                 {
                     var trig = new TaskTrigger();
                     trig.RawType = GetStr(td, "type");
-                    trig.Type = ParseTriggerType(trig.RawType);
+                    TaskTriggerType parsedType;
+                    if (!TryParseTriggerType(trig.RawType, out parsedType))
+                        errors.Add("task [" + (task.Name ?? "?") + "] has missing or unknown trigger.type: " + (trig.RawType ?? "<empty>"));
+                    trig.Type = parsedType;
                     trig.DelaySec = GetInt(td, trig.DelaySec, "delaySec", "delay");
                     trig.EverySec = GetInt(td, 0, "everySec", "intervalSec");
                     trig.Every = GetStr(td, "every");
@@ -433,7 +447,10 @@ namespace CarroDesk.Services.Tasks
                 {
                     var trig = new TaskTrigger();
                     trig.RawType = trigToken.ToString();
-                    trig.Type = ParseTriggerType(trig.RawType);
+                    TaskTriggerType parsedType;
+                    if (!TryParseTriggerType(trig.RawType, out parsedType))
+                        errors.Add("task [" + (task.Name ?? "?") + "] has missing or unknown trigger.type: " + (trig.RawType ?? "<empty>"));
+                    trig.Type = parsedType;
                     task.Trigger = trig;
                 }
 
@@ -545,40 +562,69 @@ namespace CarroDesk.Services.Tasks
             return def;
         }
 
-        private static TaskTriggerType ParseTriggerType(string raw)
+        public static bool TryParseTriggerType(string raw, out TaskTriggerType type)
         {
-            if (string.IsNullOrWhiteSpace(raw)) return TaskTriggerType.Startup;
-            raw = raw.Trim().ToLowerInvariant();
-            switch (raw)
+            type = TaskTriggerType.Unknown;
+            if (string.IsNullOrWhiteSpace(raw)) return false;
+            switch (raw.Trim().ToLowerInvariant())
             {
-                case "startup": return TaskTriggerType.Startup;
-                case "start": return TaskTriggerType.Startup;
-                case "boot": return TaskTriggerType.Startup;
-                case "interval": return TaskTriggerType.Interval;
-                case "every": return TaskTriggerType.Interval;
-                case "periodic": return TaskTriggerType.Interval;
-                case "daily": return TaskTriggerType.Daily;
-                case "day": return TaskTriggerType.Daily;
-                case "cron": return TaskTriggerType.Cron;
-                case "schedule": return TaskTriggerType.Cron;
-                case "sessionlock": return TaskTriggerType.SessionLock;
-                case "lock": return TaskTriggerType.SessionLock;
-                case "session_lock": return TaskTriggerType.SessionLock;
-                case "sessionunlock": return TaskTriggerType.SessionUnlock;
-                case "unlock": return TaskTriggerType.SessionUnlock;
-                case "session_unlock": return TaskTriggerType.SessionUnlock;
-                case "idle": return TaskTriggerType.Idle;
-                case "manual": return TaskTriggerType.Manual;
-                case "none": return TaskTriggerType.Manual;
-                case "click": return TaskTriggerType.Manual;
-                case "hotkey": return TaskTriggerType.Hotkey;
-                case "key": return TaskTriggerType.Hotkey;
-                case "shortcut": return TaskTriggerType.Hotkey;
-                case "watch": return TaskTriggerType.Watch;
-                case "filewatch": return TaskTriggerType.Watch;
-                case "watcher": return TaskTriggerType.Watch;
-                case "file": return TaskTriggerType.Watch;
-                default: return TaskTriggerType.Startup;
+                case "startup":
+                case "start":
+                case "boot":
+                    type = TaskTriggerType.Startup; return true;
+                case "interval":
+                case "every":
+                case "periodic":
+                    type = TaskTriggerType.Interval; return true;
+                case "daily":
+                case "day":
+                    type = TaskTriggerType.Daily; return true;
+                case "cron":
+                case "schedule":
+                    type = TaskTriggerType.Cron; return true;
+                case "sessionlock":
+                case "lock":
+                case "session_lock":
+                    type = TaskTriggerType.SessionLock; return true;
+                case "sessionunlock":
+                case "unlock":
+                case "session_unlock":
+                    type = TaskTriggerType.SessionUnlock; return true;
+                case "idle":
+                    type = TaskTriggerType.Idle; return true;
+                case "manual":
+                case "none":
+                case "click":
+                    type = TaskTriggerType.Manual; return true;
+                case "hotkey":
+                case "key":
+                case "shortcut":
+                    type = TaskTriggerType.Hotkey; return true;
+                case "watch":
+                case "filewatch":
+                case "watcher":
+                case "file":
+                    type = TaskTriggerType.Watch; return true;
+                default:
+                    return false;
+            }
+        }
+
+        public static string GetCanonicalTriggerTag(TaskTriggerType type)
+        {
+            switch (type)
+            {
+                case TaskTriggerType.Startup: return "startup";
+                case TaskTriggerType.Interval: return "interval";
+                case TaskTriggerType.Daily: return "daily";
+                case TaskTriggerType.Cron: return "cron";
+                case TaskTriggerType.SessionLock: return "sessionLock";
+                case TaskTriggerType.SessionUnlock: return "sessionUnlock";
+                case TaskTriggerType.Idle: return "idle";
+                case TaskTriggerType.Manual: return "manual";
+                case TaskTriggerType.Hotkey: return "hotkey";
+                case TaskTriggerType.Watch: return "watch";
+                default: return "unknown";
             }
         }
 

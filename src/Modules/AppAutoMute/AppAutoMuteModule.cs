@@ -68,7 +68,13 @@ namespace CarroDesk.Modules.AppAutoMute
         public override void OnConfigReloaded()
         {
             base.OnConfigReloaded();
+            _muteTimer.Stop();
+            _unmuteTimer.Stop();
             SetCheckedSelf(IsEnabledUser);
+            if (IsEnabledUser)
+            {
+                EvaluateForeground(_foregroundTracker?.CurrentProcessName);
+            }
         }
 
         public override void OnLanguageChanged()
@@ -84,11 +90,17 @@ namespace CarroDesk.Modules.AppAutoMute
         public void ToggleEnabled()
         {
             if (Config == null) return;
-            Config.Enabled = !Config.Enabled;
+            bool previous = Config.Enabled;
+            Config.Enabled = !previous;
+            if (!SaveConfig())
+            {
+                Config.Enabled = previous;
+                SetCheckedSelf(previous);
+                ShowNotify(Loc.T("Config.SaveFailed"), Loc.T("Common.Error", "错误"));
+                return;
+            }
 
             SetCheckedSelf(Config.Enabled);
-            SaveConfig();
-
             string msg = Config.Enabled ? Loc.T("AutoMute.EnabledNotify", "应用自动静音已启用") : Loc.T("AutoMute.DisabledNotify", "应用自动静音已禁用 (已恢复所有声音)");
             ShowNotify(msg);
 
@@ -133,6 +145,13 @@ namespace CarroDesk.Modules.AppAutoMute
         {
             if (!IsEnabledUser) return;
             EvaluateForeground(procName);
+        }
+
+        public void ReapplyConfigForCurrentForeground()
+        {
+            _muteTimer.Stop();
+            _unmuteTimer.Stop();
+            if (IsEnabledUser) EvaluateForeground(_foregroundTracker?.CurrentProcessName);
         }
 
         private void EvaluateForeground(string procName)

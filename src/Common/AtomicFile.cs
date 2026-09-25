@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Text;
 
 namespace CarroDesk.Common
@@ -33,7 +34,21 @@ namespace CarroDesk.Common
                     {
                         string bakFile = Path.Combine(dir, Path.GetFileName(destinationPath) + ".bak." + Guid.NewGuid().ToString("N"));
                         File.Move(destinationPath, bakFile);
-                        File.Move(tempFile, destinationPath);
+                        try
+                        {
+                            File.Move(tempFile, destinationPath);
+                        }
+                        catch
+                        {
+                            // 安装新文件失败时必须恢复旧文件，不能让正常目标路径凭空消失。
+                            try
+                            {
+                                if (!File.Exists(destinationPath) && File.Exists(bakFile))
+                                    File.Move(bakFile, destinationPath);
+                            }
+                            catch { }
+                            throw;
+                        }
                         try { File.Delete(bakFile); } catch { }
                     }
                 }
@@ -48,6 +63,29 @@ namespace CarroDesk.Common
                 {
                     try { File.Delete(tempFile); } catch { }
                 }
+            }
+        }
+
+        /// <summary>目标文件缺失时，从 AtomicFile 生成的最新 bak 恢复，避免降级写入窗口丢配置。</summary>
+        public static bool TryRestoreLatestBackup(string destinationPath)
+        {
+            if (string.IsNullOrEmpty(destinationPath)) return false;
+            try
+            {
+                if (File.Exists(destinationPath)) return false;
+                string dir = Path.GetDirectoryName(Path.GetFullPath(destinationPath));
+                if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) return false;
+                string pattern = Path.GetFileName(destinationPath) + ".bak.*";
+                var candidates = Directory.GetFiles(dir, pattern)
+                    .OrderByDescending(File.GetLastWriteTimeUtc)
+                    .ToArray();
+                if (candidates.Length == 0) return false;
+                File.Move(candidates[0], destinationPath);
+                return true;
+            }
+            catch
+            {
+                return false;
             }
         }
 

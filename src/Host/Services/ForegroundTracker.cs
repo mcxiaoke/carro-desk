@@ -35,6 +35,8 @@ namespace CarroDesk.Host.Services
 
         public event Action<IntPtr, string> ForegroundChanged;
 
+        public bool IsAvailable { get { return _hookHandle != IntPtr.Zero; } }
+
         public string CurrentProcessName { get; private set; }
         public IntPtr CurrentWindowHandle { get; private set; }
 
@@ -53,6 +55,8 @@ namespace CarroDesk.Host.Services
                     0,
                     WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
 
+                if (_hookHandle == IntPtr.Zero)
+                    _logger?.LogError(LogModuleId, "SetWinEventHook 返回空句柄，前台窗口追踪不可用", null);
                 UpdateCurrent();
             }
             catch (Exception ex)

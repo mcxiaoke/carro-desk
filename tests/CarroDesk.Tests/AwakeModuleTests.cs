@@ -111,6 +111,46 @@ namespace CarroDesk.Tests
         }
 
         [TestMethod]
+        public void AwakeService_TimedMode_RestoresOnlyWithValidDeadline()
+        {
+            var valid = AwakeConfig.CreateDefault();
+            valid.Mode = AwakeMode.Timed;
+            valid.ExpireAtLocal = DateTime.Now.AddMinutes(20);
+            using (var service = new AwakeService(Dispatcher.CurrentDispatcher, null))
+            {
+                service.Initialize(valid);
+                Assert.AreEqual(AwakeMode.Timed, service.Mode);
+                Assert.IsTrue(service.RemainingTime > TimeSpan.Zero);
+            }
+
+            var missingDeadline = AwakeConfig.CreateDefault();
+            missingDeadline.Mode = AwakeMode.Timed;
+            missingDeadline.ExpireAtLocal = null;
+            using (var service = new AwakeService(Dispatcher.CurrentDispatcher, null))
+            {
+                service.Initialize(missingDeadline);
+                Assert.AreEqual(AwakeMode.Passive, service.Mode);
+                Assert.IsFalse(service.IsActive);
+            }
+        }
+
+        [TestMethod]
+        public void AwakeService_ModuleDisabled_OverridesActiveModeAndProcessLink()
+        {
+            var config = AwakeConfig.CreateDefault();
+            config.Enabled = false;
+            config.Mode = AwakeMode.Indefinite;
+            config.AutoAwakeProcesses.Add("dummy.exe");
+            using (var service = new AwakeService(Dispatcher.CurrentDispatcher, null))
+            {
+                service.Initialize(config);
+                Assert.AreEqual(AwakeMode.Passive, service.Mode);
+                Assert.IsFalse(service.IsProcessLinkEnabled);
+                Assert.IsFalse(service.IsActive);
+            }
+        }
+
+        [TestMethod]
         public void ConfigManager_AwakeConfig_SerializationRoundTrip()
         {
             var configService = new ConfigService();

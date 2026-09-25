@@ -11,6 +11,9 @@ namespace CarroDesk.Modules.Awake.Models
         /// <summary>保持唤醒模式：Passive, Indefinite, Timed, UntilTime</summary>
         public AwakeMode Mode { get; set; } = AwakeMode.Passive;
 
+        /// <summary>Timed/UntilTime 模式的本地截止时间；其它模式为 null。</summary>
+        public System.DateTime? ExpireAtLocal { get; set; }
+
         /// <summary>是否保持显示器常亮（true: 系统+屏幕；false: 仅系统不休眠，允许关屏）</summary>
         public bool KeepDisplayOn { get; set; } = true;
 
@@ -38,6 +41,25 @@ namespace CarroDesk.Modules.Awake.Models
 
         /// <summary>目标进程退出后延迟恢复的时间（秒），防止批处理或多任务频繁启停（默认 120 秒，0 为立即恢复）</summary>
         public int AutoAwakeExitDelaySeconds { get; set; } = 120;
+
+        public AwakeConfig Clone()
+        {
+            return new AwakeConfig
+            {
+                Enabled = Enabled,
+                Mode = Mode,
+                ExpireAtLocal = ExpireAtLocal,
+                KeepDisplayOn = KeepDisplayOn,
+                DefaultDurationMinutes = DefaultDurationMinutes,
+                Hotkey = Hotkey,
+                DisableOnBattery = DisableOnBattery,
+                BatteryThreshold = BatteryThreshold,
+                CustomPresets = CustomPresets != null ? new System.Collections.Generic.List<int>(CustomPresets) : new System.Collections.Generic.List<int>(),
+                ProcessLinkEnabled = ProcessLinkEnabled,
+                AutoAwakeProcesses = AutoAwakeProcesses != null ? new System.Collections.Generic.List<string>(AutoAwakeProcesses) : new System.Collections.Generic.List<string>(),
+                AutoAwakeExitDelaySeconds = AutoAwakeExitDelaySeconds
+            };
+        }
 
         public static AwakeConfig CreateDefault()
         {

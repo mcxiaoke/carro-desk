@@ -21,13 +21,13 @@ namespace CarroDesk.Services.Tasks.Triggers
             Stop();
             _cts = new CancellationTokenSource();
             int delay = Task.Trigger != null ? Task.Trigger.DelaySec : 5;
-            if (delay < 0) delay = 0;
+            delay = Math.Max(0, Math.Min(delay, 365 * 24 * 60 * 60));
             var token = _cts.Token;
             System.Threading.Tasks.Task.Run(async () =>
             {
                 try
                 {
-                    await System.Threading.Tasks.Task.Delay(delay * 1000, token).ConfigureAwait(false);
+                    await System.Threading.Tasks.Task.Delay(TimeSpan.FromSeconds(delay), token).ConfigureAwait(false);
                     if (token.IsCancellationRequested) return;
                     var h = Fired;
                     if (h != null) h(Task, "startup");

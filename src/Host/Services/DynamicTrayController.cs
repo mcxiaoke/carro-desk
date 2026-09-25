@@ -136,7 +136,9 @@ namespace CarroDesk.Host.Services
             RemoveAll();
 
             var visuals = new List<object>();
-            foreach (var module in _modules.Modules.OrderBy(m => m.Order))
+            foreach (var module in _modules.Modules
+                .Where(m => m.Status == ModuleStatus.Initialized || m.Status == ModuleStatus.Running)
+                .OrderBy(m => m.Order))
             {
                 var nodes = GetItemsGuarded(module);
                 var moduleVisuals = new List<object>();
@@ -183,7 +185,8 @@ namespace CarroDesk.Host.Services
             try
             {
                 var items = module.GetTrayMenuItems();
-                return items ?? Enumerable.Empty<TrayMenuItem>();
+                // 立即物化迭代器，确保 yield return 真正的执行异常也在此隔离。
+                return items == null ? new List<TrayMenuItem>() : items.ToList();
             }
             catch (Exception ex)
             {

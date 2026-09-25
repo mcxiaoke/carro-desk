@@ -28,6 +28,7 @@ namespace CarroDesk.Core
         void Initialize(IModuleContext context);
         void Start();
         void Stop();
+        void MarkFaulted();
         void OnConfigReloaded();
         void OnLanguageChanged();
 

@@ -70,22 +70,26 @@ namespace CarroDesk.Services.Tasks.Triggers
 
         private void OnTick(object sender, EventArgs e)
         {
+            var scheduled = _scheduledFor;
             Stop();
 
             var now = DateTime.Now;
             var minute = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, 0);
+            bool missed = scheduled.HasValue && scheduled.Value < now;
+            var firedMinute = missed ? scheduled.Value : minute;
 
-            if (_lastFiredMinute != minute)
+            if (_lastFiredMinute != firedMinute)
             {
                 try
                 {
-                    // 到点复检：既防御定时器提前唤醒（例如上限封顶后的早醒），
-                    // 也防御系统时钟回拨造成的误触发
-                    if (CronHelper.IsMatch(now, _expr))
+                    // 正常到点仍复检表达式；若 UI/Dispatcher 阻塞跨过了原定分钟，
+                    // 则依据已保存的 _scheduledFor 补触发一次，不能只检查恢复后的当前分钟。
+                    if (missed || CronHelper.IsMatch(now, _expr))
                     {
-                        _lastFiredMinute = minute;
+                        _lastFiredMinute = firedMinute;
                         var handler = Fired;
-                        if (handler != null) handler(Task, "cron:" + _expr);
+                        if (handler != null)
+                            handler(Task, missed ? "cron-catchup:" + _expr : "cron:" + _expr);
                     }
                 }
                 catch

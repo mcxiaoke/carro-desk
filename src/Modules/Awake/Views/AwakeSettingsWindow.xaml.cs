@@ -286,55 +286,51 @@ namespace CarroDesk.Modules.Awake.Views
                 exitDelay = Math.Min(3600, parsedDelay);
             }
 
-            var config = _module.Config ?? new AwakeConfig();
-            config.KeepDisplayOn = KeepDisplayOnBox.IsChecked == true;
-            config.DisableOnBattery = DisableOnBatteryBox.IsChecked == true;
-            config.BatteryThreshold = threshold;
-            config.DefaultDurationMinutes = defaultMins;
-            config.Hotkey = HotkeyBox.Text.Trim();
-            config.AutoAwakeExitDelaySeconds = exitDelay;
-            config.AutoAwakeProcesses = ProcessHelper.NormalizeList(_processes);
-            config.ProcessLinkEnabled = ProcessLinkEnabledBox.IsChecked == true;
+            var candidate = (_module.Config ?? new AwakeConfig()).Clone();
+            candidate.KeepDisplayOn = KeepDisplayOnBox.IsChecked == true;
+            candidate.DisableOnBattery = DisableOnBatteryBox.IsChecked == true;
+            candidate.BatteryThreshold = threshold;
+            candidate.DefaultDurationMinutes = defaultMins;
+            candidate.Hotkey = HotkeyBox.Text.Trim();
+            candidate.AutoAwakeExitDelaySeconds = exitDelay;
+            candidate.AutoAwakeProcesses = ProcessHelper.NormalizeList(_processes);
+            candidate.ProcessLinkEnabled = ProcessLinkEnabledBox.IsChecked == true;
 
-            // 应用工作模式
-            var service = _module.Service;
-            if (service != null)
+            // 先完整构造并验证草稿；任何校验失败都不得修改运行时配置。
+            if (RadioPassive.IsChecked == true)
             {
-                service.UpdateConfig(config);
-
-                if (RadioPassive.IsChecked == true)
+                candidate.Mode = AwakeMode.Passive;
+                candidate.ExpireAtLocal = null;
+            }
+            else if (RadioIndefinite.IsChecked == true)
+            {
+                candidate.Mode = AwakeMode.Indefinite;
+                candidate.ExpireAtLocal = null;
+            }
+            else if (RadioTimed.IsChecked == true)
+            {
+                candidate.Mode = AwakeMode.Timed;
+                candidate.ExpireAtLocal = DateTime.Now.AddMinutes(defaultMins);
+            }
+            else if (RadioUntilTime.IsChecked == true)
+            {
+                if (!TimeSpan.TryParse(UntilTimeBox.Text.Trim(), out TimeSpan targetTimeSpan))
                 {
-                    config.Mode = AwakeMode.Passive;
-                    service.SetPassive();
-                    service.ResetUserSuppression();
+                    MessageBox.Show(Loc.T("Awake.InvalidTime", "指定时刻格式无效，请输入有效时间如 18:00。"), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
                 }
-                else if (RadioIndefinite.IsChecked == true)
-                {
-                    config.Mode = AwakeMode.Indefinite;
-                    service.SetIndefinite();
-                }
-                else if (RadioTimed.IsChecked == true)
-                {
-                    config.Mode = AwakeMode.Timed;
-                    service.SetTimed(defaultMins);
-                }
-                else if (RadioUntilTime.IsChecked == true)
-                {
-                    config.Mode = AwakeMode.UntilTime;
-                    if (TimeSpan.TryParse(UntilTimeBox.Text.Trim(), out TimeSpan targetTimeSpan))
-                    {
-                        DateTime targetDate = DateTime.Today.Add(targetTimeSpan);
-                        service.SetUntilTime(targetDate);
-                    }
-                    else
-                    {
-                        MessageBox.Show(Loc.T("Awake.InvalidTime", "指定时刻格式无效，请输入有效时间如 18:00。"), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
-                        return;
-                    }
-                }
+                DateTime target = DateTime.Today.Add(targetTimeSpan);
+                if (target <= DateTime.Now) target = target.AddDays(1);
+                candidate.Mode = AwakeMode.UntilTime;
+                candidate.ExpireAtLocal = target;
             }
 
-            _module.SaveConfig();
+            if (!_module.SaveAndApplyConfig(candidate))
+            {
+                MessageBox.Show(Loc.T("Config.SaveFailed"), Loc.T("Common.Error", "错误"), MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+            if (candidate.Mode == AwakeMode.Passive) _module.Service?.ResetUserSuppression();
             _module.RequestRefreshTray();
             Close();
         }

@@ -4,7 +4,7 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
 {
     public interface IClipboardListener : IDisposable
     {
-        event Action ClipboardUpdated;
+        event Action<string> ClipboardUpdated;
 
         bool IsListening { get; }
 

@@ -38,6 +38,8 @@ namespace CarroDesk
         private static TrayContextMenu _trayMenu;
         private DynamicTrayController _trayController;
         private int _floatingPanelHotkeyId;
+        private string _floatingPanelHotkeyKey;
+        private int _exitPromptInProgress;
 
         internal static App CurrentApp => Current as App;
         internal static TrayContextMenu TrayMenu => _trayMenu;
@@ -72,6 +74,13 @@ namespace CarroDesk
 
             var rawConfig = new ConfigService();
             rawConfig.LoadOrCreate();
+            if (rawConfig.LastLoadIoFailure)
+            {
+                MessageBox.Show(Loc.T("Config.LoadFailed", "读取配置失败: {0}", rawConfig.LastLoadError),
+                    Loc.T("Common.Error", "错误"), MessageBoxButton.OK, MessageBoxImage.Error);
+                Shutdown(1);
+                return;
+            }
 
             _configManager = new ConfigManager(rawConfig, logger);
             Services.AddSingleton<ConfigManager>(_configManager);
@@ -80,6 +89,8 @@ namespace CarroDesk
             // PIN 能力下沉 Host（规范 §3.5）：缺模块仍按"有 PIN 则验"兜底
             var hostPinService = new HostPinService(rawConfig);
             Services.AddSingleton<IPinService>(hostPinService);
+            var sharedPinGuard = new PinGuard(hostPinService);
+            Services.AddSingleton(sharedPinGuard);
 
             I18nService.Instance.Init(_configManager.Current.Language);
             I18nService.Instance.LanguageChanged += () =>
@@ -167,19 +178,33 @@ namespace CarroDesk
 
         private void RegisterFloatingPanelHotkey()
         {
-            UnregisterFloatingPanelHotkey();
             var hotkeys = Services?.GetService<IHotkeyService>();
             var config = _configManager?.Current;
-            if (hotkeys != null && config != null && !string.IsNullOrWhiteSpace(config.FloatingPanelHotkey))
+            string newKey = config?.FloatingPanelHotkey?.Trim();
+
+            if (_floatingPanelHotkeyId > 0 &&
+                string.Equals(_floatingPanelHotkeyKey, newKey, StringComparison.OrdinalIgnoreCase)) return;
+
+            if (hotkeys == null || string.IsNullOrWhiteSpace(newKey))
             {
-                try
-                {
-                    _floatingPanelHotkeyId = hotkeys.Register("Host.FloatingPanel", config.FloatingPanelHotkey, () =>
-                    {
-                        ToggleFloatingPanel();
-                    }, out _);
-                }
-                catch { /* intentionally ignored: hotkey conflict or invalid sequence */ }
+                UnregisterFloatingPanelHotkey();
+                return;
+            }
+
+            int newId = 0;
+            try
+            {
+                newId = hotkeys.Register("Host.FloatingPanel", newKey, () => ToggleFloatingPanel(), out _);
+            }
+            catch { }
+            if (newId <= 0) return; // 注册失败时保留旧热键
+
+            int oldId = _floatingPanelHotkeyId;
+            _floatingPanelHotkeyId = newId;
+            _floatingPanelHotkeyKey = newKey;
+            if (oldId > 0)
+            {
+                try { hotkeys.Unregister("Host.FloatingPanel", oldId); } catch { }
             }
         }
 
@@ -192,6 +217,7 @@ namespace CarroDesk
                     var hotkeys = Services?.GetService<IHotkeyService>();
                     hotkeys?.Unregister("Host.FloatingPanel", _floatingPanelHotkeyId);
                     _floatingPanelHotkeyId = 0;
+                    _floatingPanelHotkeyKey = null;
                 }
                 catch { /* intentionally ignored: hotkey already unregistered */ }
             }
@@ -200,7 +226,11 @@ namespace CarroDesk
         internal void ReloadConfig()
         {
             var configMgr = Services?.GetService<IConfigManager>();
-            configMgr?.Reload();
+            if (configMgr == null || !configMgr.Reload())
+            {
+                ShowBalloon(Loc.T("Config.ReloadFailed", "配置重载失败，已保留上次有效配置"));
+                return;
+            }
             var c = _configManager?.Current;
             if (c == null) return;
             I18nService.Instance.SetLanguage(c.Language);
@@ -208,6 +238,7 @@ namespace CarroDesk
             AutoStartService.Sync(c.AutoStart);
             try { ProcessExclusionService.InvalidateCache(); } catch { /* intentionally ignored: cache invalidation */ }
             RegisterFloatingPanelHotkey();
+            FloatingPanelWindow.Instance?.RefreshSettings();
             _trayController?.RequestRefresh();
             UpdateTrayText();
             if (_tbIcon != null)
@@ -340,13 +371,14 @@ namespace CarroDesk
 
         internal void PromptExit()
         {
-            // 退出守卫协商可能逐个等待最长 3 秒，绝不能同步阻塞 UI 线程（托盘点击处），
-            // 否则多个守卫叠加会让"点退出"看起来像卡死。改为异步协商，完成后再回到 UI 线程。
+            if (Interlocked.Exchange(ref _exitPromptInProgress, 1) != 0) return;
             _ = PromptExitAsync();
         }
 
         private async System.Threading.Tasks.Task PromptExitAsync()
         {
+            try
+            {
             // 退出守卫协商（规范 §3.5）：任一守卫要求阻止时，展示 Host 持有的挑战 UI
             bool blocked = false;
             foreach (var module in Modules.Modules)
@@ -368,12 +400,18 @@ namespace CarroDesk
             }
 
             var pinService = Services?.GetService<IPinService>();
-            var win = new VerifyPinWindow(pinService, Loc.T("Tray.ExitPrompt"))
+            var pinGuard = Services?.GetService<PinGuard>();
+            var win = new VerifyPinWindow(pinService, Loc.T("Tray.ExitPrompt"), pinGuard)
             {
                 WindowStartupLocation = WindowStartupLocation.CenterScreen
             };
             if (win.ShowDialog() == true)
                 ExitApp();
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _exitPromptInProgress, 0);
+            }
         }
 
         public static void ExitApp()

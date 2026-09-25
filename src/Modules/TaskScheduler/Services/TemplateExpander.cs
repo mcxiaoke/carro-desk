@@ -26,6 +26,9 @@ namespace CarroDesk.Services.Tasks
                 if (string.Equals(key, "datetime", StringComparison.OrdinalIgnoreCase))
                     return now.ToString("yyyy-MM-dd_HH-mm-ss");
 
+                if (string.Equals(key, "timestamp", StringComparison.OrdinalIgnoreCase))
+                    return DateTimeOffset.Now.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture);
+
                 if (string.Equals(key, "task", StringComparison.OrdinalIgnoreCase))
                     return task != null && !string.IsNullOrEmpty(task.Name) ? task.Name : "";
 

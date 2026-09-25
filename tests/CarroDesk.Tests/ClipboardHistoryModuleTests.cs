@@ -160,6 +160,23 @@ namespace CarroDesk.Tests
         }
 
         [TestMethod]
+        public void ClipboardHistory_RetentionOverflow_IsClampedAndDoesNotFaultModule()
+        {
+            var storage = new MemoryClipboardStorage();
+            storage.SavedItems.Add(new ClipboardItem
+            {
+                FullText = "仍然保留",
+                PreviewText = "仍然保留",
+                CopiedAt = DateTime.Now,
+                Hash = "safe"
+            });
+            var service = new ClipboardHistoryService(storage);
+            service.Start(new ClipboardHistoryConfig { RetentionDays = int.MaxValue });
+
+            Assert.AreEqual(1, service.Count);
+        }
+
+        [TestMethod]
         public void ClipboardHistory_Deduplication_MovesExistingToTop()
         {
             var storage = new MemoryClipboardStorage();

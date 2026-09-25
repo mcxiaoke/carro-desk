@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using CarroDesk.Common;
+using CarroDesk.Models;
 using CarroDesk.Services;
 using CarroDesk.Services.Tasks;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -117,18 +118,72 @@ namespace CarroDesk.Tests
         }
 
         [TestMethod]
-        public void TaskConfig_SchemaVersion_NewerThanSupported_IsReportedButStillRead()
+        public void TaskConfig_SchemaVersion_NewerThanSupported_IsReadOnlyAndPreservesFile()
         {
-            File.WriteAllText(TaskConfigService.FilePath,
-                "{\"version\":99,\"tasks\":[{\"name\":\"t3\",\"enabled\":true,\"trigger\":{\"type\":\"manual\"},\"action\":{\"file\":\"cmd.exe\"}}]}",
-                Encoding.UTF8);
+            string futureJson = "{\"version\":99,\"items\":[{\"name\":\"future-task\"}]}";
+            File.WriteAllText(TaskConfigService.FilePath, futureJson, Encoding.UTF8);
 
             var result = TaskConfigService.Load();
 
             Assert.AreEqual(99, result.SchemaVersion);
-            Assert.AreEqual(1, result.Tasks.Count, "更高版本仍应尽力解析");
+            Assert.AreEqual(0, result.Tasks.Count, "旧版不得猜测解析未来 schema");
             Assert.IsTrue(result.Errors.Any(e => e.Contains("newer than supported")),
                 "遇到不认识的更高版本必须留痕。实际: " + string.Join("; ", result.Errors));
+            Assert.AreEqual(futureJson, File.ReadAllText(TaskConfigService.FilePath, Encoding.UTF8),
+                "未来 schema 必须保持只读，绝不能被旧版重建为空数组");
+        }
+
+        [TestMethod]
+        public void ConfigService_CorruptReload_PreservesLastValidSnapshotAndReturnsFalse()
+        {
+            var service = new ConfigService();
+            service.LoadOrCreate();
+            service.Current.Language = "zh-CN";
+            service.SetModuleToken("ClipboardHistory", Newtonsoft.Json.Linq.JObject.Parse("{\"Enabled\":true,\"Hotkey\":\"Win+Alt+V\"}"));
+            service.Save();
+
+            string original = File.ReadAllText(ConfigService.FilePath, Encoding.UTF8);
+            try
+            {
+                File.WriteAllText(ConfigService.FilePath, "{ invalid json", Encoding.UTF8);
+                bool reloaded = service.Reload();
+
+                Assert.IsFalse(reloaded, "损坏配置重载必须返回失败");
+                Assert.AreEqual("zh-CN", service.Current.Language, "宿主字段必须保留上次有效值");
+                Assert.IsNotNull(service.GetModuleToken("ClipboardHistory"), "模块配置必须保留上次有效值，不能与宿主默认值形成混合态");
+                Assert.IsTrue(Directory.GetFiles(ConfigService.DirPath, "config.corrupt-*.json").Any(File.Exists));
+            }
+            finally
+            {
+                File.WriteAllText(ConfigService.FilePath, original, Encoding.UTF8);
+            }
+        }
+
+        [TestMethod]
+        public void TaskConfig_UnknownTrigger_IsRejectedWithoutBecomingStartup()
+        {
+            File.WriteAllText(TaskConfigService.FilePath,
+                "[{\"name\":\"typo\",\"enabled\":true,\"trigger\":{\"type\":\"intervl\",\"every\":\"1h\"},\"action\":{\"file\":\"echo.exe\"}}]",
+                Encoding.UTF8);
+
+            var result = TaskConfigService.Load();
+
+            Assert.AreEqual(0, result.Tasks.Count, "未知 trigger 必须被拒绝");
+            Assert.IsTrue(result.Errors.Any(e => e.IndexOf("unknown trigger.type", StringComparison.OrdinalIgnoreCase) >= 0));
+        }
+
+        [TestMethod]
+        public void TaskConfig_Alias_NormalizesToCanonicalIntervalType()
+        {
+            File.WriteAllText(TaskConfigService.FilePath,
+                "[{\"name\":\"periodic\",\"enabled\":true,\"trigger\":{\"type\":\"periodic\",\"every\":\"1h\"},\"action\":{\"file\":\"echo.exe\"}}]",
+                Encoding.UTF8);
+
+            var result = TaskConfigService.Load();
+
+            Assert.AreEqual(1, result.Tasks.Count);
+            Assert.AreEqual(TaskTriggerType.Interval, result.Tasks[0].Trigger.Type);
+            Assert.AreEqual("interval", TaskConfigService.GetCanonicalTriggerTag(result.Tasks[0].Trigger.Type));
         }
 
         // ---------- P2-4 PIN pending 与 current 语义一致 ----------

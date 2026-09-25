@@ -63,7 +63,7 @@ namespace CarroDesk.Modules.Awake.Services
         public AwakeMode Mode => _mode;
         public bool KeepDisplayOn => _keepDisplayOn;
         public DateTime ExpireTime => _expireTime;
-        public bool IsActive => !_isBatteryPaused && (_mode != AwakeMode.Passive || _isProcessTriggered);
+        public bool IsActive => _config?.Enabled != false && !_isBatteryPaused && (_mode != AwakeMode.Passive || _isProcessTriggered);
         public bool IsBatteryPaused => _isBatteryPaused;
         public bool IsProcessTriggered => _isProcessTriggered;
         public bool IsProcessExiting => _processExitPendingSeconds > 0;
@@ -71,7 +71,7 @@ namespace CarroDesk.Modules.Awake.Services
         public string ActiveProcessTrigger => _activeProcessTrigger;
 
         /// <summary>智能进程联动是否启用（总开关 + 名单非空）</summary>
-        public bool IsProcessLinkEnabled => _config == null || _config.ProcessLinkEnabled;
+        public bool IsProcessLinkEnabled => _config?.Enabled != false && (_config == null || _config.ProcessLinkEnabled);
 
         /// <summary>名单中是否有可用的目标进程</summary>
         public bool HasProcessTargets =>
@@ -108,7 +108,18 @@ namespace CarroDesk.Modules.Awake.Services
         public void Initialize(AwakeConfig config)
         {
             _config = config ?? AwakeConfig.CreateDefault();
-            _mode = _config.Mode;
+            _mode = _config.Enabled ? _config.Mode : AwakeMode.Passive;
+            if ((_mode == AwakeMode.Timed || _mode == AwakeMode.UntilTime) &&
+                _config.ExpireAtLocal.HasValue && _config.ExpireAtLocal.Value > DateTime.Now)
+            {
+                _expireTime = _config.ExpireAtLocal.Value;
+            }
+            else if (_mode == AwakeMode.Timed || _mode == AwakeMode.UntilTime)
+            {
+                // 旧配置或损坏配置只有模式、没有有效截止时间时不得进入活动态。
+                _mode = AwakeMode.Passive;
+                _expireTime = DateTime.MinValue;
+            }
             _keepDisplayOn = _config.KeepDisplayOn;
         }
 
@@ -116,6 +127,36 @@ namespace CarroDesk.Modules.Awake.Services
         {
             _config = config ?? AwakeConfig.CreateDefault();
             _keepDisplayOn = _config.KeepDisplayOn;
+            _mode = _config.Enabled ? _config.Mode : AwakeMode.Passive;
+            if ((_mode == AwakeMode.Timed || _mode == AwakeMode.UntilTime) &&
+                _config.ExpireAtLocal.HasValue && _config.ExpireAtLocal.Value > DateTime.Now)
+            {
+                _expireTime = _config.ExpireAtLocal.Value;
+            }
+            else if (_mode == AwakeMode.Timed || _mode == AwakeMode.UntilTime)
+            {
+                _mode = AwakeMode.Passive;
+                _expireTime = DateTime.MinValue;
+            }
+            else
+            {
+                _expireTime = DateTime.MinValue;
+            }
+
+            // 模块总开关关闭时立即回到 Passive；电池保护策略关闭时也必须清掉旧暂停标志。
+            if (!_config.Enabled)
+            {
+                _mode = AwakeMode.Passive;
+                _expireTime = DateTime.MinValue;
+                _isProcessTriggered = false;
+                _activeProcessTrigger = string.Empty;
+                _processExitPendingSeconds = 0;
+                _userSuppressedProcessLink = false;
+            }
+            if (!_config.Enabled || !_config.DisableOnBattery)
+            {
+                _isBatteryPaused = false;
+            }
 
             // 开关被关闭或目标名单已清空时，立即撤销正在进行的进程联动，避免状态残留
             if ((!IsProcessLinkEnabled || !HasProcessTargets) && _isProcessTriggered)
@@ -156,6 +197,11 @@ namespace CarroDesk.Modules.Awake.Services
             _isProcessTriggered = false;
             _activeProcessTrigger = string.Empty;
             _processExitPendingSeconds = 0;
+            if (_config != null)
+            {
+                _config.Mode = AwakeMode.Passive;
+                _config.ExpireAtLocal = null;
+            }
 
             // 注意：这里不再重置 _isBatteryPaused——该标志归电池判定逻辑所有。
 
@@ -184,12 +230,18 @@ namespace CarroDesk.Modules.Awake.Services
 
         public void SetIndefinite()
         {
+            if (_config?.Enabled == false) return;
             _userSuppressedProcessLink = false;
             _mode = AwakeMode.Indefinite;
             _expireTime = DateTime.MinValue;
             _isProcessTriggered = false;
             _activeProcessTrigger = string.Empty;
             _processExitPendingSeconds = 0;
+            if (_config != null)
+            {
+                _config.Mode = AwakeMode.Indefinite;
+                _config.ExpireAtLocal = null;
+            }
 
             ApplyExecutionState();
             StateChanged?.Invoke();
@@ -197,6 +249,7 @@ namespace CarroDesk.Modules.Awake.Services
 
         public void SetTimed(int minutes)
         {
+            if (_config?.Enabled == false) return;
             if (minutes <= 0)
             {
                 SetPassive();
@@ -206,6 +259,11 @@ namespace CarroDesk.Modules.Awake.Services
             _userSuppressedProcessLink = false;
             _mode = AwakeMode.Timed;
             _expireTime = DateTime.Now.AddMinutes(minutes);
+            if (_config != null)
+            {
+                _config.Mode = _mode;
+                _config.ExpireAtLocal = _expireTime;
+            }
             _isProcessTriggered = false;
             _activeProcessTrigger = string.Empty;
             _processExitPendingSeconds = 0;
@@ -216,6 +274,7 @@ namespace CarroDesk.Modules.Awake.Services
 
         public void SetUntilTime(DateTime targetTime)
         {
+            if (_config?.Enabled == false) return;
             DateTime now = DateTime.Now;
             DateTime target = new DateTime(now.Year, now.Month, now.Day, targetTime.Hour, targetTime.Minute, 0);
             if (target <= now)
@@ -226,6 +285,11 @@ namespace CarroDesk.Modules.Awake.Services
             _userSuppressedProcessLink = false;
             _mode = AwakeMode.UntilTime;
             _expireTime = target;
+            if (_config != null)
+            {
+                _config.Mode = _mode;
+                _config.ExpireAtLocal = target;
+            }
             _isProcessTriggered = false;
             _activeProcessTrigger = string.Empty;
             _processExitPendingSeconds = 0;
@@ -363,6 +427,14 @@ namespace CarroDesk.Modules.Awake.Services
                             BatteryStateChanged?.Invoke(false, status.BatteryLifePercent);
                             StateChanged?.Invoke();
                         }
+                    }
+                    else if (_isBatteryPaused)
+                    {
+                        // 设备变为无电池（例如拔掉电池/切换为台式机模式）后不应继续永久暂停。
+                        _isBatteryPaused = false;
+                        ApplyExecutionState();
+                        BatteryStateChanged?.Invoke(false, status.BatteryLifePercent);
+                        StateChanged?.Invoke();
                     }
                 }
             }

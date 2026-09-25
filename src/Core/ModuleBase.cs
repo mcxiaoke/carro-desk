@@ -21,6 +21,7 @@ namespace CarroDesk.Core
         private ModuleStatus _status = ModuleStatus.Created;
         private bool _isRunning;
         private bool _isStarting;
+        private bool _stopRequested;
 
         public abstract string Id { get; }
         public abstract string Name { get; }
@@ -82,21 +83,37 @@ namespace CarroDesk.Core
                 if (_status != ModuleStatus.Initialized) return;
                 if (_isRunning || _isStarting) return;
                 _isStarting = true;
+                _stopRequested = false;
             }
 
             try
             {
                 lock (_managedHotkeys) { _managedHotkeys.Clear(); }
                 OnStart();
+                bool stopRequested;
                 lock (_stateLock)
                 {
-                    _isRunning = true;
-                    _status = ModuleStatus.Running;
+                    stopRequested = _stopRequested;
+                    if (!stopRequested)
+                    {
+                        _isRunning = true;
+                        _status = ModuleStatus.Running;
+                    }
+                }
+                if (stopRequested)
+                {
+                    try { UnregisterAllManagedHotkeys(); } catch { }
+                    try { OnStop(); } catch { }
+                    Status = ModuleStatus.Stopped;
+                    return;
                 }
                 SyncManagedHotkeys();
             }
             catch (Exception ex)
             {
+                // OnStart 可能已经注册热键、启动 Timer 或订阅事件；失败时必须做逆序清理。
+                try { UnregisterAllManagedHotkeys(); } catch { }
+                try { OnStop(); } catch { }
                 lock (_stateLock)
                 {
                     _isRunning = false;
@@ -114,6 +131,12 @@ namespace CarroDesk.Core
         {
             lock (_stateLock)
             {
+                if (_isStarting)
+                {
+                    // Start 尚未完成时记录停止请求；Start 尾部会执行完整清理，不能直接返回后放任启动继续。
+                    _stopRequested = true;
+                    return;
+                }
                 if (!_isRunning) return;
                 // 先置位再回调：OnStop 期间状态即为"已停止"，重复 Stop 不会二次执行清理
                 _isRunning = false;
@@ -131,6 +154,16 @@ namespace CarroDesk.Core
             finally
             {
                 Status = ModuleStatus.Stopped;
+            }
+        }
+
+        public void MarkFaulted()
+        {
+            lock (_stateLock)
+            {
+                _isRunning = false;
+                _isStarting = false;
+                _status = ModuleStatus.Faulted;
             }
         }
 
@@ -204,29 +237,40 @@ namespace CarroDesk.Core
 
             string newKey = binding.HotkeyGetter()?.Trim();
 
-            if (binding.CurrentHotkeyId > 0)
+            if (binding.CurrentHotkeyId > 0 &&
+                string.Equals(binding.LastRegisteredKey, newKey, StringComparison.OrdinalIgnoreCase))
             {
-                if (string.Equals(binding.LastRegisteredKey, newKey, StringComparison.OrdinalIgnoreCase))
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(newKey))
+            {
+                if (binding.CurrentHotkeyId > 0)
                 {
-                    return;
+                    try { hotkeys.Unregister(Id, binding.CurrentHotkeyId); } catch { }
                 }
-                try
-                {
-                    hotkeys.Unregister(Id, binding.CurrentHotkeyId);
-                }
-                catch { }
                 binding.CurrentHotkeyId = 0;
                 binding.LastRegisteredKey = null;
+                return;
             }
 
-            if (string.IsNullOrWhiteSpace(newKey)) return;
-
+            // 先注册新键，成功后再注销旧键。新键被外部程序占用时保留原工作热键，
+            // 避免一次配置重载让模块彻底失去快捷操作。
+            int newId = 0;
             try
             {
-                binding.CurrentHotkeyId = hotkeys.Register(Id, newKey, binding.Action, out _);
-                binding.LastRegisteredKey = newKey;
+                newId = hotkeys.Register(Id, newKey, binding.Action, out _);
             }
             catch { }
+            if (newId <= 0) return;
+
+            int oldId = binding.CurrentHotkeyId;
+            binding.CurrentHotkeyId = newId;
+            binding.LastRegisteredKey = newKey;
+            if (oldId > 0)
+            {
+                try { hotkeys.Unregister(Id, oldId); } catch { }
+            }
         }
 
         private void SyncManagedHotkeys()
@@ -268,14 +312,17 @@ namespace CarroDesk.Core
         }
 
         /// <summary>持久化当前模块配置（经 IConfigManager）</summary>
-        public virtual void SaveConfig()
+        public virtual bool SaveConfig()
         {
             try
             {
                 var configMgr = Context?.GetService<IConfigManager>();
-                configMgr?.SaveModuleConfig(Id, Config);
+                return configMgr != null && configMgr.SaveModuleConfig(Id, Config);
             }
-            catch { }
+            catch
+            {
+                return false;
+            }
         }
 
         /// <summary>向宿主请求托盘菜单刷新</summary>

@@ -264,7 +264,8 @@ namespace CarroDesk.Modules.ScreenLock.Views
             }
             try
             {
-                _configManager?.SaveModuleConfig("ScreenLock", _editing);
+                if (_configManager == null || !_configManager.SaveModuleConfig("ScreenLock", _editing))
+                    throw new InvalidOperationException(Loc.T("Config.SaveFailed"));
                 ValidateText.Text = Loc.T("Common.Success");
                 // 持久化后通知模块重载应用，不越权直驱模块/Controller（规范 M9）
                 _onApplied?.Invoke();

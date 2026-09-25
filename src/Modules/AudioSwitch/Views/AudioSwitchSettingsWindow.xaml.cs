@@ -126,6 +126,9 @@ namespace CarroDesk.Modules.AudioSwitch.Views
         private readonly IConfigManager _configManager;
         private readonly IAudioService _audioService;
         private readonly Action<string> _notifier;
+        private AudioSwitchConfig _initialSnapshot;
+        private readonly List<string> _offlineExclusions = new List<string>();
+        private bool _commitChanges;
 
         public AudioSwitchSettingsWindow(
             AudioSwitchModule module = null,
@@ -139,6 +142,7 @@ namespace CarroDesk.Modules.AudioSwitch.Views
             _notifier = notifier;
 
             InitializeComponent();
+            Closing += OnWindowClosing;
             LstDevices.ItemsSource = _devices;
             LoadCurrentSettings();
         }
@@ -147,6 +151,9 @@ namespace CarroDesk.Modules.AudioSwitch.Views
         {
             var config = _module?.Config ?? (_configManager != null ? _configManager.GetModuleConfig<AudioSwitchConfig>("AudioSwitch") : new AudioSwitchConfig());
 
+            _initialSnapshot = config.Clone();
+            _offlineExclusions.Clear();
+            if (config.ExcludedDevices != null) _offlineExclusions.AddRange(config.ExcludedDevices);
             ChkEnabled.IsChecked = config.Enabled;
             TxtHotkey.Text = config.Hotkey ?? "Ctrl+`";
             ChkPlaySound.IsChecked = config.PlayNotificationSound;
@@ -333,7 +340,8 @@ namespace CarroDesk.Modules.AudioSwitch.Views
 
         private void OnRefreshDevicesClick(object sender, RoutedEventArgs e)
         {
-            var currentExclusions = _devices.Where(x => x.IsExcluded).Select(x => x.Name).ToList();
+            var currentExclusions = _devices.Where(x => x.IsExcluded).Select(x => x.Name)
+                .Concat(_offlineExclusions).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             LoadAudioDevices(currentExclusions);
             TxtNotice.Text = Loc.T("Audio.Refreshed", "已刷新音频播放设备列表");
         }
@@ -357,7 +365,8 @@ namespace CarroDesk.Modules.AudioSwitch.Views
                 {
                     _module.Config.SpeakerPattern = TxtSpeakerPattern.Text.Trim();
                     _module.Config.HeadphonePattern = TxtHeadphonePattern.Text.Trim();
-                    _module.Config.ExcludedDevices = _devices.Where(x => x.IsExcluded).Select(x => x.Name).ToList();
+                    _module.Config.ExcludedDevices = _devices.Where(x => x.IsExcluded).Select(x => x.Name)
+                        .Concat(_offlineExclusions).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
                     _module.Config.PlayNotificationSound = ChkPlaySound.IsChecked == true;
                 }
 
@@ -419,25 +428,47 @@ namespace CarroDesk.Modules.AudioSwitch.Views
 
             var configMgr = _configManager;
             var config = _module?.Config ?? (configMgr != null ? configMgr.GetModuleConfig<AudioSwitchConfig>("AudioSwitch") : new AudioSwitchConfig());
+            var previous = config.Clone();
 
             config.Enabled = ChkEnabled.IsChecked == true;
             config.Hotkey = hotkey;
             config.PlayNotificationSound = ChkPlaySound.IsChecked == true;
             config.SpeakerPattern = TxtSpeakerPattern.Text.Trim();
             config.HeadphonePattern = TxtHeadphonePattern.Text.Trim();
-            config.ExcludedDevices = _devices.Where(x => x.IsExcluded).Select(x => x.Name).ToList();
+            config.ExcludedDevices = _devices.Where(x => x.IsExcluded).Select(x => x.Name)
+                .Concat(_offlineExclusions).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 
-            if (configMgr != null)
+            if (configMgr == null || !configMgr.SaveModuleConfig("AudioSwitch", config))
             {
-                configMgr.SaveModuleConfig("AudioSwitch", config);
+                config.Enabled = previous.Enabled;
+                config.Hotkey = previous.Hotkey;
+                config.SpeakerPattern = previous.SpeakerPattern;
+                config.HeadphonePattern = previous.HeadphonePattern;
+                config.PlayNotificationSound = previous.PlayNotificationSound;
+                config.ExcludedDevices = previous.ExcludedDevices;
+                MessageBox.Show(this, Loc.T("Config.SaveFailed"), Loc.T("Common.Error", "错误"), MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
             }
 
             _module?.OnConfigReloaded();
+            _commitChanges = true;
             string msg = Loc.T("Audio.ConfigSaved", "音频输出设备切换配置已保存并生效");
             _notifier?.Invoke(msg);
 
             DialogResult = true;
             Close();
+        }
+
+        private void OnWindowClosing(object sender, CancelEventArgs e)
+        {
+            if (_commitChanges || _module?.Config == null || _initialSnapshot == null) return;
+            var config = _module.Config;
+            config.Enabled = _initialSnapshot.Enabled;
+            config.Hotkey = _initialSnapshot.Hotkey;
+            config.SpeakerPattern = _initialSnapshot.SpeakerPattern;
+            config.HeadphonePattern = _initialSnapshot.HeadphonePattern;
+            config.PlayNotificationSound = _initialSnapshot.PlayNotificationSound;
+            config.ExcludedDevices = _initialSnapshot.ExcludedDevices;
         }
 
         private void OnCancelClick(object sender, RoutedEventArgs e)

@@ -73,37 +73,31 @@ namespace CarroDesk.Common
         public static bool PickFolder(IntPtr ownerHwnd, string title, string initialFolder, out string selectedPath)
         {
             selectedPath = null;
+            IFileOpenDialog dialog = null;
+            IShellItem initialItem = null;
+            IShellItem resultItem = null;
             try
             {
-                var dialog = (IFileOpenDialog)new FileOpenDialogRCW();
+                dialog = (IFileOpenDialog)new FileOpenDialogRCW();
                 dialog.GetOptions(out uint options);
                 dialog.SetOptions(options | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM);
-
-                if (!string.IsNullOrEmpty(title))
-                {
-                    dialog.SetTitle(title);
-                }
+                if (!string.IsNullOrEmpty(title)) dialog.SetTitle(title);
 
                 if (!string.IsNullOrEmpty(initialFolder) && Directory.Exists(initialFolder))
                 {
                     try
                     {
                         var shellItemGuid = new Guid("43826D1E-E718-42EE-BC55-A1E261C37BFE");
-                        SHCreateItemFromParsingName(initialFolder, IntPtr.Zero, shellItemGuid, out var initialItem);
-                        if (initialItem != null)
-                        {
-                            dialog.SetFolder(initialItem);
-                        }
+                        SHCreateItemFromParsingName(initialFolder, IntPtr.Zero, shellItemGuid, out initialItem);
+                        if (initialItem != null) dialog.SetFolder(initialItem);
                     }
-                    catch
-                    {
-                    }
+                    catch { }
                 }
 
                 int hr = dialog.Show(ownerHwnd);
-                if (hr == 0) // S_OK
+                if (hr == 0)
                 {
-                    dialog.GetResult(out var resultItem);
+                    dialog.GetResult(out resultItem);
                     if (resultItem != null)
                     {
                         resultItem.GetDisplayName(SIGDN_FILESYSPATH, out string path);
@@ -112,11 +106,22 @@ namespace CarroDesk.Common
                     }
                 }
             }
-            catch
+            catch { }
+            finally
             {
+                ReleaseCom(resultItem);
+                ReleaseCom(initialItem);
+                ReleaseCom(dialog);
             }
-
             return false;
+        }
+
+        private static void ReleaseCom(object value)
+        {
+            if (value != null && Marshal.IsComObject(value))
+            {
+                try { Marshal.ReleaseComObject(value); } catch { }
+            }
         }
     }
 }

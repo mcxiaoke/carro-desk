@@ -6,7 +6,7 @@ namespace CarroDesk.Core
     public interface ITaskSchedulerService
     {
         bool IsGlobalEnabled { get; }
-        void SetGlobalEnabled(bool enabled);
+        bool SetGlobalEnabled(bool enabled);
         TaskReloadResult Reload();
     }
 

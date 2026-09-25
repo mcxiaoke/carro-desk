@@ -8,6 +8,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
+using CarroDesk.Common;
 using CarroDesk.Core;
 using CarroDesk.Core.Models;
 using CarroDesk.Host.Services;
@@ -30,9 +31,15 @@ namespace CarroDesk.Views
             get => _isPinned;
             set
             {
+                bool previous = _isPinned;
                 _isPinned = value;
                 UpdatePinVisual();
-                SaveSettings();
+                if (!SaveSettings())
+                {
+                    _isPinned = previous;
+                    if (CurrentSettings != null) CurrentSettings.FloatingPanelPinned = previous;
+                    UpdatePinVisual();
+                }
             }
         }
 
@@ -41,9 +48,15 @@ namespace CarroDesk.Views
             get => _isLocked;
             set
             {
+                bool previous = _isLocked;
                 _isLocked = value;
                 UpdateLockVisual();
-                SaveSettings();
+                if (!SaveSettings())
+                {
+                    _isLocked = previous;
+                    if (CurrentSettings != null) CurrentSettings.FloatingPanelLocked = previous;
+                    UpdateLockVisual();
+                }
             }
         }
 
@@ -56,9 +69,20 @@ namespace CarroDesk.Views
 
         private AppSettings CurrentSettings => _configManager?.Current;
 
-        private void PersistSettings()
+        private bool PersistSettings()
         {
-            _configManager?.Save();
+            try
+            {
+                if (_configManager == null) return false;
+                _configManager.Save();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _services?.GetService<ILoggerService>()?.LogError("FloatingPanel", "保存悬浮面板配置失败", ex);
+                _services?.GetService<INotificationService>()?.Show(Loc.T("Config.SaveFailed"), "CarroDesk");
+                return false;
+            }
         }
 
         public FloatingPanelWindow(
@@ -130,6 +154,17 @@ namespace CarroDesk.Views
             }
         }
 
+        public void RefreshSettings()
+        {
+            var cfg = CurrentSettings;
+            if (cfg == null) return;
+            _isPinned = cfg.FloatingPanelPinned;
+            _isLocked = cfg.FloatingPanelLocked;
+            UpdatePinVisual();
+            UpdateLockVisual();
+            if (IsVisible) ApplyPosition();
+        }
+
         public void ShowPanel()
         {
             RebuildMenu();
@@ -196,10 +231,18 @@ namespace CarroDesk.Views
             var cfg = CurrentSettings;
             if (cfg != null)
             {
+                string oldMode = cfg.FloatingPanelPosition;
+                double oldX = cfg.FloatingPanelX;
+                double oldY = cfg.FloatingPanelY;
                 cfg.FloatingPanelPosition = "Custom";
                 cfg.FloatingPanelX = Left;
                 cfg.FloatingPanelY = Top;
-                SaveSettings();
+                if (!SaveSettings())
+                {
+                    cfg.FloatingPanelPosition = oldMode;
+                    cfg.FloatingPanelX = oldX;
+                    cfg.FloatingPanelY = oldY;
+                }
             }
         }
 
@@ -208,8 +251,9 @@ namespace CarroDesk.Views
             var cfg = CurrentSettings;
             if (cfg != null)
             {
+                string oldMode = cfg.FloatingPanelPosition;
                 cfg.FloatingPanelPosition = mode;
-                SaveSettings();
+                if (!SaveSettings()) cfg.FloatingPanelPosition = oldMode;
             }
             ApplyPosition();
         }
@@ -242,10 +286,21 @@ namespace CarroDesk.Views
 
                 case "Custom":
                     var cfg = CurrentSettings;
-                    if (cfg != null && cfg.FloatingPanelX >= 0 && cfg.FloatingPanelY >= 0)
+                    if (cfg != null && cfg.FloatingPanelX != -1 && cfg.FloatingPanelY != -1)
                     {
-                        targetLeft = Math.Max(workArea.Left, Math.Min(workArea.Right - panelWidth, cfg.FloatingPanelX));
-                        targetTop = Math.Max(workArea.Top, Math.Min(workArea.Bottom - panelHeight, cfg.FloatingPanelY));
+                        var monitors = DisplayMonitorHelper.GetAllMonitors();
+                        var targetMonitor = monitors.FirstOrDefault(m =>
+                            cfg.FloatingPanelX >= m.Left &&
+                            cfg.FloatingPanelX < m.Left + m.Width &&
+                            cfg.FloatingPanelY >= m.Top &&
+                            cfg.FloatingPanelY < m.Top + m.Height);
+                        if (targetMonitor == null) targetMonitor = monitors.FirstOrDefault(m => m.IsPrimary) ?? monitors.FirstOrDefault();
+                        double customLeft = targetMonitor?.WorkLeft ?? workArea.Left;
+                        double customTop = targetMonitor?.WorkTop ?? workArea.Top;
+                        double customRight = customLeft + (targetMonitor?.WorkWidth ?? (int)workArea.Width);
+                        double customBottom = customTop + (targetMonitor?.WorkHeight ?? (int)workArea.Height);
+                        targetLeft = Math.Max(customLeft, Math.Min(customRight - panelWidth, cfg.FloatingPanelX));
+                        targetTop = Math.Max(customTop, Math.Min(customBottom - panelHeight, cfg.FloatingPanelY));
                     }
                     else
                     {
@@ -356,10 +411,18 @@ namespace CarroDesk.Views
                 var cfg = CurrentSettings;
                 if (cfg != null)
                 {
+                    string oldMode = cfg.FloatingPanelPosition;
+                    double oldX = cfg.FloatingPanelX;
+                    double oldY = cfg.FloatingPanelY;
                     cfg.FloatingPanelPosition = "Custom";
                     cfg.FloatingPanelX = Left;
                     cfg.FloatingPanelY = Top;
-                    SaveSettings();
+                    if (!SaveSettings())
+                    {
+                        cfg.FloatingPanelPosition = oldMode;
+                        cfg.FloatingPanelX = oldX;
+                        cfg.FloatingPanelY = oldY;
+                    }
                 }
             };
             cm.Items.Add(itemCustom);
@@ -374,15 +437,16 @@ namespace CarroDesk.Views
             HidePanel();
         }
 
-        private void SaveSettings()
+        private bool SaveSettings()
         {
             var cfg = CurrentSettings;
             if (cfg != null)
             {
                 cfg.FloatingPanelPinned = _isPinned;
                 cfg.FloatingPanelLocked = _isLocked;
-                PersistSettings();
+                return PersistSettings();
             }
+            return false;
         }
 
         #endregion
@@ -394,8 +458,10 @@ namespace CarroDesk.Views
             ItemsHostMenu.Items.Clear();
 
             // ① 挂载各业务模块导出的标准二级根项
-            var modules = _moduleManager != null 
-                ? _moduleManager.Modules.OrderBy(m => m.Order) 
+            var modules = _moduleManager != null
+                ? _moduleManager.Modules
+                    .Where(m => m.Status == ModuleStatus.Initialized || m.Status == ModuleStatus.Running)
+                    .OrderBy(m => m.Order)
                 : Enumerable.Empty<IModule>();
             bool hasModule = false;
             foreach (var module in modules)
@@ -404,7 +470,7 @@ namespace CarroDesk.Views
                 {
                     var items = module.GetTrayMenuItems();
                     if (items == null) continue;
-                    foreach (var node in items)
+                    foreach (var node in items.ToList())
                     {
                         var visual = CreateVisual(node);
                         if (visual != null)
@@ -509,7 +575,7 @@ namespace CarroDesk.Views
                 MenuProjectionEngine.AttachHoverBehavior(item);
                 item.Click += (s, e) =>
                 {
-                    HostMenuActions.SetLanguage(_configManager, langKey, () =>
+                    HostMenuActions.SetLanguage(_configManager, _services, langKey, () =>
                     {
                         RebuildMenu();
                         _updateTrayText?.Invoke();
@@ -554,6 +620,13 @@ namespace CarroDesk.Views
                 RequestRefresh = () =>
                 {
                     Dispatcher.BeginInvoke(new Action(RebuildMenu));
+                },
+                ErrorHandler = (menuNode, ex) =>
+                {
+                    _services?.GetService<ILoggerService>()?.LogError("FloatingPanel", "菜单操作执行失败", ex);
+                    _services?.GetService<INotificationService>()?.Show(
+                        (menuNode?.Header ?? Loc.T("Msg.TrayAction", "托盘操作")) + " " + Loc.T("Msg.TrayActionFailed", "执行失败"),
+                        "CarroDesk");
                 }
             };
             return MenuProjectionEngine.CreateVisual(node, options, Dispatcher);

@@ -18,9 +18,12 @@ namespace CarroDesk.Services
         {
             try
             {
-                var path = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
-                if (!string.IsNullOrEmpty(path) && File.Exists(path))
-                    return path;
+                using (var process = System.Diagnostics.Process.GetCurrentProcess())
+                {
+                    var path = process.MainModule?.FileName;
+                    if (!string.IsNullOrEmpty(path) && File.Exists(path))
+                        return path;
+                }
             }
             catch { }
 

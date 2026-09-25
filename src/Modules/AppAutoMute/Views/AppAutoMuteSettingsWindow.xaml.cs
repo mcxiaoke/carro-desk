@@ -252,6 +252,22 @@ namespace CarroDesk.Modules.AppAutoMute.Views
             }
         }
 
+        private void RestoreAudioForConfig(AppAutoMuteConfig config)
+        {
+            if (_audioService == null || config == null || !config.Enabled) return;
+            try
+            {
+                if (config.TargetApps != null && config.TargetApps.Count > 0)
+                    _audioService.UnmuteProcesses(config.TargetApps);
+                if (string.Equals(config.Mode, "Whitelist", StringComparison.OrdinalIgnoreCase))
+                {
+                    var active = _audioService.GetActiveAudioProcesses();
+                    if (active != null) _audioService.UnmuteProcesses(active);
+                }
+            }
+            catch { }
+        }
+
         private void OnSaveClick(object sender, RoutedEventArgs e)
         {
             string hotkey = TxtHotkey.Text?.Trim() ?? string.Empty;
@@ -266,6 +282,10 @@ namespace CarroDesk.Modules.AppAutoMute.Views
 
             var configMgr = _configManager;
             var config = _module?.Config ?? (configMgr != null ? configMgr.GetModuleConfig<AppAutoMuteConfig>("AppAutoMute") : new AppAutoMuteConfig());
+            var previous = config.Clone();
+
+            // 配置对象即将被覆盖，先按旧规则恢复声音，避免删除进程/切换模式/禁用后残留静音。
+            RestoreAudioForConfig(previous);
 
             config.Enabled = ChkEnabled.IsChecked == true;
             config.Hotkey = hotkey;
@@ -274,9 +294,12 @@ namespace CarroDesk.Modules.AppAutoMute.Views
             config.Mode = RadWhitelist.IsChecked == true ? "Whitelist" : "Blacklist";
             config.TargetApps = _targetApps.ToList();
 
-            if (configMgr != null)
+            if (configMgr == null || !configMgr.SaveModuleConfig("AppAutoMute", config))
             {
-                configMgr.SaveModuleConfig("AppAutoMute", config);
+                previous.CopyTo(config);
+                _module?.ReapplyConfigForCurrentForeground();
+                MessageBox.Show(this, Loc.T("Config.SaveFailed"), Loc.T("Common.Error", "错误"), MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
             }
 
             _module?.OnConfigReloaded();

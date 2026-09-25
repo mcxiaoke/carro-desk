@@ -18,12 +18,32 @@ namespace CarroDesk.Host.Services
             var config = configManager?.Current;
             if (config == null) return false;
 
-            bool newState = !config.AutoStart;
+            bool oldState = config.AutoStart;
+            bool newState = !oldState;
             bool success = AutoStartService.Sync(newState);
             if (success)
             {
                 config.AutoStart = newState;
-                configManager.Save();
+                try
+                {
+                    configManager.Save();
+                }
+                catch (Exception ex)
+                {
+                    // 注册表和配置必须作为一个可观察的一致状态提交。磁盘保存失败时
+                    // 恢复旧内存值，并尽力把注册表恢复到旧状态。
+                    config.AutoStart = oldState;
+                    try
+                    {
+                        if (!AutoStartService.Sync(oldState))
+                            services?.GetService<ILoggerService>()?.LogWarning("HostMenu", "配置保存失败且开机自启注册表回滚失败");
+                    }
+                    catch { }
+                    services?.GetService<ILoggerService>()?.LogError("HostMenu", "保存开机自启配置失败", ex);
+                    services?.GetService<INotificationService>()?.Show(Loc.T("Config.SaveFailed"), "CarroDesk");
+                    onStateChanged?.Invoke();
+                    return false;
+                }
             }
             else
             {
@@ -39,7 +59,8 @@ namespace CarroDesk.Host.Services
             try
             {
                 var pinService = services?.GetService<IPinService>();
-                var win = new ConfigEditorWindow(pinService, configManager, reloadConfig)
+                var pinGuard = services?.GetService<PinGuard>();
+                var win = new ConfigEditorWindow(pinService, configManager, reloadConfig, pinGuard)
                 {
                     WindowStartupLocation = WindowStartupLocation.CenterScreen
                 };
@@ -58,14 +79,25 @@ namespace CarroDesk.Host.Services
             catch { }
         }
 
-        public static void SetLanguage(ConfigManager configManager, string lang, Action onLanguageChanged = null)
+        public static void SetLanguage(ConfigManager configManager, ServiceContainer services, string lang, Action onLanguageChanged = null)
         {
             if (string.IsNullOrWhiteSpace(lang)) return;
             var config = configManager?.Current;
             if (config != null)
             {
+                string oldLang = config.Language;
                 config.Language = lang;
-                configManager.Save();
+                try
+                {
+                    configManager.Save();
+                }
+                catch (Exception ex)
+                {
+                    config.Language = oldLang;
+                    services.GetService<ILoggerService>()?.LogError("HostMenu", "保存语言配置失败", ex);
+                    services.GetService<INotificationService>()?.Show(Loc.T("Config.SaveFailed"), "CarroDesk");
+                    return;
+                }
             }
             I18nService.Instance.SetLanguage(lang);
             onLanguageChanged?.Invoke();

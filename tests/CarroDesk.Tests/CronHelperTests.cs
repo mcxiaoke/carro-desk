@@ -203,6 +203,14 @@ namespace CarroDesk.Tests
         }
 
         [TestMethod]
+        public void GetNextOccurrence_LeapDay_SchedulesAcrossFourYears()
+        {
+            var next = CronHelper.GetNextOccurrence("0 0 29 2 *", new DateTime(2024, 2, 29, 0, 0, 0));
+            Assert.IsTrue(next.HasValue);
+            Assert.AreEqual(new DateTime(2028, 2, 29, 0, 0, 0), next.Value);
+        }
+
+        [TestMethod]
         public void GetNextOccurrence_UnreachableExpression_ReturnsNull()
         {
             // 2 月 30 日永不发生：合法语法但不可达，应返回 null 而不是无限循环

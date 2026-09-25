@@ -50,6 +50,7 @@ namespace CarroDesk.Modules.TaskScheduler
             catch (Exception ex)
             {
                 Context?.GetService<ILoggerService>()?.LogError(Id, "启动任务调度器失败", ex);
+                throw;
             }
         }
 
@@ -113,17 +114,14 @@ namespace CarroDesk.Modules.TaskScheduler
             _trayRoot.Header = BuildTaskSchedulerHeader();
         }
 
-        public void SetGlobalEnabled(bool enabled)
+        public bool SetGlobalEnabled(bool enabled)
         {
-            Scheduler?.SetGlobalEnabled(enabled);
-            if (Config != null && Config.GlobalEnabled != enabled)
-            {
-                Config.GlobalEnabled = enabled;
-                var configMgr = Context?.GetService<IConfigManager>();
-                configMgr?.SaveModuleConfig(Id, Config);
-            }
+            bool success = Scheduler?.SetGlobalEnabled(enabled) ?? false;
+            // Scheduler 负责事务化持久化并在失败时回滚；模块只同步内存镜像。
+            if (Config != null) Config.GlobalEnabled = Scheduler?.IsGlobalEnabled ?? Config.GlobalEnabled;
             UpdateTrayHeader();
             RequestRefreshSelf();
+            return success;
         }
 
         public bool RunManual(string taskName)
@@ -157,8 +155,8 @@ namespace CarroDesk.Modules.TaskScheduler
                 ClickAction = () =>
                 {
                     bool enabled = !IsGlobalEnabled;
-                    SetGlobalEnabled(enabled);
-                    NotifySelf(enabled ? Loc.T("Tray.TasksEnabledMsg", "任务调度已启用") : Loc.T("Tray.TasksDisabledMsg", "任务调度已禁用"));
+                    if (SetGlobalEnabled(enabled))
+                        NotifySelf(enabled ? Loc.T("Tray.TasksEnabledMsg", "任务调度已启用") : Loc.T("Tray.TasksDisabledMsg", "任务调度已禁用"));
                 }
             });
 

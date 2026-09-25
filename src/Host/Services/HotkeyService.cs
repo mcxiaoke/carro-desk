@@ -84,6 +84,12 @@ namespace CarroDesk.Services.Tasks
                 error = err;
                 return 0;
             }
+            bool isFunctionKey = vk >= 0x70 && vk <= 0x87;
+            if (mods == 0 && !isFunctionKey)
+            {
+                error = "modifier required";
+                return 0;
+            }
 
             uint chord = ((uint)mods << 16) | (uint)vk;
 

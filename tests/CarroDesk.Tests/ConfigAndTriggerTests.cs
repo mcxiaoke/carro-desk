@@ -130,12 +130,17 @@ namespace CarroDesk.Tests
                 return created;
             }
 
-            public void SaveModuleConfig<T>(string moduleId, T config) where T : class
+            public bool SaveModuleConfig<T>(string moduleId, T config) where T : class
             {
                 Store[moduleId] = config;
+                return true;
             }
 
-            public void Reload() => ConfigReloaded?.Invoke();
+            public bool Reload()
+            {
+                ConfigReloaded?.Invoke();
+                return true;
+            }
         }
 
         private class FakeNotificationService : INotificationService

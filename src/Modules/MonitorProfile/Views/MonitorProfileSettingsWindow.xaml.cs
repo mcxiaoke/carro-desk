@@ -459,7 +459,11 @@ namespace CarroDesk.Modules.MonitorProfile.Views
             if (MessageBox.Show(Loc.T("Monitor.RestoreConfirm", "确认恢复到默认显示器情境与时间表吗？"), Loc.T("Common.Confirm", "确认"), MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
             {
                 var def = MonitorProfileConfig.CreateDefault();
-                _module.SaveAndApplyConfig(def);
+                if (!_module.SaveAndApplyConfig(def))
+                {
+                    MessageBox.Show(Loc.T("Config.SaveFailed"), Loc.T("Common.Error", "错误"), MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
                 LoadConfigData();
             }
         }
@@ -467,7 +471,11 @@ namespace CarroDesk.Modules.MonitorProfile.Views
         private void BtnTestApply_Click(object sender, RoutedEventArgs e)
         {
             var cfg = BuildCurrentConfigFromUi();
-            _module.SaveAndApplyConfig(cfg);
+            if (!_module.SaveAndApplyConfig(cfg))
+            {
+                MessageBox.Show(Loc.T("Config.SaveFailed"), Loc.T("Common.Error", "错误"), MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
             _module.ScheduleEngine.ApplyCurrentSetting(force: true);
             MessageBox.Show(Loc.T("Monitor.TestApplied", "已应用测试：当前情境 [{0}]", cfg.ActiveProfile), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Information);
         }
@@ -475,7 +483,11 @@ namespace CarroDesk.Modules.MonitorProfile.Views
         private void BtnSave_Click(object sender, RoutedEventArgs e)
         {
             var cfg = BuildCurrentConfigFromUi();
-            _module.SaveAndApplyConfig(cfg);
+            if (!_module.SaveAndApplyConfig(cfg))
+            {
+                MessageBox.Show(Loc.T("Config.SaveFailed"), Loc.T("Common.Error", "错误"), MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
             Close();
         }
 
@@ -483,6 +495,7 @@ namespace CarroDesk.Modules.MonitorProfile.Views
         {
             var cfg = new MonitorProfileConfig();
 
+            cfg.Enabled = _module?.Config?.Enabled ?? true;
             cfg.ActiveProfile = _activeProfileName;
             cfg.AutoSchedule = ChkAutoSchedule.IsChecked == true;
 

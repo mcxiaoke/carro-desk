@@ -115,7 +115,7 @@ namespace CarroDesk.Views
         {
             if (sender is MenuItem mi && mi.Tag != null)
             {
-                HostMenuActions.SetLanguage(_configManager, mi.Tag.ToString(), () =>
+                HostMenuActions.SetLanguage(_configManager, _services, mi.Tag.ToString(), () =>
                 {
                     RefreshTray();
                     _updateTrayText?.Invoke();

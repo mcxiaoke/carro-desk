@@ -11,6 +11,10 @@ namespace CarroDesk.Common
         public int Top { get; set; }
         public int Width { get; set; }
         public int Height { get; set; }
+        public int WorkLeft { get; set; }
+        public int WorkTop { get; set; }
+        public int WorkWidth { get; set; }
+        public int WorkHeight { get; set; }
         public bool IsPrimary { get; set; }
     }
 
@@ -66,6 +70,10 @@ namespace CarroDesk.Common
                             Top = mi.rcMonitor.Top,
                             Width = mi.rcMonitor.Right - mi.rcMonitor.Left,
                             Height = mi.rcMonitor.Bottom - mi.rcMonitor.Top,
+                            WorkLeft = mi.rcWork.Left,
+                            WorkTop = mi.rcWork.Top,
+                            WorkWidth = mi.rcWork.Right - mi.rcWork.Left,
+                            WorkHeight = mi.rcWork.Bottom - mi.rcWork.Top,
                             IsPrimary = (mi.dwFlags & MONITORINFOF_PRIMARY) != 0
                         });
                     }
@@ -85,6 +93,10 @@ namespace CarroDesk.Common
                     Top = (int)SystemParameters.VirtualScreenTop,
                     Width = (int)SystemParameters.VirtualScreenWidth,
                     Height = (int)SystemParameters.VirtualScreenHeight,
+                    WorkLeft = (int)SystemParameters.WorkArea.Left,
+                    WorkTop = (int)SystemParameters.WorkArea.Top,
+                    WorkWidth = (int)SystemParameters.WorkArea.Width,
+                    WorkHeight = (int)SystemParameters.WorkArea.Height,
                     IsPrimary = true
                 });
             }

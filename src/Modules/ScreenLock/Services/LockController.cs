@@ -12,7 +12,7 @@ namespace CarroDesk.Services
     {
         private readonly Func<IPinService> _pinServiceProvider;
         private readonly Func<ScreenLockConfig> _configProvider;
-        private readonly PinGuard _pinGuard;
+        private PinGuard _pinGuard;
         private readonly KeyboardBlocker _blocker;
         private readonly ILoggerService _logger;
 
@@ -46,17 +46,35 @@ namespace CarroDesk.Services
                 System.Windows.Application.Current?.Dispatcher?.BeginInvoke(new Action(() =>
                 {
                     if (!_locked) return;
-                    foreach (var win in _lockWindows)
-                    {
-                        win.CloseSafe();
-                    }
+                    var oldWindows = new List<LockWindow>(_lockWindows);
                     _lockWindows.Clear();
-                    foreach (var monitor in DisplayMonitorHelper.GetAllMonitors())
+                    foreach (var win in oldWindows)
                     {
-                        var win = new LockWindow(this, this, monitor, monitor.IsPrimary, IsShuttingDownProvider);
-                        _lockWindows.Add(win);
-                        win.Show();
-                        win.ActivateIfNeeded();
+                        if (!win.ForceClose()) _lockWindows.Add(win);
+                    }
+                    // 旧窗口未能确认关闭时不继续创建新窗口，避免丢失引用后留下孤立锁屏。
+                    if (_lockWindows.Count > 0) return;
+
+                    var created = new List<LockWindow>();
+                    try
+                    {
+                        foreach (var monitor in DisplayMonitorHelper.GetAllMonitors())
+                        {
+                            var win = new LockWindow(this, this, monitor, monitor.IsPrimary, IsShuttingDownProvider);
+                            created.Add(win);
+                            win.Show();
+                            win.ActivateIfNeeded();
+                            _lockWindows.Add(win);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        foreach (var win in created)
+                        {
+                            try { win.ForceClose(); } catch { }
+                        }
+                        _lockWindows.Clear();
+                        LogError("显示器变化后重建锁屏窗口失败", ex);
                     }
                 }));
             }
@@ -78,6 +96,12 @@ namespace CarroDesk.Services
 
         public void ApplyPinFromConfig()
         {
+        }
+
+        /// <summary>注入宿主共享的 PIN 限流器，使锁屏、退出和修改 PIN 共用失败状态。</summary>
+        public void SetPinGuard(PinGuard pinGuard)
+        {
+            if (pinGuard != null) _pinGuard = pinGuard;
         }
 
         public Func<bool> IsShuttingDownProvider { get; set; }
@@ -121,7 +145,11 @@ namespace CarroDesk.Services
             bool hookInstalled = false;
             try
             {
-                _blocker.Install();
+                if (!_blocker.Install())
+                {
+                    int error = System.Runtime.InteropServices.Marshal.GetLastWin32Error();
+                    throw new InvalidOperationException("安装低级键盘钩子失败，Win32 错误码: " + error);
+                }
                 hookInstalled = true;
 
                 foreach (var monitor in DisplayMonitorHelper.GetAllMonitors())
@@ -162,8 +190,11 @@ namespace CarroDesk.Services
         {
             try
             {
+                var pinService = _pinServiceProvider?.Invoke();
+                if (_locked) return true;
+                if (pinService == null || !pinService.IsConfigured) return false;
                 Lock();
-                return true;
+                return !_locked || System.Windows.Application.Current?.Dispatcher?.CheckAccess() == true;
             }
             catch (Exception ex)
             {
@@ -216,7 +247,8 @@ namespace CarroDesk.Services
             var failed = new List<LockWindow>();
             foreach (var win in _lockWindows)
             {
-                if (!win.CloseSafe()) failed.Add(win);
+                // 解锁路径必须同步确认关闭结果；不能把“已安排淡出关闭”当作已关闭。
+                if (!win.ForceClose()) failed.Add(win);
             }
             _lockWindows.Clear();
             if (failed.Count > 0)

@@ -14,6 +14,7 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
         private readonly IClipboardHistoryStorage _storage;
         private ClipboardHistoryConfig _config;
         private string _suppressedHash;
+        private DateTime _suppressedUntil;
 
         public event Action HistoryChanged;
 
@@ -57,6 +58,12 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
 
             lock (_lock)
             {
+                int maxChars = _config != null ? Math.Max(10, _config.MaxPreviewChars) : 100;
+                foreach (var item in _items)
+                {
+                    if (item != null && !string.IsNullOrEmpty(item.FullText))
+                        item.PreviewText = ClipboardItem.BuildPreviewText(item.FullText, maxChars);
+                }
                 ApplyCleanupRulesLocked();
                 _storage.Save(_items);
             }
@@ -67,17 +74,20 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
         public void RecordText(string rawText)
         {
             if (string.IsNullOrWhiteSpace(rawText)) return;
-            if (_config != null && !_config.AutoRecord) return;
+            if (_config != null && (!_config.Enabled || !_config.AutoRecord)) return;
 
             string hash = ComputeHash(rawText);
 
             lock (_lock)
             {
                 // 1. 防自环检查：若是刚刚双击选中的条目，抑制本次广播
-                if (!string.IsNullOrEmpty(_suppressedHash) && _suppressedHash == hash)
+                if (!string.IsNullOrEmpty(_suppressedHash))
                 {
+                    bool withinWindow = DateTime.Now <= _suppressedUntil;
+                    bool matches = _suppressedHash == hash;
                     _suppressedHash = null;
-                    return;
+                    _suppressedUntil = DateTime.MinValue;
+                    if (withinWindow && matches) return;
                 }
 
                 // 2. 去重与 MRU 提升：若已有该条目，则刷新时间戳并移到顶端
@@ -121,6 +131,7 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
             lock (_lock)
             {
                 _suppressedHash = ComputeHash(text);
+                _suppressedUntil = DateTime.Now.AddSeconds(2);
             }
         }
 
@@ -205,7 +216,10 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
             // 规则 1：过期清理（天数，保护已置顶项目）
             if (_config.RetentionDays > 0)
             {
-                var cutoff = DateTime.Now.AddDays(-_config.RetentionDays);
+                // UI 限制为 10 年；服务层仍防御手工编辑/旧坏配置，避免 AddDays 越界
+                // 让整个剪贴板模块进入 Faulted。
+                int retentionDays = Math.Min(_config.RetentionDays, 3650);
+                var cutoff = DateTime.Now.AddDays(-retentionDays);
                 _items.RemoveAll(x => !x.IsPinned && x.CopiedAt < cutoff);
             }
 

@@ -12,6 +12,33 @@ namespace CarroDesk.Modules.MonitorProfile.Models
         public Dictionary<string, List<MonitorTimeSetting>> Profiles { get; set; } = new Dictionary<string, List<MonitorTimeSetting>>(StringComparer.OrdinalIgnoreCase);
         public MonitorHotkeyConfig Hotkeys { get; set; } = new MonitorHotkeyConfig();
 
+        public MonitorProfileConfig Clone()
+        {
+            var copy = new MonitorProfileConfig
+            {
+                Enabled = Enabled,
+                AutoSchedule = AutoSchedule,
+                ActiveProfile = ActiveProfile,
+                BrightnessStep = BrightnessStep,
+                Hotkeys = Hotkeys != null ? new MonitorHotkeyConfig
+                {
+                    SwitchToDailyMode = Hotkeys.SwitchToDailyMode,
+                    SwitchToGameMode = Hotkeys.SwitchToGameMode,
+                    SwitchToNightMode = Hotkeys.SwitchToNightMode,
+                    ManualRefresh = Hotkeys.ManualRefresh,
+                    IncreaseBrightness = Hotkeys.IncreaseBrightness,
+                    DecreaseBrightness = Hotkeys.DecreaseBrightness
+                } : new MonitorHotkeyConfig(),
+                Profiles = new Dictionary<string, List<MonitorTimeSetting>>(StringComparer.OrdinalIgnoreCase)
+            };
+            if (Profiles != null)
+            {
+                foreach (var pair in Profiles)
+                    copy.Profiles[pair.Key] = pair.Value != null ? new List<MonitorTimeSetting>(pair.Value) : new List<MonitorTimeSetting>();
+            }
+            return copy;
+        }
+
         public static MonitorProfileConfig CreateDefault()
         {
             var cfg = new MonitorProfileConfig

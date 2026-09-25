@@ -15,5 +15,18 @@ namespace CarroDesk.Modules.AudioSwitch.Models
         public string HeadphonePattern { get; set; } = "耳机";
         public bool PlayNotificationSound { get; set; } = true;
         public List<string> ExcludedDevices { get; set; } = new List<string>();
+
+        public AudioSwitchConfig Clone()
+        {
+            return new AudioSwitchConfig
+            {
+                Enabled = Enabled,
+                Hotkey = Hotkey,
+                SpeakerPattern = SpeakerPattern,
+                HeadphonePattern = HeadphonePattern,
+                PlayNotificationSound = PlayNotificationSound,
+                ExcludedDevices = ExcludedDevices != null ? new List<string>(ExcludedDevices) : new List<string>()
+            };
+        }
     }
 }

@@ -64,7 +64,7 @@ namespace CarroDesk.Modules.ClipboardHistory
         {
             _service?.Start(Config);
 
-            if (Config.AutoRecord)
+            if (Config.Enabled && Config.AutoRecord)
             {
                 _listener?.Start();
             }
@@ -114,7 +114,7 @@ namespace CarroDesk.Modules.ClipboardHistory
 
             _service?.ApplyConfig(Config);
 
-            if (Config.AutoRecord)
+            if (Config.Enabled && Config.AutoRecord)
             {
                 _listener?.Start();
             }
@@ -213,8 +213,16 @@ namespace CarroDesk.Modules.ClipboardHistory
 
         private void ToggleAutoRecord()
         {
-            Config.AutoRecord = !Config.AutoRecord;
-            if (Config.AutoRecord)
+            bool previous = Config.AutoRecord;
+            Config.AutoRecord = !previous;
+            var configMgr = Context?.GetService<IConfigManager>();
+            if (configMgr == null || !configMgr.SaveModuleConfig(Id, Config))
+            {
+                Config.AutoRecord = previous;
+                Context?.RequestTrayRefresh();
+                return;
+            }
+            if (Config.Enabled && Config.AutoRecord)
             {
                 _listener?.Start();
             }
@@ -223,7 +231,6 @@ namespace CarroDesk.Modules.ClipboardHistory
                 _listener?.Stop();
             }
 
-            Context?.GetService<IConfigManager>()?.SaveModuleConfig(Id, Config);
             Context?.RequestTrayRefresh();
         }
 
@@ -239,23 +246,20 @@ namespace CarroDesk.Modules.ClipboardHistory
             }
         }
 
-        private void OnClipboardUpdated()
+        private void OnClipboardUpdated(string text)
         {
-            if (Config == null || !Config.AutoRecord) return;
+            if (Config == null || !Config.Enabled || !Config.AutoRecord || string.IsNullOrWhiteSpace(text)) return;
 
             Context?.Dispatcher?.InvokeAsync(() =>
             {
                 try
                 {
-                    if (ClipboardHelper.TryGetText(out string text))
-                    {
-                        _service?.RecordText(text);
-                        Context?.RequestTrayRefresh();
-                    }
+                    _service?.RecordText(text);
+                    Context?.RequestTrayRefresh();
                 }
                 catch
                 {
-                    // 忽略剪贴板争夺异常
+                    // 忽略剪贴板处理异常
                 }
             });
         }
@@ -274,6 +278,8 @@ namespace CarroDesk.Modules.ClipboardHistory
             FlushStorage();
 
             base.Dispose();
+            (_ownedStorage as IDisposable)?.Dispose();
+            _ownedStorage = null;
         }
     }
 }

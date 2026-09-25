@@ -100,6 +100,9 @@ namespace CarroDesk.Services
         }
 
         public AppSettings Current { get; private set; }
+        public bool LastLoadSucceeded { get { return _lastReadSucceeded; } }
+        public bool LastLoadIoFailure { get; private set; }
+        public string LastLoadError { get; private set; }
 
         /// <summary>
         /// 串行化配置的内存态（Current / _moduleConfigs）与磁盘读写。
@@ -111,6 +114,7 @@ namespace CarroDesk.Services
         /// 注意：Monitor 可重入，因此 SaveCore/ReadFileCore 内部再次获取同一把锁是安全的。
         /// </summary>
         private readonly object _ioLock = new object();
+        private bool _lastReadSucceeded;
 
         private static readonly HashSet<string> HostSettingNames = new HashSet<string>(
             typeof(AppSettings).GetProperties().Select(p => p.Name),
@@ -132,11 +136,15 @@ namespace CarroDesk.Services
 
                 // 清理进程上次被强杀时遗留的孤儿临时文件（正常路径下 finally 会删除）
                 AtomicFile.CleanupStaleTempFiles(DirPath, TimeSpan.FromHours(1));
+                AtomicFile.TryRestoreLatestBackup(FilePath);
 
                 if (!File.Exists(FilePath))
                 {
                     Current = new AppSettings();
                     SaveCore();
+                    _lastReadSucceeded = true;
+                    LastLoadIoFailure = false;
+                    LastLoadError = null;
                     EnsureSampleCopied();
                     return;
                 }
@@ -172,29 +180,34 @@ namespace CarroDesk.Services
         {
             lock (_ioLock)
             {
-                try
-                {
-                    if (!File.Exists(FilePath)) return false;
-                    var settings = ReadFile();
-                    Current = settings;
-                    return true;
-                }
-                catch
-                {
-                    return false;
-                }
+                if (!File.Exists(FilePath)) return false;
+                var settings = ReadFile();
+                if (!_lastReadSucceeded) return false;
+                Current = settings;
+                return true;
             }
         }
 
         /// <summary>读取并解析配置文件。调用方必须已持有 <see cref="_ioLock"/>。</summary>
         private AppSettings ReadFile()
         {
+            LastLoadIoFailure = false;
+            LastLoadError = null;
+            // 解析采用“候选快照 → 完整成功后提交”的事务模型。失败时必须保留
+            // 上一次有效 Current/_moduleConfigs，绝不能形成宿主默认值 + 旧模块配置的混合态。
+            var previousCurrent = Current;
+            var previousModules = _moduleConfigs.ToDictionary(
+                x => x.Key,
+                x => x.Value,
+                StringComparer.OrdinalIgnoreCase);
+
             try
             {
-                if (!File.Exists(FilePath)) return new AppSettings();
+                if (!File.Exists(FilePath)) throw new FileNotFoundException("config.json not found", FilePath);
                 var json = File.ReadAllText(FilePath, Encoding.UTF8);
-                if (string.IsNullOrWhiteSpace(json)) return new AppSettings();
+                if (string.IsNullOrWhiteSpace(json)) throw new InvalidDataException("config.json is empty");
 
+                JObject obj;
                 using (var sr = new StringReader(json))
                 using (var reader = new JsonTextReader(sr))
                 {
@@ -209,56 +222,74 @@ namespace CarroDesk.Services
                         if (!reader.Read()) break;
                     }
 
-                    if (reader.TokenType == JsonToken.None) return new AppSettings();
-
+                    if (reader.TokenType == JsonToken.None) throw new InvalidDataException("config.json has no JSON value");
                     var token = JToken.Load(reader, loadSettings);
-                    if (token is JObject obj)
-                    {
-                        var serializer = JsonSerializer.Create(SerializerSettings);
-                        var s = obj.ToObject<AppSettings>(serializer) ?? new AppSettings();
-                        var merged = AppSettings.Merge(s);
-                        Current = merged;
-
-                        _moduleConfigs.Clear();
-                        foreach (var prop in obj.Properties())
-                        {
-                            if (HostSettingNames.Contains(prop.Name)) continue;
-                            var val = prop.Value;
-                            if (val != null && val.Type == JTokenType.String)
-                            {
-                                string str = val.Value<string>();
-                                if (!string.IsNullOrWhiteSpace(str) && (str.TrimStart().StartsWith("{") || str.TrimStart().StartsWith("[")))
-                                {
-                                    try { val = JToken.Parse(str); } catch { }
-                                }
-                            }
-                            _moduleConfigs[prop.Name] = val;
-                        }
-
-                        bool migrated = MigrateLegacyConfigs(obj);
-                        if (migrated)
-                        {
-                            try { SaveCore(); } catch { }
-                        }
-
-                        return merged;
-                    }
+                    obj = token as JObject;
+                    if (obj == null) throw new InvalidDataException("config.json root must be a JSON object");
                 }
-            }
-            catch
-            {
-                // 若解析异常，安全备份损坏文件，避免直接被覆盖丢失
-                try
+
+                var serializer = JsonSerializer.Create(SerializerSettings);
+                var loaded = obj.ToObject<AppSettings>(serializer) ?? new AppSettings();
+                var merged = AppSettings.Merge(loaded);
+                var moduleConfigs = new Dictionary<string, JToken>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var prop in obj.Properties())
                 {
-                    if (File.Exists(FilePath))
+                    if (HostSettingNames.Contains(prop.Name)) continue;
+                    var val = prop.Value;
+                    if (val != null && val.Type == JTokenType.String)
                     {
-                        string corruptPath = Path.Combine(DirPath, $"config.corrupt-{DateTime.Now:yyyyMMddHHmmss}.json");
-                        File.Copy(FilePath, corruptPath, true);
+                        string str = val.Value<string>();
+                        if (!string.IsNullOrWhiteSpace(str) &&
+                            (str.TrimStart().StartsWith("{") || str.TrimStart().StartsWith("[")))
+                        {
+                            try { val = JToken.Parse(str); } catch { }
+                        }
                     }
+                    moduleConfigs[prop.Name] = val;
                 }
-                catch { }
+
+                // 到此才提交完整候选快照。
+                Current = merged;
+                _moduleConfigs.Clear();
+                foreach (var kvp in moduleConfigs) _moduleConfigs[kvp.Key] = kvp.Value;
+
+                bool migrated = MigrateLegacyConfigs(obj);
+                if (migrated)
+                {
+                    try { SaveCore(); } catch { }
+                }
+
+                _lastReadSucceeded = true;
+                return merged;
             }
-            return new AppSettings();
+            catch (Exception ex)
+            {
+                Current = previousCurrent ?? new AppSettings();
+                _moduleConfigs.Clear();
+                foreach (var kvp in previousModules) _moduleConfigs[kvp.Key] = kvp.Value;
+                _lastReadSucceeded = false;
+                LastLoadError = ex.Message;
+                LastLoadIoFailure = ex is IOException ||
+                    ex is UnauthorizedAccessException ||
+                    ex is System.Security.SecurityException;
+
+                // 只对确定的内容损坏做备份；短暂 I/O/共享冲突不应制造“损坏”副本。
+                if (ex is JsonException || ex is InvalidDataException || ex is FormatException)
+                {
+                    try
+                    {
+                        if (File.Exists(FilePath))
+                        {
+                            string corruptPath = Path.Combine(DirPath, $"config.corrupt-{DateTime.Now:yyyyMMddHHmmss}.json");
+                            File.Copy(FilePath, corruptPath, true);
+                        }
+                    }
+                    catch { }
+                }
+
+                return Current;
+            }
         }
 
         private readonly Dictionary<string, JToken> _moduleConfigs = new Dictionary<string, JToken>(StringComparer.OrdinalIgnoreCase);
@@ -269,6 +300,28 @@ namespace CarroDesk.Services
             lock (_ioLock)
             {
                 return _moduleConfigs.TryGetValue(moduleId, out var token) ? token : null;
+            }
+        }
+
+        /// <summary>在同一锁内完成模块 token 替换与全量落盘；失败恢复原 token 后继续抛出。</summary>
+        public void SaveModuleTokenAndSave(string moduleId, JToken token)
+        {
+            if (string.IsNullOrEmpty(moduleId)) throw new ArgumentNullException(nameof(moduleId));
+            lock (_ioLock)
+            {
+                JToken previous = null;
+                bool hadPrevious = _moduleConfigs.TryGetValue(moduleId, out previous) && previous != null;
+                _moduleConfigs[moduleId] = token;
+                try
+                {
+                    SaveCore();
+                }
+                catch
+                {
+                    if (hadPrevious) _moduleConfigs[moduleId] = previous;
+                    else _moduleConfigs[moduleId] = null;
+                    throw;
+                }
             }
         }
 

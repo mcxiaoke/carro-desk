@@ -132,7 +132,10 @@ namespace CarroDesk.Host.Services
             lock (_handlerLock) { idleHandlers = _idleTickHandlers; }
             if (idleHandlers != null)
             {
-                try { idleHandlers(raw); } catch { }
+                foreach (Action<TimeSpan> handler in idleHandlers.GetInvocationList())
+                {
+                    try { handler(raw); } catch { }
+                }
             }
 
             if (raw <= TimeSpan.FromMilliseconds(1500) && !wasActive)
@@ -141,7 +144,10 @@ namespace CarroDesk.Host.Services
                 lock (_handlerLock) { activeHandlers = _userActiveHandlers; }
                 if (activeHandlers != null)
                 {
-                    try { activeHandlers(); } catch { }
+                    foreach (Action handler in activeHandlers.GetInvocationList())
+                    {
+                        try { handler(); } catch { }
+                    }
                 }
             }
 
@@ -166,7 +172,10 @@ namespace CarroDesk.Host.Services
 
             if (handlers != null)
             {
-                try { handlers(busy); } catch { }
+                foreach (Action<bool> handler in handlers.GetInvocationList())
+                {
+                    try { handler(busy); } catch { }
+                }
             }
         }
 

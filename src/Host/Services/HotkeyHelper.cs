@@ -12,6 +12,12 @@ namespace CarroDesk.Services.Tasks
             int vk;
             if (!TryParse(hotkey, out mods, out vk, out error)) return false;
             if (vk == 0) { error = "no key"; return false; }
+            bool isFunctionKey = vk >= 0x70 && vk <= 0x87;
+            if (mods == 0 && !isFunctionKey)
+            {
+                error = "modifier required";
+                return false;
+            }
             return true;
         }
 
@@ -19,10 +25,10 @@ namespace CarroDesk.Services.Tasks
         {
             mods = 0; vk = 0; error = null;
             if (string.IsNullOrWhiteSpace(hotkey)) { error = "empty"; return false; }
-            // format: Ctrl+Alt+Shift+Win+Key  (case insensitive, + or - separator)
+            // format: Ctrl+Alt+Shift+Win+Key（“+”优先作为分隔符；无“+”时兼容“-”）
             string s = hotkey.Trim();
-            s = s.Replace("-", "+");
-            var parts = s.Split(new char[] { '+' }, StringSplitOptions.RemoveEmptyEntries);
+            char separator = s.IndexOf('+') >= 0 ? '+' : '-';
+            var parts = s.Split(new char[] { separator }, StringSplitOptions.RemoveEmptyEntries);
             if (parts.Length == 0) { error = "empty"; return false; }
             string keyPart = parts[parts.Length - 1].Trim();
             for (int i = 0; i < parts.Length - 1; i++)

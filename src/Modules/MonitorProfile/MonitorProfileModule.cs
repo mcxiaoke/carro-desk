@@ -73,11 +73,17 @@ namespace CarroDesk.Modules.MonitorProfile
             UpdateTrayHeaderAndTooltip();
         }
 
-        public void SaveAndApplyConfig(MonitorProfileConfig newConfig)
+        public bool SaveAndApplyConfig(MonitorProfileConfig newConfig)
         {
+            var previous = Config?.Clone();
             Config = newConfig ?? new MonitorProfileConfig();
-            SaveConfig();
+            if (!SaveConfig())
+            {
+                if (previous != null) Config = previous;
+                return false;
+            }
             OnConfigReloaded();
+            return true;
         }
 
         #region Global Hotkeys
