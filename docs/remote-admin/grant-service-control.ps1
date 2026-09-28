@@ -67,18 +67,36 @@ if ($rawSddl -match [regex]::Escape($AccountSid)) {
     exit 0
 }
 
-# ---------- 3. 在 D: 段末尾追加 ACE（只增不改，S: 段原样保留） ----------
+# ---------- 3. 在 D: 段末尾追加 ACE（只增不改，S:/G: 段原样保留） ----------
 # 权限字母：RP=启动 WP=停止 DT=暂停/继续 LC=查状态 CC=查配置 CR=用户自定义控制 RC=读控制
+#
+# ⚠️ SDDL 的 D: 段由多个独立括号组组成：D:(ACE1)(ACE2)(ACE3)，没有外层括号。
+# 插入点必须是「整个 D: 段的末尾」（下一个 S:/G: 段之前，或串尾），
+# 而不是 D: 后第一个右括号——插到第一条 ACE 内部会产生嵌套括号的非法 ACL
+# （ConvertStringSecurityDescriptorToSecurityDescriptor 报错 1336）。
 $ace = "(A;;CCLCSWRPWPDTLOCRRC;;;$AccountSid)"
-$daclStart = $rawSddl.IndexOf('D:(')
+$daclStart = $rawSddl.IndexOf('D:')
 if ($daclStart -lt 0) {
     # 极罕见：无 D: 段，整体重建
     $newSddl = "D:$ace" + $rawSddl
 } else {
-    $close = $rawSddl.IndexOf(')', $daclStart)
-    if ($close -lt 0) { Write-Error "SDDL 解析失败：D: 段无右括号"; exit 1 }
-    $newSddl = $rawSddl.Substring(0, $close) + $ace + $rawSddl.Substring($close)
+    # D: 段结束位置 = 下一个 G:/S: 段标记之前（SDDL 中唯一的冒号就是段标记）
+    $sectionEnd = $rawSddl.Length
+    foreach ($marker in @('G:', 'S:')) {
+        $idx = $rawSddl.IndexOf($marker, $daclStart + 2)
+        if ($idx -ge 0 -and $idx -lt $sectionEnd) { $sectionEnd = $idx }
+    }
+    $newSddl = $rawSddl.Substring(0, $sectionEnd) + $ace + $rawSddl.Substring($sectionEnd)
 }
+
+# 预检：交给 .NET 解析一次，非法 SDDL 在这里就报错，不去碰服务
+try {
+    New-Object System.Security.AccessControl.RawSecurityDescriptor -ArgumentList $newSddl | Out-Null
+} catch {
+    Write-Error "构造的 SDDL 无法通过 .NET 解析（未对服务做任何修改）: $newSddl`n$($_.Exception.Message)"
+    exit 1
+}
+Write-Host "[3/4] 新 SDDL: $newSddl"
 
 $sdset = & sc.exe sdset $ServiceName "$newSddl" 2>&1
 if ($LASTEXITCODE -ne 0) {
