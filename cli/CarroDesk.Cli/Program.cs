@@ -20,9 +20,9 @@ namespace CarroDesk.Cli
                 if (args != null && args.Length > 0
                     && string.Equals(args[0], "--mcp", StringComparison.OrdinalIgnoreCase))
                 {
-                    // S4 接线点：MCP stdio 模式
-                    Console.Error.WriteLine("mcp mode: not implemented yet (S4)");
-                    return 1;
+                    // S4：MCP stdio 瘦进程——stdout 只输出协议 JSON，日志走 stderr
+                    try { Console.OutputEncoding = System.Text.Encoding.UTF8; } catch { /* 重定向场景可能不支持 */ }
+                    return McpStdioServer.Run(Console.In, Console.Out, Console.Error, () => new PipeRpcClient());
                 }
 
                 ControlArgs parsed;

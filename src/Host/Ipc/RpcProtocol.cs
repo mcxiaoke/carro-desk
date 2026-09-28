@@ -10,20 +10,20 @@ using Newtonsoft.Json.Linq;
 namespace CarroDesk.Host.Ipc
 {
     /// <summary>
-    /// JSON-RPC 2.0 å½¢çŠ¶ä¸å‘½ä»¤å†…æ ¸ä¹‹é—´çš„æ˜ å°„ï¼ˆIPC è®¾è®¡ Â§5.2ï¼‰ã€‚æœ¬ç±»åªåšåè®®ç¿»è¯‘ï¼š
-    /// é‰´æƒã€ç™½åå•ã€å‚æ•°æ ¡éªŒå…¨éƒ¨åœ¨ CommandHostï¼Œä¼ è¾“å±‚ä¸å¾—å¤¹å¸¦ä¸šåŠ¡é€»è¾‘ã€‚
-    /// è¯·æ±‚å½¢çŠ¶ï¼š{"jsonrpc":"2.0","id":..,"method":"..","params":{..},"pin":"..","source":".."}
-    /// pin/source ä¸ºæœ¬åè®®æ‰©å±•å­—æ®µï¼špin æ”¯æ’‘ã€Œå£ä»¤å³ç¡®è®¤ã€ï¼ˆÂ§9.6ï¼‰ï¼Œç‹¬ç«‹äº paramsï¼Œ
-    /// å› æ­¤æ°¸ä¸è¿›å…¥å‚æ•°æ‘˜è¦ä¸å®¡è®¡ã€‚
+    /// JSON-RPC 2.0 ĞÎ×´ÓëÃüÁîÄÚºËÖ®¼äµÄÓ³Éä£¨IPC Éè¼Æ ¡ì5.2£©¡£±¾ÀàÖ»×öĞ­Òé·­Òë£º
+    /// ¼øÈ¨¡¢°×Ãûµ¥¡¢²ÎÊıĞ£ÑéÈ«²¿ÔÚ CommandHost£¬´«Êä²ã²»µÃ¼Ğ´øÒµÎñÂß¼­¡£
+    /// ÇëÇóĞÎ×´£º{"jsonrpc":"2.0","id":..,"method":"..","params":{..},"pin":"..","source":".."}
+    /// pin/source Îª±¾Ğ­ÒéÀ©Õ¹×Ö¶Î£ºpin Ö§³Å¡¸¿ÚÁî¼´È·ÈÏ¡¹£¨¡ì9.6£©£¬¶ÀÁ¢ÓÚ params£¬
+    /// Òò´ËÓÀ²»½øÈë²ÎÊıÕªÒªÓëÉó¼Æ¡£
     /// </summary>
     public static class RpcProtocol
     {
         public sealed class IncomingCall
         {
-            /// <summary>è¯·æ±‚ id åŸæ ·å›ä¼ ï¼ˆstring/number/bool/nullï¼‰ã€‚</summary>
+            /// <summary>ÇëÇó id Ô­Ñù»Ø´«£¨string/number/bool/null£©¡£</summary>
             public object Id;
             public CommandRequest Request;
-            /// <summary>true = å¸§ä¸æ˜¯åˆæ³• JSON-RPC è¯·æ±‚ï¼Œåº”ä»¥ -32700 å›åº”ã€‚</summary>
+            /// <summary>true = Ö¡²»ÊÇºÏ·¨ JSON-RPC ÇëÇó£¬Ó¦ÒÔ -32700 »ØÓ¦¡£</summary>
             public bool IsParseError;
         }
 
@@ -36,7 +36,7 @@ namespace CarroDesk.Host.Ipc
                 var obj = token as JObject;
                 if (obj == null) return ParseError(null);
 
-                if (obj["id"] != null) id = NormalizeScalar(obj["id"]);
+                if (obj["id"] != null) id = NormalizeValue(obj["id"]);
 
                 var method = (string)obj["method"];
                 if (string.IsNullOrWhiteSpace(method)) return ParseError(id);
@@ -83,11 +83,11 @@ namespace CarroDesk.Host.Ipc
             return Encoding.UTF8.GetBytes(response.ToString(Formatting.None));
         }
 
-        // ---------- å®¢æˆ·ç«¯ä¾§ï¼ˆS3ï¼šCLI / äºŒå®ä¾‹è½¬å‘ / MCP ç˜¦è¿›ç¨‹å…±ç”¨ï¼‰ ----------
+        // ---------- ¿Í»§¶Ë²à£¨S3£ºCLI / ¶şÊµÀı×ª·¢ / MCP Êİ½ø³Ì¹²ÓÃ£© ----------
 
         private static long _requestId;
 
-        /// <summary>æŠŠ CommandRequest ç¼–ç ä¸º JSON-RPC è¯·æ±‚å¸§ä½“ï¼ˆè‡ªå¢ idï¼Œpin/source ä¸ºæ‰©å±•å­—æ®µï¼‰ã€‚</summary>
+        /// <summary>°Ñ CommandRequest ±àÂëÎª JSON-RPC ÇëÇóÖ¡Ìå£¨×ÔÔö id£¬pin/source ÎªÀ©Õ¹×Ö¶Î£©¡£</summary>
         public static byte[] EncodeRequest(CommandRequest request)
         {
             if (request == null) throw new ArgumentNullException(nameof(request));
@@ -114,7 +114,7 @@ namespace CarroDesk.Host.Ipc
             return Encoding.UTF8.GetBytes(obj.ToString(Formatting.None));
         }
 
-        /// <summary>è§£æ JSON-RPC å“åº”å¸§ä½“ä¸º CommandResultã€‚è§£æå¤±è´¥æŠ˜å ä¸º -32700ï¼Œç»ä¸æŠ›å¼‚å¸¸ã€‚</summary>
+        /// <summary>½âÎö JSON-RPC ÏìÓ¦Ö¡ÌåÎª CommandResult¡£½âÎöÊ§°ÜÕÛµşÎª -32700£¬¾ø²»Å×Òì³£¡£</summary>
         public static CommandResult ParseResponse(byte[] payload, out object id)
         {
             id = null;
@@ -124,7 +124,7 @@ namespace CarroDesk.Host.Ipc
                 if (obj == null)
                     return CommandResult.Fail(CommandErrorCodes.ParseError, "response is not a JSON object");
 
-                if (obj["id"] != null) id = NormalizeScalar(obj["id"]);
+                if (obj["id"] != null) id = NormalizeValue(obj["id"]);
 
                 var error = obj["error"] as JObject;
                 if (error != null)
@@ -144,7 +144,7 @@ namespace CarroDesk.Host.Ipc
             }
         }
 
-        /// <summary>ç»“æœè´Ÿè½½çš„æ–‡æœ¬åŒ–ï¼šJToken åŸæ ·ï¼Œå…¶ä»–å¯¹è±¡ç» FromObjectã€‚ä¾› CLI/å·¥å…·è°ƒç”¨è¾“å‡ºã€‚</summary>
+        /// <summary>½á¹û¸ºÔØµÄÎÄ±¾»¯£ºJToken Ô­Ñù£¬ÆäËû¶ÔÏó¾­ FromObject¡£¹© CLI/¹¤¾ßµ÷ÓÃÊä³ö¡£</summary>
         public static string FormatPayload(object data, bool pretty)
         {
             if (data == null) return "null";
@@ -161,8 +161,8 @@ namespace CarroDesk.Host.Ipc
         }
 
         /// <summary>
-        /// æŠŠ JSON å¯¹è±¡å‚æ•°è§„æ•´ä¸ºã€ŒåŸå§‹ç±»å‹ã€å­—å…¸ï¼ˆbool/int/float/stringï¼›åµŒå¥—ç»“æ„é™çº§ä¸º JSON å­—ç¬¦ä¸²ï¼‰ã€‚
-        /// å®¢æˆ·ç«¯ä¾§ï¼ˆMCP å·¥å…·å‚æ•°ï¼‰ä¸æœåŠ¡ç«¯ä¾§å…±ç”¨åŒä¸€æ”¶æ•›è§„åˆ™ã€‚
+        /// °Ñ JSON ¶ÔÏó²ÎÊı¹æÕûÎª¡¸Ô­Ê¼ÀàĞÍ¡¹×Öµä£¨bool/int/float/string£»Ç¶Ì×½á¹¹½µ¼¶Îª JSON ×Ö·û´®£©¡£
+        /// ¿Í»§¶Ë²à£¨MCP ¹¤¾ß²ÎÊı£©Óë·şÎñ¶Ë²à¹²ÓÃÍ¬Ò»ÊÕÁ²¹æÔò¡£
         /// </summary>
         public static IDictionary<string, object> ExtractParams(JToken parameters)
         {
@@ -171,16 +171,16 @@ namespace CarroDesk.Host.Ipc
             if (obj == null) return dict;
             foreach (var prop in obj.Properties())
             {
-                dict[prop.Name] = NormalizeScalar(prop.Value);
+                dict[prop.Name] = NormalizeValue(prop.Value);
             }
             return dict;
         }
 
         /// <summary>
-        /// æ ‡é‡å–å€¼ï¼šbool/int/float/string åŸæ ·äº¤ç»™å†…æ ¸ï¼ˆå†…æ ¸è´Ÿè´£ int æ”¶æ•›ä¸æ‹’ç»ï¼‰ï¼›
-        /// åµŒå¥—ç»“æ„é™çº§ä¸º JSON å­—ç¬¦ä¸²ï¼Œäº¤ç”±å‚æ•°æ ¡éªŒæ‹’ç»æˆ–æŒ‰ string æ¶ˆè´¹ã€‚
+        /// ±êÁ¿È¡Öµ£ºbool/int/float/string Ô­Ñù½»¸øÄÚºË£¨ÄÚºË¸ºÔğ int ÊÕÁ²Óë¾Ü¾ø£©£»
+        /// Ç¶Ì×½á¹¹½µ¼¶Îª JSON ×Ö·û´®£¬½»ÓÉ²ÎÊıĞ£Ñé¾Ü¾ø»ò°´ string Ïû·Ñ¡£
         /// </summary>
-        private static object NormalizeScalar(JToken token)
+        public static object NormalizeValue(JToken token)
         {
             if (token == null || token.Type == JTokenType.Null) return null;
             switch (token.Type)

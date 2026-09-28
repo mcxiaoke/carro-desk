@@ -41,6 +41,7 @@
     <Compile Include="IpcPipeTests.cs" />
     <Compile Include="ControlArgsTests.cs" />
     <Compile Include="PipeRpcClientTests.cs" />
+    <Compile Include="McpStdioTests.cs" />
   </ItemGroup>
 
   <ItemGroup>
