@@ -108,7 +108,17 @@ namespace CarroDesk.Host.Ipc
                         ["name"] = ServerName,
                         ["version"] = HostVersion()
                     },
-                    ["instructions"] = "CarroDesk 本机控制。先 tools/list 获取能力；标注需口令的工具在 arguments 里传 pin。"
+                    ["instructions"] =
+                        "CarroDesk：Windows 本机工具集（锁屏/音频/唤醒/任务/服务）的 MCP 服务器。" +
+                        "唯一状态在宿主进程 CarroDesk.exe；宿主未运行时所有调用报 -32020。\n" +
+                        "工具清单经 tools/list 动态获取，随宿主升级自动变化，不要凭记忆猜工具名。\n" +
+                        "约定：\n" +
+                        "1) 需要口令的工具（描述里有标注）先向用户询问 PIN，放入 arguments.pin；" +
+                        "不要猜测或盲目重试——连错 5 次会触发口令封锁（-32002 blocked）。\n" +
+                        "2) services.* 只能操作已授权服务；被拒时提示用户检查 CarroDesk 配置的 " +
+                        "Services.AllowedServices，或以管理员运行 docs/remote-admin/grant-service-control.ps1。\n" +
+                        "3) 错误码：-32601 无此能力 / -32002 口令问题 / -32003 限流 / -32004 超时 / -32020 宿主未运行。\n" +
+                        "4) 本服务器不提供任意 shell 与文件访问；那类需求请用户走 SSH/远控通道。"
                 };
             }
 
