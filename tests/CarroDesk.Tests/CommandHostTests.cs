@@ -336,6 +336,16 @@ namespace CarroDesk.Tests
             var json = Newtonsoft.Json.JsonConvert.SerializeObject(entry);
             Assert.IsFalse(json.Contains("super-secret-value"), "参数原文不得落审计");
             Assert.IsFalse(json.Contains("1234"), "口令原文不得落审计");
+            Assert.IsTrue(entry.PinUsed, "携带口令的调用应记 PinUsed=true");
+        }
+
+        [TestMethod]
+        public void Invoke_WithoutPin_AuditsPinUsedFalse()
+        {
+            var audit = new MemoryAuditSink();
+            var host = BuildHost(r => r.Register("test", SimpleCommand()), audit: audit);
+            Assert.IsTrue(host.Invoke(CommandRequest.Create("test.echo")).Ok);
+            Assert.IsFalse(audit.Entries[0].PinUsed);
         }
 
         [TestMethod]

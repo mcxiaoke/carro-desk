@@ -18,6 +18,9 @@ namespace CarroDesk.Host.Commands
         public bool Ok { get; set; }
         public int Code { get; set; }
         public long ElapsedMs { get; set; }
+
+        /// <summary>调用是否携带了口令（只记有无，§9.5 按服务口令策略的审计线索；口令原文绝不落盘）。</summary>
+        public bool PinUsed { get; set; }
     }
 
     /// <summary>审计出口抽象：单测用内存实现，生产用 <see cref="FileCommandAuditSink"/>。</summary>

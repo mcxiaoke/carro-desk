@@ -16,9 +16,9 @@ namespace CarroDesk.Modules.ServiceControl
     /// 安全模型（双层）：
     ///  1. 允许清单（模块配置 AllowedServices）→ 参数枚举白名单，校验在内核；
     ///  2. 服务对象 DACL（一次性管理员授予）→ 真正的内核级边界，配置被篡改也拦得住。
-    /// start/stop 统一 RequiresPin（v1.2「口令即确认」，本机与远程一致）。
-    /// 无托盘 UI；能力清单在启动时收集，允许清单变更经配置重载生效
-    /// （App.ReloadConfig 会重建能力注册表）。
+    /// 口令策略按服务配置（requiresPin，缺省 true）：通过 RequiresPinFor 动态判定，
+    /// PinGuard 失败限流与审计照常生效（SERVICE-CONTROL-PLAN §2）。
+    /// 无托盘 UI；能力清单在启动时收集，配置重载时 App 重建注册表。
     /// </summary>
     public sealed class ServiceControlModule : ModuleBase<ServiceControlConfig>, ICommandProvider
     {
@@ -57,16 +57,36 @@ namespace CarroDesk.Modules.ServiceControl
             yield return BuildStop(allowed);
         }
 
-        private string[] GetAllowedServices()
+        private List<ServiceAllowlistEntry> GetAllowedServices()
         {
             var config = Config;
-            if (config == null || config.AllowedServices == null) return new string[0];
+            if (config == null || config.AllowedServices == null) return new List<ServiceAllowlistEntry>();
             return config.AllowedServices
-                .Where(s => !string.IsNullOrWhiteSpace(s))
-                .Select(s => s.Trim())
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
-                .ToArray();
+                .Where(e => e != null && !string.IsNullOrWhiteSpace(e.Name))
+                .GroupBy(e => e.Name.Trim(), StringComparer.OrdinalIgnoreCase)
+                .Select(g => new ServiceAllowlistEntry
+                {
+                    Name = g.Key,
+                    Desc = g.Select(e => e.Desc).FirstOrDefault(d => !string.IsNullOrWhiteSpace(d)),
+                    RequiresPin = g.First().RequiresPin
+                })
+                .OrderBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        private static ServiceAllowlistEntry FindEntry(List<ServiceAllowlistEntry> entries, string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return null;
+            return entries.FirstOrDefault(e => string.Equals(e.Name, name.Trim(), StringComparison.OrdinalIgnoreCase));
+        }
+
+        /// <summary>服务名（仅限授权清单）：GameViewerService=UUYC 远程控制；…（desc 流入工具 schema，供 AI 映射自然语言）</summary>
+        private static string BuildNameParamDescription(List<ServiceAllowlistEntry> entries)
+        {
+            var withDesc = entries.Where(e => !string.IsNullOrWhiteSpace(e.Desc)).ToList();
+            if (withDesc.Count == 0)
+                return "服务名（仅限已授权清单）";
+            return "服务名（仅限已授权清单）：" + string.Join("；", withDesc.Select(e => e.Name + "=" + e.Desc));
         }
 
         private static CommandResult Success(object data)
@@ -79,158 +99,181 @@ namespace CarroDesk.Modules.ServiceControl
             return CommandResult.Fail(code, message);
         }
 
-        private CommandDescriptor BuildStatus(string[] allowed)
+        private CommandDescriptor BuildStatus(List<ServiceAllowlistEntry> allowed)
         {
             return new CommandDescriptor
             {
                 Name = "services.status",
-                Summary = allowed.Length == 0
-                    ? "查询授权服务的状态（当前允许清单为空，先配置 Services.AllowedServices）"
-                    : "查询服务的状态：不带参数列出全部授权服务，带 name 查单个",
+                Summary = allowed.Count == 0
+                    ? "查询授权服务的状态（当前允许清单为空，先在 config.json 配置 Services.AllowedServices）"
+                    : "查询服务的状态：不带参数列出全部授权服务（含 desc 与口令策略），带 name 查单个",
                 Risk = CommandRisk.ReadOnly,
                 Params = new[]
                 {
                     new CommandParam
                     {
                         Name = "name", Type = "string", Required = false,
-                        AllowedValues = allowed, Description = "服务名（可选）"
+                        AllowedValues = allowed.Select(e => e.Name).ToArray(),
+                        Description = BuildNameParamDescription(allowed)
                     }
                 },
                 Handler = r => StatusHandler(r, allowed)
             };
         }
 
-        private CommandDescriptor BuildStart(string[] allowed)
+        private CommandDescriptor BuildStart(List<ServiceAllowlistEntry> allowed)
         {
             return new CommandDescriptor
             {
                 Name = "services.start",
                 Summary = "启动一个已授权的 Windows 服务",
                 Risk = CommandRisk.Privileged,
-                RequiresPin = true,
+                RequiresPin = false,
+                RequiresPinFor = r => PinPolicyFor(r, allowed),
                 TimeoutMs = 30000,
                 Params = new[]
                 {
                     new CommandParam
                     {
                         Name = "name", Type = "string", Required = true,
-                        AllowedValues = allowed, Description = "服务名（仅限已授权清单）"
+                        AllowedValues = allowed.Select(e => e.Name).ToArray(),
+                        Description = BuildNameParamDescription(allowed)
                     }
                 },
-                Handler = r => StartHandler(r)
+                Handler = r => StartHandler(r, allowed)
             };
         }
 
-        private CommandDescriptor BuildStop(string[] allowed)
+        private CommandDescriptor BuildStop(List<ServiceAllowlistEntry> allowed)
         {
             return new CommandDescriptor
             {
                 Name = "services.stop",
                 Summary = "停止一个已授权的 Windows 服务",
                 Risk = CommandRisk.Privileged,
-                RequiresPin = true,
+                RequiresPin = false,
+                RequiresPinFor = r => PinPolicyFor(r, allowed),
                 TimeoutMs = 30000,
                 Params = new[]
                 {
                     new CommandParam
                     {
                         Name = "name", Type = "string", Required = true,
-                        AllowedValues = allowed, Description = "服务名（仅限已授权清单）"
+                        AllowedValues = allowed.Select(e => e.Name).ToArray(),
+                        Description = BuildNameParamDescription(allowed)
                     }
                 },
-                Handler = r => StopHandler(r)
+                Handler = r => StopHandler(r, allowed)
             };
         }
 
-        private CommandResult StatusHandler(CommandRequest request, string[] allowed)
+        /// <summary>按服务口令策略：查得到条目用其 requiresPin，查不到（fail-safe）一律要求口令。</summary>
+        private static bool PinPolicyFor(CommandRequest request, List<ServiceAllowlistEntry> allowed)
         {
-            object nameValue = null;
-            var hasName = request.Params != null && request.Params.TryGetValue("name", out nameValue) && nameValue != null;
-            if (hasName)
+            var entry = FindEntry(allowed, GetRequestedName(request));
+            return entry == null || entry.RequiresPin;
+        }
+
+        private static string GetRequestedName(CommandRequest request)
+        {
+            object value;
+            if (request != null && request.Params != null && request.Params.TryGetValue("name", out value) && value != null)
             {
-                var name = Convert.ToString(nameValue);
-                if (!IsAllowed(name, allowed))
-                    return Fail(CommandErrorCodes.InvalidParams, NotAllowedMessage(name, allowed));
-                return Success(new { name, status = DescribeStatus(_adapter.GetStatus(name)) });
+                return Convert.ToString(value);
+            }
+            return null;
+        }
+
+        private CommandResult StatusHandler(CommandRequest request, List<ServiceAllowlistEntry> allowed)
+        {
+            var requestedName = GetRequestedName(request);
+            if (requestedName != null)
+            {
+                var entry = FindEntry(allowed, requestedName);
+                if (entry == null)
+                    return Fail(CommandErrorCodes.InvalidParams, NotAllowedMessage(requestedName, allowed));
+                return Success(new
+                {
+                    name = entry.Name,
+                    desc = entry.Desc,
+                    requiresPin = entry.RequiresPin,
+                    status = DescribeStatus(_adapter.GetStatus(entry.Name))
+                });
             }
 
-            var items = allowed.Select(name => new
+            var items = allowed.Select(e => new
             {
-                name,
-                status = DescribeStatus(_adapter.GetStatus(name))
+                name = e.Name,
+                desc = e.Desc,
+                requiresPin = e.RequiresPin,
+                status = DescribeStatus(_adapter.GetStatus(e.Name))
             }).ToList();
-            return Success(new { allowlist = allowed, services = items });
+            return Success(new { allowlist = allowed.Select(e => e.Name).ToList(), services = items });
         }
 
-        private CommandResult StartHandler(CommandRequest request)
+        private CommandResult StartHandler(CommandRequest request, List<ServiceAllowlistEntry> allowed)
         {
-            var name = Convert.ToString(request.Params["name"]);
-            var allowed = GetAllowedServices();
-            if (!IsAllowed(name, allowed))
+            var name = GetRequestedName(request);
+            var entry = FindEntry(allowed, name);
+            if (entry == null)
                 return Fail(CommandErrorCodes.InvalidParams, NotAllowedMessage(name, allowed));
 
             try
             {
-                var status = _adapter.Start(name, TimeSpan.FromSeconds(DefaultOperationTimeoutSeconds));
-                return Success(new { name, status = status.ToString(), action = "start" });
+                var status = _adapter.Start(entry.Name, TimeSpan.FromSeconds(DefaultOperationTimeoutSeconds));
+                return Success(new { name = entry.Name, status = status.ToString(), action = "start" });
             }
             catch (System.ServiceProcess.TimeoutException ex)
             {
-                return Fail(CommandErrorCodes.Timeout, "timeout starting '" + name + "': " + ex.Message);
+                return Fail(CommandErrorCodes.Timeout, "timeout starting '" + entry.Name + "': " + ex.Message);
             }
             catch (InvalidOperationException ex)
             {
                 if (IsAccessDenied(ex))
                     return Fail(CommandErrorCodes.Internal,
-                        "access denied for '" + name + "': grant control via docs/remote-admin/grant-service-control.ps1 (IPC §11.2)");
-                return Fail(CommandErrorCodes.InvalidParams, "service '" + name + "' unavailable: " + ex.Message);
+                        "access denied for '" + entry.Name + "': grant control via docs/remote-admin/grant-service-control.ps1 (IPC §11.2)");
+                return Fail(CommandErrorCodes.InvalidParams, "service '" + entry.Name + "' unavailable: " + ex.Message);
             }
             catch (Exception ex)
             {
-                return Fail(CommandErrorCodes.Internal, "start failed for '" + name + "': " + ex.Message);
+                return Fail(CommandErrorCodes.Internal, "start failed for '" + entry.Name + "': " + ex.Message);
             }
         }
 
-        private CommandResult StopHandler(CommandRequest request)
+        private CommandResult StopHandler(CommandRequest request, List<ServiceAllowlistEntry> allowed)
         {
-            var name = Convert.ToString(request.Params["name"]);
-            var allowed = GetAllowedServices();
-            if (!IsAllowed(name, allowed))
+            var name = GetRequestedName(request);
+            var entry = FindEntry(allowed, name);
+            if (entry == null)
                 return Fail(CommandErrorCodes.InvalidParams, NotAllowedMessage(name, allowed));
 
             try
             {
-                var status = _adapter.Stop(name, TimeSpan.FromSeconds(DefaultOperationTimeoutSeconds));
-                return Success(new { name, status = status.ToString(), action = "stop" });
+                var status = _adapter.Stop(entry.Name, TimeSpan.FromSeconds(DefaultOperationTimeoutSeconds));
+                return Success(new { name = entry.Name, status = status.ToString(), action = "stop" });
             }
             catch (System.ServiceProcess.TimeoutException ex)
             {
-                return Fail(CommandErrorCodes.Timeout, "timeout stopping '" + name + "': " + ex.Message);
+                return Fail(CommandErrorCodes.Timeout, "timeout stopping '" + entry.Name + "': " + ex.Message);
             }
             catch (InvalidOperationException ex)
             {
                 if (IsAccessDenied(ex))
                     return Fail(CommandErrorCodes.Internal,
-                        "access denied for '" + name + "': grant control via docs/remote-admin/grant-service-control.ps1 (IPC §11.2)");
-                return Fail(CommandErrorCodes.InvalidParams, "service '" + name + "' unavailable: " + ex.Message);
+                        "access denied for '" + entry.Name + "': grant control via docs/remote-admin/grant-service-control.ps1 (IPC §11.2)");
+                return Fail(CommandErrorCodes.InvalidParams, "service '" + entry.Name + "' unavailable: " + ex.Message);
             }
             catch (Exception ex)
             {
-                return Fail(CommandErrorCodes.Internal, "stop failed for '" + name + "': " + ex.Message);
+                return Fail(CommandErrorCodes.Internal, "stop failed for '" + entry.Name + "': " + ex.Message);
             }
         }
 
-        private static bool IsAllowed(string name, string[] allowed)
+        private static string NotAllowedMessage(string name, List<ServiceAllowlistEntry> allowed)
         {
-            return !string.IsNullOrWhiteSpace(name)
-                && Array.IndexOf(allowed, name.Trim()) >= 0;
-        }
-
-        private static string NotAllowedMessage(string name, string[] allowed)
-        {
-            return allowed.Length == 0
-                ? "services allowlist is empty; configure Services.AllowedServices first"
-                : "service '" + name + "' is not in the allowlist: " + string.Join(", ", allowed);
+            return allowed.Count == 0
+                ? "services allowlist is empty; configure Services.AllowedServices in config.json first"
+                : "service '" + name + "' is not in the allowlist: " + string.Join(", ", allowed.Select(e => e.Name));
         }
 
         private static string DescribeStatus(ServiceControllerStatus? status)

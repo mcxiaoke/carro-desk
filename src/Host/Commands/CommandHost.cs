@@ -69,7 +69,8 @@ namespace CarroDesk.Host.Commands
                 ParamsDigest = FileCommandAuditSink.DigestParams(request != null ? request.Params : null),
                 Ok = result.Ok,
                 Code = result.Ok ? 0 : (result.Error != null ? result.Error.Code : CommandErrorCodes.Internal),
-                ElapsedMs = sw.ElapsedMilliseconds
+                ElapsedMs = sw.ElapsedMilliseconds,
+                PinUsed = request != null && !string.IsNullOrEmpty(request.Pin)
             });
             return result;
         }
@@ -99,7 +100,7 @@ namespace CarroDesk.Host.Commands
             var validation = ValidateParams(descriptor, request, out effective);
             if (!validation.Ok) return validation;
 
-            if (descriptor.RequiresPin)
+            if (descriptor.RequiresPinFor != null ? descriptor.RequiresPinFor(effective) : descriptor.RequiresPin)
             {
                 if (_pinGuard == null)
                     return Fail(CommandErrorCodes.PinRequired, "pin required");

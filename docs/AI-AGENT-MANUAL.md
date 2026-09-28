@@ -9,9 +9,10 @@
 
 ```text
 你通过 CarroDesk MCP 服务器控制一台 Windows 工作机。工具清单用 tools/list 获取，
-参数以 schema 为准，不要凭记忆猜。涉及口令（pin）的工具：先问用户要 6 位口令再调用，
-绝不猜测、最多重试一次（连错 5 次触发封锁）。services.* 只能操作已授权服务；
-宿主 CarroDesk.exe 未运行时所有调用报 -32020，提示用户先启动 CarroDesk。
+参数以 schema 为准，不要凭记忆猜。需要更详细的用法时调用 host.guide 获取完整手册。
+涉及口令（pin）的工具：先看 schema 描述确认该服务是否需要口令，需要时问用户要 6 位
+口令再调用，绝不猜测、最多重试一次（连错 5 次触发封锁）。services.* 只能操作授权
+清单内的服务；宿主 CarroDesk.exe 未运行时所有调用报 -32020，提示用户先启动 CarroDesk。
 本机没有任意 shell 能力；系统性管理需求让用户走 SSH/远控。
 ```
 
@@ -54,19 +55,42 @@
 
 工具清单来自宿主的能力注册表（`host.capabilities.list`），**随 CarroDesk 升级自动增长**，本手册不逐一维护调用细节——以 schema 为准。
 
-## 4. 当前能力清单（2026-09-28，7 项）
+## 4. 当前能力清单（2026-09-28，8 项）
 
 | 工具 | 风险 | 口令 | 说明 |
 |---|---|---|---|
 | `host.hello` | 只读 | — | 握手：协议版本、宿主版本、能力表哈希 |
-| `host.status` | 只读 | — | 版本、进程、运行时长、各模块状态 |
-| `host.modules.list` | 只读 | — | 模块清单与运行状态 |
+| `host.guide` | 只读 | — | 读取本手册全文（Markdown），详细用法/约定/边界都在里面 |
+| `host.status` | 只读 | — | 版本、进程、运行时长、各模块状态（首项为 host 伪模块） |
+| `host.modules.list` | 只读 | — | 模块清单（含每模块 capabilityCount，0=分批开放中） |
 | `host.capabilities.list` | 只读 | — | 完整能力表 + 参数 schema |
-| `services.status` | 只读 | — | 查询授权服务的状态（不带参数=列全部） |
-| `services.start` | 特权 | **需要** | 启动已授权服务（`name` 限授权清单） |
-| `services.stop` | 特权 | **需要** | 停止已授权服务（`name` 限授权清单） |
+| `services.status` | 只读 | — | 查询授权服务（含 desc 与各自的口令策略） |
+| `services.start` | 特权 | **按服务** | 启动已授权服务；`name` 参数描述里带 服务名=描述 映射 |
+| `services.stop` | 特权 | **按服务** | 停止已授权服务；同上 |
 
-后续模块（锁屏/音频/唤醒/任务等）按同一机制陆续开放，`tools/list` 会自动多出来。
+## 4.1 按服务口令策略（services.*）
+
+每个服务的 `requiresPin` 由用户在 config.json 的 `Services.AllowedServices` 逐个配置（缺省 `true`）：
+
+- `requiresPin: false` 的服务（如高频无害的 GameViewerService）**不需要 pin，直接调用**
+- `requiresPin: true` 的服务（如 TermService——停它会断 RDP 会话）必须带 `pin`
+- 拿不准时看 `services.status` 返回的 `requiresPin` 字段，或 `name` 参数描述
+- 口令连错 5 次触发封锁（-32002 blocked），所以**先问用户、别硬试**
+
+配置示例（config.json 根级，用户维护）：
+
+```json
+"Services": {
+  "AllowedServices": [
+    { "name": "GameViewerService", "desc": "UUYC 远程控制（GameViewer）", "requiresPin": false },
+    { "name": "TermService", "desc": "Remote Desktop Services（RDP 远程桌面）", "requiresPin": true }
+  ]
+}
+```
+
+## 4.2 host 伪模块
+
+`host.modules.list` 与 `host.status` 的模块清单首项是 `id: "host"`（`isHost: true`）——宿主自身，承载 host.* 五个能力。真实模块的 `capabilityCount: 0` 表示该模块还没开放能力（分批开放中），不是故障。
 
 ## 5. 口令（PIN）约定 —— AI 必读
 

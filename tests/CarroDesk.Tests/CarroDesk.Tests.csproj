@@ -43,6 +43,7 @@
     <Compile Include="PipeRpcClientTests.cs" />
     <Compile Include="McpStdioTests.cs" />
     <Compile Include="ServiceControlModuleTests.cs" />
+    <Compile Include="HostCommandsTests.cs" />
   </ItemGroup>
 
   <ItemGroup>

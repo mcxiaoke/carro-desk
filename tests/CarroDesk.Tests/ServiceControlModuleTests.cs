@@ -9,11 +9,13 @@ using CarroDesk.Host.Services;
 using CarroDesk.Modules.ServiceControl;
 using CarroDesk.Services;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Newtonsoft.Json;
 
 namespace CarroDesk.Tests
 {
     /// <summary>
-    /// S6 验收（IPC 设计 §9.5/§11.2）：services.* 能力——允许清单、口令门、
+    /// S6 + 按服务口令策略验收（IPC 设计 §9.5/§11.2、SERVICE-CONTROL-PLAN §1/§2）：
+    /// 允许清单对象 schema（含旧字符串兼容）、desc 流入参数描述、按服务 PIN 两态、
     /// 异常翻译（拒绝访问/超时/服务不存在）、状态查询。
     /// </summary>
     [TestClass]
@@ -70,19 +72,21 @@ namespace CarroDesk.Tests
             }
         }
 
-        private static ServiceControlModule CreateModule(out FakeServiceAdapter adapter, params string[] allowlist)
+        private static ServiceControlModule CreateModule(out FakeServiceAdapter adapter, params ServiceAllowlistEntry[] allowlist)
         {
             adapter = new FakeServiceAdapter();
             var module = new ServiceControlModule(adapter);
             // ModuleBase.Config 默认以空配置保底（无需 Initialize），直接填允许清单
-            foreach (var name in allowlist)
-            {
-                module.Config.AllowedServices.Add(name);
-            }
+            module.Config.AllowedServices.AddRange(allowlist);
             return module;
         }
 
-        private static CommandHost BuildHost(ServiceControlModule module)
+        private static ServiceAllowlistEntry Entry(string name, string desc = null, bool requiresPin = true)
+        {
+            return new ServiceAllowlistEntry { Name = name, Desc = desc, RequiresPin = requiresPin };
+        }
+
+        private static CommandHost BuildHost(ServiceControlModule module, ICommandAuditSink audit = null)
         {
             var registry = new CommandRegistry();
             foreach (var command in module.GetCommands())
@@ -93,14 +97,24 @@ namespace CarroDesk.Tests
                 registry,
                 id => ModuleStatus.Running,
                 new PinGuard(new FakePinService()),
-                new NullCommandAuditSink());
+                audit ?? new NullCommandAuditSink());
+        }
+
+        private static CommandRequest Call(string method, string serviceName, string pin = null)
+        {
+            var request = CommandRequest.Create(method);
+            request.Params["name"] = serviceName;
+            request.Pin = pin;
+            return request;
         }
 
         [TestMethod]
-        public void GetCommands_DescriptorsAndEnums()
+        public void GetCommands_DescriptorsEnumsAndDescFlow()
         {
             FakeServiceAdapter adapter;
-            var module = CreateModule(out adapter, "AlphaSvc", "BetaSvc");
+            var module = CreateModule(out adapter,
+                Entry("GameViewerService", "UUYC 远程控制", requiresPin: false),
+                Entry("TermService", "RDP 远程桌面"));
 
             var commands = new List<CommandDescriptor>(module.GetCommands());
             CollectionAssert.AreEquivalent(
@@ -108,48 +122,60 @@ namespace CarroDesk.Tests
                 new[] { commands[0].Name, commands[1].Name, commands[2].Name });
 
             Assert.AreEqual(CommandRisk.ReadOnly, commands[0].Risk);
-            Assert.IsFalse(commands[0].RequiresPin);
             Assert.AreEqual(CommandRisk.Privileged, commands[1].Risk);
-            Assert.IsTrue(commands[1].RequiresPin);
             Assert.AreEqual(CommandRisk.Privileged, commands[2].Risk);
-            Assert.IsTrue(commands[2].RequiresPin);
 
             foreach (var command in commands)
             {
                 var nameParam = command.Params[0];
-                CollectionAssert.AreEquivalent(new[] { "AlphaSvc", "BetaSvc" }, nameParam.AllowedValues);
+                CollectionAssert.AreEquivalent(new[] { "GameViewerService", "TermService" }, nameParam.AllowedValues);
+                // desc 流入参数描述：AI 能把「开 UU远程」映射到 GameViewerService
+                StringAssert.Contains(nameParam.Description, "GameViewerService=UUYC 远程控制");
+                StringAssert.Contains(nameParam.Description, "TermService=RDP 远程桌面");
             }
+
+            // 静态 RequiresPin 关闭（改由 RequiresPinFor 按服务判定），timeoutMs 为任务级 30s
+            Assert.IsFalse(commands[1].RequiresPin);
+            Assert.IsNotNull(commands[1].RequiresPinFor);
+            Assert.AreEqual(30000, commands[1].TimeoutMs);
         }
 
         [TestMethod]
-        public void Invoke_Start_RequiresPin_AndCallsAdapter()
+        public void Invoke_PerServicePinPolicy_FreeWithoutPin_RequiredWithPin()
         {
             FakeServiceAdapter adapter;
-            var module = CreateModule(out adapter, "AlphaSvc");
+            var module = CreateModule(out adapter,
+                Entry("GameViewerService", requiresPin: false),
+                Entry("TermService", requiresPin: true));
             var host = BuildHost(module);
 
-            var noPin = CommandRequest.Create("services.start");
-            noPin.Params["name"] = "AlphaSvc";
-            Assert.AreEqual(CommandErrorCodes.PinRequired, host.Invoke(noPin).Error.Code);
-
-            var withPin = CommandRequest.Create("services.start");
-            withPin.Params["name"] = "AlphaSvc";
-            withPin.Pin = "1234";
-            var result = host.Invoke(withPin);
-            Assert.IsTrue(result.Ok, result.Error != null ? result.Error.Message : "");
+            // 免 PIN 服务：不带口令直接成功
+            var free = host.Invoke(Call("services.start", "GameViewerService"));
+            Assert.IsTrue(free.Ok, free.Error != null ? free.Error.Message : "");
             Assert.AreEqual(1, adapter.StartCalls);
+
+            // 要求口令的服务：缺口令拒绝；对口令成功
+            var noPin = host.Invoke(Call("services.start", "TermService"));
+            Assert.AreEqual(CommandErrorCodes.PinRequired, noPin.Error.Code);
+
+            var withPin = host.Invoke(Call("services.start", "TermService", "1234"));
+            Assert.IsTrue(withPin.Ok, withPin.Error != null ? withPin.Error.Message : "");
+            Assert.AreEqual(2, adapter.StartCalls);
+
+            // stop 同样按策略
+            Assert.AreEqual(CommandErrorCodes.PinRequired,
+                host.Invoke(Call("services.stop", "TermService")).Error.Code);
+            Assert.IsTrue(host.Invoke(Call("services.stop", "GameViewerService")).Ok);
         }
 
         [TestMethod]
         public void Invoke_NotInAllowlist_Rejected()
         {
             FakeServiceAdapter adapter;
-            var module = CreateModule(out adapter, "AlphaSvc");
+            var module = CreateModule(out adapter, Entry("AlphaSvc"));
             var host = BuildHost(module);
 
-            var request = CommandRequest.Create("services.start");
-            request.Params["name"] = "EvilSvc";
-            request.Pin = "1234";
+            var request = Call("services.start", "EvilSvc", "1234");
             var result = host.Invoke(request);
 
             Assert.IsFalse(result.Ok);
@@ -158,27 +184,12 @@ namespace CarroDesk.Tests
         }
 
         [TestMethod]
-        public void Invoke_Stop_HappyPath()
+        public void Invoke_Status_ListsAllowlistWithDescAndPinPolicy()
         {
             FakeServiceAdapter adapter;
-            var module = CreateModule(out adapter, "AlphaSvc");
-            adapter.Services["AlphaSvc"] = ServiceControllerStatus.Running;
-            var host = BuildHost(module);
-
-            var request = CommandRequest.Create("services.stop");
-            request.Params["name"] = "AlphaSvc";
-            request.Pin = "1234";
-            var result = host.Invoke(request);
-
-            Assert.IsTrue(result.Ok, result.Error != null ? result.Error.Message : "");
-            Assert.AreEqual(1, adapter.StopCalls);
-        }
-
-        [TestMethod]
-        public void Invoke_Status_ListsAllowlist_AndSingleLookup()
-        {
-            FakeServiceAdapter adapter;
-            var module = CreateModule(out adapter, "AlphaSvc", "GhostSvc");
+            var module = CreateModule(out adapter,
+                Entry("AlphaSvc", "测试服务", requiresPin: false),
+                Entry("GhostSvc"));
             adapter.Services["AlphaSvc"] = ServiceControllerStatus.Running;
             var host = BuildHost(module);
 
@@ -186,10 +197,12 @@ namespace CarroDesk.Tests
             Assert.IsTrue(all.Ok);
             var payload = Newtonsoft.Json.Linq.JToken.FromObject(all.Data);
             Assert.AreEqual("Running", (string)payload["services"][0]["status"]);
+            Assert.AreEqual("测试服务", (string)payload["services"][0]["desc"]);
+            Assert.AreEqual(false, (bool)payload["services"][0]["requiresPin"]);
+            Assert.AreEqual(true, (bool)payload["services"][1]["requiresPin"]);
             Assert.AreEqual("NotFound", (string)payload["services"][1]["status"]);
 
-            var single = CommandRequest.Create("services.status");
-            single.Params["name"] = "AlphaSvc";
+            var single = Call("services.status", "AlphaSvc");
             var one = host.Invoke(single);
             Assert.AreEqual("Running",
                 (string)Newtonsoft.Json.Linq.JToken.FromObject(one.Data)["status"]);
@@ -199,16 +212,13 @@ namespace CarroDesk.Tests
         public void Invoke_AccessDenied_MapsToInternalWithGrantHint()
         {
             FakeServiceAdapter adapter;
-            var module = CreateModule(out adapter, "AlphaSvc");
+            var module = CreateModule(out adapter, Entry("AlphaSvc"));
             adapter.OnStart = _ => new InvalidOperationException(
                 "Cannot open AlphaSvc service on computer '.'.",
                 new Win32Exception(5, "Access is denied"));
             var host = BuildHost(module);
 
-            var request = CommandRequest.Create("services.start");
-            request.Params["name"] = "AlphaSvc";
-            request.Pin = "1234";
-            var result = host.Invoke(request);
+            var result = host.Invoke(Call("services.start", "AlphaSvc", "1234"));
 
             Assert.IsFalse(result.Ok);
             Assert.AreEqual(CommandErrorCodes.Internal, result.Error.Code);
@@ -219,14 +229,11 @@ namespace CarroDesk.Tests
         public void Invoke_ServiceNotFound_MapsToInvalidParams()
         {
             FakeServiceAdapter adapter;
-            var module = CreateModule(out adapter, "AlphaSvc");
+            var module = CreateModule(out adapter, Entry("AlphaSvc"));
             adapter.OnStart = _ => new InvalidOperationException("service does not exist");
             var host = BuildHost(module);
 
-            var request = CommandRequest.Create("services.start");
-            request.Params["name"] = "AlphaSvc";
-            request.Pin = "1234";
-            var result = host.Invoke(request);
+            var result = host.Invoke(Call("services.start", "AlphaSvc", "1234"));
 
             Assert.IsFalse(result.Ok);
             Assert.AreEqual(CommandErrorCodes.InvalidParams, result.Error.Code);
@@ -236,14 +243,11 @@ namespace CarroDesk.Tests
         public void Invoke_StartTimeout_MapsToTimeout()
         {
             FakeServiceAdapter adapter;
-            var module = CreateModule(out adapter, "AlphaSvc");
+            var module = CreateModule(out adapter, Entry("AlphaSvc"));
             adapter.OnStart = _ => new System.ServiceProcess.TimeoutException("time out");
             var host = BuildHost(module);
 
-            var request = CommandRequest.Create("services.start");
-            request.Params["name"] = "AlphaSvc";
-            request.Pin = "1234";
-            var result = host.Invoke(request);
+            var result = host.Invoke(Call("services.start", "AlphaSvc", "1234"));
 
             Assert.IsFalse(result.Ok);
             Assert.AreEqual(CommandErrorCodes.Timeout, result.Error.Code);
@@ -254,7 +258,7 @@ namespace CarroDesk.Tests
         {
             var manager = new ModuleManager();
             FakeServiceAdapter adapter;
-            var module = CreateModule(out adapter, "AlphaSvc");
+            var module = CreateModule(out adapter, Entry("AlphaSvc"));
             manager.RegisterModule(module);
             manager.InitializeAll(new ServiceContainer());
             manager.StartAll();
@@ -262,6 +266,72 @@ namespace CarroDesk.Tests
             var collected = manager.CollectCommands();
             Assert.IsTrue(collected.Exists(p => p.Value.Name == "services.start"));
             Assert.IsTrue(collected.TrueForAll(p => p.Key == "Services"));
+        }
+
+        // ---------- 配置 schema 兼容（SERVICE-CONTROL-PLAN §1.1） ----------
+
+        [TestMethod]
+        public void Config_ObjectEntries_And_LegacyStringEntries_BothParse()
+        {
+            const string json = "{\"AllowedServices\":[" +
+                                "{\"name\":\"GameViewerService\",\"desc\":\"UUYC 远程控制\",\"requiresPin\":false}," +
+                                "\"TermService\"," +
+                                "{\"name\":\"Spooler\",\"pin\":false}," +
+                                "{\"name\":\"NoPinField\"}" +
+                                "]}";
+            var config = JsonConvert.DeserializeObject<ServiceControlConfig>(json);
+
+            Assert.AreEqual(4, config.AllowedServices.Count);
+
+            var game = config.AllowedServices[0];
+            Assert.AreEqual("GameViewerService", game.Name);
+            Assert.AreEqual("UUYC 远程控制", game.Desc);
+            Assert.IsFalse(game.RequiresPin);
+
+            // 旧字符串写法 → desc 空、requiresPin=true
+            var term = config.AllowedServices[1];
+            Assert.AreEqual("TermService", term.Name);
+            Assert.IsNull(term.Desc);
+            Assert.IsTrue(term.RequiresPin);
+
+            // pin 别名
+            Assert.IsFalse(config.AllowedServices[2].RequiresPin);
+
+            // 缺省 → fail-safe true
+            Assert.IsTrue(config.AllowedServices[3].RequiresPin);
+        }
+
+        [TestMethod]
+        public void Config_RoundTrip_WritesObjectForm()
+        {
+            var config = new ServiceControlConfig();
+            config.AllowedServices.Add(new ServiceAllowlistEntry { Name = "GameViewerService", Desc = "UUYC", RequiresPin = false });
+
+            var json = JsonConvert.SerializeObject(config);
+            var roundTripped = JsonConvert.DeserializeObject<ServiceControlConfig>(json);
+
+            Assert.AreEqual("GameViewerService", roundTripped.AllowedServices[0].Name);
+            Assert.AreEqual("UUYC", roundTripped.AllowedServices[0].Desc);
+            Assert.IsFalse(roundTripped.AllowedServices[0].RequiresPin);
+        }
+
+        [TestMethod]
+        public void Config_DuplicateNames_AreDeduplicatedKeepingFirstPin()
+        {
+            FakeServiceAdapter adapter;
+            var module = CreateModule(out adapter,
+                Entry("AlphaSvc", "第一个", requiresPin: false),
+                Entry("ALPHASVC", "第二个", requiresPin: true));
+
+            var host = BuildHost(module);
+            // 去重保留首个条目的策略（requiresPin=false）→ 无口令可启
+            var result = host.Invoke(Call("services.start", "AlphaSvc"));
+            Assert.IsTrue(result.Ok, result.Error != null ? result.Error.Message : "");
+
+            var status = host.Invoke(CommandRequest.Create("services.status"));
+            var payload = Newtonsoft.Json.Linq.JToken.FromObject(status.Data);
+            Assert.AreEqual(1, ((Newtonsoft.Json.Linq.JArray)payload["services"]).Count);
+            Assert.AreEqual("第一个", (string)payload["services"][0]["desc"]);
         }
     }
 }

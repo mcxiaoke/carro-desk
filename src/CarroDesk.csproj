@@ -35,6 +35,11 @@
     </None>
   </ItemGroup>
 
+  <!-- AI 助手手册：嵌入主程序，经 host.guide 能力下发给 AI（单一事实来源在 docs/） -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\docs\AI-AGENT-MANUAL.md" Link="Docs\AI-AGENT-MANUAL.md" />
+  </ItemGroup>
+
   <ItemGroup>
     <Reference Include="System.Management" />
     <Reference Include="System.ServiceProcess" />

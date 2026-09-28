@@ -21,6 +21,13 @@ namespace CarroDesk.Core.Commands
 
         public bool RequiresPin { get; set; }
 
+        /// <summary>
+        /// 按请求动态判定是否需要口令（§9.5 按服务 PIN 策略）。
+        /// 在参数规整之后调用（可见规整后的 Params）；为 null 时退回 <see cref="RequiresPin"/>。
+        /// 判定为 true 时走 PinGuard 挑战，失败限流与审计照常生效。
+        /// </summary>
+        public Func<CommandRequest, bool> RequiresPinFor { get; set; }
+
         /// <summary>执行超时（毫秒）。0 取内核默认（5000ms）；任务类能力建议 30000（§4.3 第 7 步）。</summary>
         public int TimeoutMs { get; set; }
 

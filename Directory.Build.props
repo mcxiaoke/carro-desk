@@ -20,12 +20,12 @@
   <!-- ============================================================ -->
 
   <PropertyGroup>
-    <Major>0</Major>
-    <Minor>1</Minor>
+    <Major>1</Major>
+    <Minor>0</Minor>
     <Patch>0</Patch>
     <VersionPrefix>$(Major).$(Minor).$(Patch)</VersionPrefix>
     <!-- 基准日：DaysSinceEpoch = today.Subtract(epoch).Days -->
-    <FileVersionEpoch>2026-01-01</FileVersionEpoch>
+    <FileVersionEpoch>2026-09-01</FileVersionEpoch>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
 
     <!-- 共享程序集元数据 -->

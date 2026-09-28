@@ -118,7 +118,8 @@ namespace CarroDesk.Host.Ipc
                         "2) services.* 只能操作已授权服务；被拒时提示用户检查 CarroDesk 配置的 " +
                         "Services.AllowedServices，或以管理员运行 docs/remote-admin/grant-service-control.ps1。\n" +
                         "3) 错误码：-32601 无此能力 / -32002 口令问题 / -32003 限流 / -32004 超时 / -32020 宿主未运行。\n" +
-                        "4) 本服务器不提供任意 shell 与文件访问；那类需求请用户走 SSH/远控通道。"
+                        "4) 本服务器不提供任意 shell 与文件访问；那类需求请用户走 SSH/远控通道。\n" +
+                        "5) 需要更详细的使用说明（含口令策略与能力边界）时，调用 host.guide 工具获取完整手册。"
                 };
             }
 
