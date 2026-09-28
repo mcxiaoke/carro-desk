@@ -62,6 +62,12 @@ namespace CarroDesk
             _mutex = new Mutex(true, MutexName, out createdNew);
             if (!createdNew)
             {
+                // S3（IPC 设计 §5.3）：`ctl` 参数的二实例改为经管道转发并回显；其余保持原行为（静默退出）
+                if (ControlArgs.IsControlInvocation(e.Args))
+                {
+                    ForwardControlInvocation(e.Args);
+                    return; // ForwardControlInvocation 内部 Environment.Exit
+                }
                 Shutdown(0);
                 return;
             }
@@ -206,6 +212,24 @@ namespace CarroDesk
             Exit += OnAppExit;
             UpdateTrayText();
             RegisterFloatingPanelHotkey();
+        }
+
+        /// <summary>二实例 `ctl` 转发（IPC 设计 §5.3）：挂接父控制台 → 管道调用 → 回显 → 按结果退出。</summary>
+        private static void ForwardControlInvocation(string[] args)
+        {
+            ParentConsole.TryAttach();
+
+            ControlArgs parsed;
+            string parseError;
+            if (!ControlArgs.TryParse(args, out parsed, out parseError))
+            {
+                Console.Error.WriteLine(parseError);
+                Console.Error.WriteLine("usage: CarroDesk.exe ctl <capability> [--json] [--pin <pin>] [--key <value> ...]");
+                Environment.Exit(1);
+            }
+
+            var client = new PipeRpcClient(parsed.PipeName, parsed.TimeoutMs > 0 ? parsed.TimeoutMs : 3000);
+            Environment.Exit(ControlForwarder.Forward(parsed, client, Console.Out, Console.Error));
         }
 
         public void ToggleFloatingPanel()

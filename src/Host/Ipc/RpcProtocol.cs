@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Threading;
 using CarroDesk.Core.Commands;
 using CarroDesk.Host.Commands;
 using Newtonsoft.Json;
@@ -82,12 +83,88 @@ namespace CarroDesk.Host.Ipc
             return Encoding.UTF8.GetBytes(response.ToString(Formatting.None));
         }
 
+        // ---------- 客户端侧（S3：CLI / 二实例转发 / MCP 瘦进程共用） ----------
+
+        private static long _requestId;
+
+        /// <summary>把 CommandRequest 编码为 JSON-RPC 请求帧体（自增 id，pin/source 为扩展字段）。</summary>
+        public static byte[] EncodeRequest(CommandRequest request)
+        {
+            if (request == null) throw new ArgumentNullException(nameof(request));
+
+            var obj = new JObject
+            {
+                ["jsonrpc"] = "2.0",
+                ["id"] = Interlocked.Increment(ref _requestId),
+                ["method"] = request.Method
+            };
+
+            var parameters = new JObject();
+            if (request.Params != null)
+            {
+                foreach (var kv in request.Params)
+                {
+                    parameters[kv.Key] = kv.Value == null ? JValue.CreateNull() : JToken.FromObject(kv.Value);
+                }
+            }
+            obj["params"] = parameters;
+
+            if (!string.IsNullOrEmpty(request.Pin)) obj["pin"] = request.Pin;
+            if (!string.IsNullOrEmpty(request.Source)) obj["source"] = request.Source;
+            return Encoding.UTF8.GetBytes(obj.ToString(Formatting.None));
+        }
+
+        /// <summary>解析 JSON-RPC 响应帧体为 CommandResult。解析失败折叠为 -32700，绝不抛异常。</summary>
+        public static CommandResult ParseResponse(byte[] payload, out object id)
+        {
+            id = null;
+            try
+            {
+                var obj = JToken.Parse(Encoding.UTF8.GetString(payload)) as JObject;
+                if (obj == null)
+                    return CommandResult.Fail(CommandErrorCodes.ParseError, "response is not a JSON object");
+
+                if (obj["id"] != null) id = NormalizeScalar(obj["id"]);
+
+                var error = obj["error"] as JObject;
+                if (error != null)
+                    return CommandResult.Fail(
+                        (int)error["code"],
+                        (string)error["message"] ?? "unknown error");
+
+                if (obj["result"] != null)
+                    return CommandResult.Success(
+                        obj["result"].Type == JTokenType.Null ? null : (object)obj["result"]);
+
+                return CommandResult.Fail(CommandErrorCodes.ParseError, "response has neither result nor error");
+            }
+            catch (Exception ex)
+            {
+                return CommandResult.Fail(CommandErrorCodes.ParseError, "response parse failed: " + ex.Message);
+            }
+        }
+
+        /// <summary>结果负载的文本化：JToken 原样，其他对象经 FromObject。供 CLI/工具调用输出。</summary>
+        public static string FormatPayload(object data, bool pretty)
+        {
+            if (data == null) return "null";
+            var token = data as JToken;
+            var formatting = pretty ? Formatting.Indented : Formatting.None;
+            return token != null
+                ? token.ToString(formatting)
+                : JToken.FromObject(data).ToString(formatting);
+        }
+
         private static IncomingCall ParseError(object id)
         {
             return new IncomingCall { Id = id, IsParseError = true };
         }
 
-        private static IDictionary<string, object> ExtractParams(JToken parameters)
+        /// <summary>
+        /// 把 JSON 对象参数规整为「原始类型」字典（bool/int/float/string；嵌套结构降级为 JSON 字符串）。
+        /// 客户端侧（MCP 工具参数）与服务端侧共用同一收敛规则。
+        /// </summary>
+        public static IDictionary<string, object> ExtractParams(JToken parameters)
         {
             var dict = new Dictionary<string, object>(StringComparer.Ordinal);
             var obj = parameters as JObject;

@@ -39,6 +39,8 @@
     <Compile Include="UiRenderingTests.cs" />
     <Compile Include="CommandHostTests.cs" />
     <Compile Include="IpcPipeTests.cs" />
+    <Compile Include="ControlArgsTests.cs" />
+    <Compile Include="PipeRpcClientTests.cs" />
   </ItemGroup>
 
   <ItemGroup>

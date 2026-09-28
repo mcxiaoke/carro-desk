@@ -1,4 +1,8 @@
 <Solution>
+  <Folder Name="/cli/">
+    <Project Path="cli/CarroDesk.Cli/CarroDesk.Cli.csproj" />
+  </Folder>
+  <Folder Name="/src/" />
   <Project Path="src/CarroDesk.csproj" />
   <Project Path="tests/CarroDesk.Tests/CarroDesk.Tests.csproj" />
 </Solution>

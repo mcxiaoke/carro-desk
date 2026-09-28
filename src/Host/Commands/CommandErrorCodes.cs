@@ -14,5 +14,6 @@ namespace CarroDesk.Host.Commands
         public const int RateLimited = -32003;
         public const int Timeout = -32004;
         public const int Internal = -32010;
+        public const int TransportError = -32020;      // 客户端侧：连不上管道 / 读写失败（仅 PipeRpcClient 使用）
     }
 }
