@@ -19,4 +19,16 @@
     <PackageReference Include="Fody" Version="6.9.2" PrivateAssets="all" />
   </ItemGroup>
 
+  <!-- Costura 已把 CarroDesk.exe/Newtonsoft 嵌入本 exe；主工程的 config 与样例文件
+       经 ProjectReference 流入输出目录但对 CLI 无用，构建后清理，保持输出即单 exe -->
+  <Target Name="CleanCliOutputJunk" AfterTargets="Build">
+    <ItemGroup>
+      <CliJunk Include="$(OutDir)CarroDesk.exe.config;
+                        $(OutDir)config.sample.json;
+                        $(OutDir)tasks.sample.json;
+                        $(OutDir)portable.sample.ini" />
+    </ItemGroup>
+    <Delete Files="@(CliJunk)" />
+  </Target>
+
 </Project>
