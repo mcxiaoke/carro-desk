@@ -1,83 +1,107 @@
 ---
 name: carrodesk
-
-description: 通过 CarroDesk.Cli.exe 控制 Windows 本机：查询宿主/模块状态、启动和停止已授权的 Windows 服务（如 GameViewerService/UUYC、TermService/RDP，按服务的口令策略）。只要用户提到 CarroDesk、UUYC、GameViewer、远程桌面服务、启动/停止/重启某个服务、查这台电脑的运行状态或模块状态，就使用本技能——即使用户没说"CarroDesk"三个字。
-
+description: Control this Windows machine through CarroDesk.Cli.exe — query host/module status, keep the machine awake (indefinitely or for N minutes), and start/stop allowlisted Windows services (GameViewerService/UUYC, TermService/RDP) honoring each service's PIN policy. Use this skill whenever the user mentions CarroDesk, UUYC, GameViewer, RDP/remote desktop service, asks to start/stop/restart any Windows service, asks whether the machine is awake, or wants the machine status or module status — even if they never say "CarroDesk".
 ---
 
-# CarroDesk 本机控制
+# CarroDesk Machine Control
 
-CarroDesk 是托盘常驻的本机控制服务。你通过它的命令行客户端（单文件 exe）发指令：
-客户端把命令转发给正在运行的宿主进程，返回 JSON 结果。
+CarroDesk is a tray-resident control service for this Windows machine. You drive it
+through its CLI client (single-file exe), which forwards commands to the running
+host process and returns JSON results.
 
-- 客户端路径：`C:\Home\Tools\CarroDesk\CarroDesk.Cli.exe`（下文简写为 `CarroDesk.Cli`）
-- **前提**：宿主 CarroDesk.exe 必须在运行。连不上时报 `error -32020: pipe transport failed`——此时提示用户启动 CarroDesk 托盘程序，不要反复重试
-- 每条命令都是独立短进程，可以放心并发调用
+- Client path: `C:\Home\Tools\CarroDesk\CarroDesk.Cli.exe` (referred to as `CarroDesk.Cli` below)
+- **Prerequisite**: the host app CarroDesk.exe must be running. If the pipe is unreachable
+  you get `error -32020: pipe transport failed` — tell the user to start the CarroDesk tray
+  app; do not retry in a loop
+- Each command is an independent short-lived process; concurrent calls are safe
 
-## 用法模板
+## Usage template
 
 ```text
-CarroDesk.Cli ctl <能力名> [--json] [--pin <口令>] [--<参数名> <值>]
+CarroDesk.Cli ctl <capability> [--json] [--pin <pin>] [--<param> <value>]
 ```
 
-`--json` 输出缩进 JSON；退出码：0 成功 / 1 用法错误 / 2 业务错误 / 3 连不上宿主。
+`--json` gives indented JSON. Exit codes: 0 success / 1 usage / 2 business error / 3 host unreachable.
 
-## 服务控制（最常用）
+## Keep the machine awake
 
-先查授权清单——返回每个服务的 `name`、`desc`（人类描述）、`requiresPin`（口令策略）、实时 `status`：
+```text
+CarroDesk.Cli ctl awake.status     :: mode (passive/indefinite/timed/untiltime), isActive, remainingMinutes
+CarroDesk.Cli ctl awake.on         :: keep awake indefinitely
+CarroDesk.Cli ctl awake.on --minutes 120   :: keep awake for 2 hours (1-1440 allowed)
+CarroDesk.Cli ctl awake.off        :: cancel (returns to passive; also suppresses process-link auto-re-enable)
+```
+
+Notes: awake state is runtime-only — it resets to the configured mode after a host restart.
+`awake.on` / `awake.off` never require a PIN.
+
+## Service control (start/stop Windows services)
+
+Always check the allowlist first — it returns each service's `name`, `desc`
+(human-readable), `requiresPin` (per-service PIN policy) and live `status`:
 
 ```text
 CarroDesk.Cli ctl services.status
 ```
 
-启动/停止（**是否需要口令由该服务的 requiresPin 决定，不是所有服务都要**）：
+Start/stop (**whether a PIN is required is decided per service by `requiresPin`, not all
+services need one**):
 
 ```text
-:: GameViewerService（UUYC 远程）配置为免口令——直接调用
+:: GameViewerService (UUYC remote control) is configured PIN-free — call directly
 CarroDesk.Cli ctl services.start --name GameViewerService
 
-:: TermService（RDP）配置为需口令——先向用户要 6 位口令再调用
-CarroDesk.Cli ctl services.stop --name TermService --pin <用户提供的口令>
+:: TermService (RDP) requires a PIN — ask the user for their 6-digit PIN first
+CarroDesk.Cli ctl services.stop --name TermService --pin <pin provided by user>
 ```
 
-口令规则（违反会触发封锁）：
-- `requiresPin: true` 的服务：**先问用户要口令**，放进 `--pin`；绝不猜测
-- 口令错误最多重试一次；连错 5 次触发封锁期（`-32002 blocked`），期间口令正确也会被拒
-- 用户没提口令就直接调用了需口令的服务 → 拿到 `-32002` 后**回去问用户**，不是重试
+PIN rules (violating them causes a lockout):
+- For `requiresPin: true` services: **ask the user for the PIN**, pass it via `--pin`; never guess
+- At most one retry on a wrong PIN; 5 wrong attempts trigger a lockout (`-32002 blocked`)
+  during which even the correct PIN is rejected
+- If you call a PIN-required service without a PIN and get `-32002`, go back and **ask the
+  user** — do not retry blindly
 
-## 状态探查
+## Status queries
 
 ```text
-CarroDesk.Cli ctl host.status                :: 版本、运行时长、各模块状态
-CarroDesk.Cli ctl host.status --json         :: 缩进 JSON，便于阅读
-CarroDesk.Cli ctl host.capabilities.list     :: 全部能力的参数 schema（权威清单）
+CarroDesk.Cli ctl host.status                :: version, uptime, module states
+CarroDesk.Cli ctl host.status --json         :: indented JSON
+CarroDesk.Cli ctl host.capabilities.list     :: full capability schemas (authoritative list)
 ```
 
-`host.status` 模块清单首项 `id:"host"` 是宿主伪模块（正常现象）；真实模块 `capabilityCount: 0` 表示该模块暂未开放能力（分批开放中），不是故障。
+In `host.status` / `host.modules.list`, the first entry `id:"host"` is the host pseudo-module
+(normal); a real module with `capabilityCount: 0` simply has no capabilities yet (staged
+rollout) — not a fault.
 
-## 错误码速查
+## Error code quick reference
 
-| 码 | 含义 | 你该做的 |
+| Code | Meaning | What you should do |
 |---|---|---|
-| -32601 | 无此能力 | 用 capabilities.list 核对名称 |
-| -32602 | 参数非法（含服务不在授权清单） | 修正参数；服务被拒时告知用户需先配置授权 |
-| -32002 | 口令缺失/错误/封锁 | 问用户要口令；blocked 时告知稍后再试 |
-| -32003 | 限流 | 稍等再试 |
-| -32004 | 执行超时 | 稍后用 services.status 查实际状态 |
-| -32020 | 宿主未运行 | 提示用户启动 CarroDesk |
+| -32601 | unknown capability | verify the name via capabilities.list |
+| -32602 | invalid params (including service not in allowlist) | fix the params; if a service was rejected, tell the user to configure the allowlist |
+| -32002 | PIN missing/wrong/lockout | ask the user; on lockout tell them to wait |
+| -32003 | rate limited | wait and retry later |
+| -32004 | execution timeout | check actual state later via services.status / awake.status |
+| -32020 | host not running | tell the user to start CarroDesk |
 
-## 边界（没有的能力，不要尝试）
+## Boundaries (these do not exist — do not attempt)
 
-- 没有任意 shell / PowerShell 执行；系统级管理需求让用户走 SSH/远控
-- 只能操作授权清单内的服务；清单外的服务被内核 DACL 拦截，配置也无法绕过
-- 想加服务或改口令策略：让用户编辑 `C:\Home\Tools\CarroDesk\app_data\config.json` 的 `Services.AllowedServices`（`{name, desc, requiresPin}`），并以管理员运行 `docs/remote-admin/grant-service-control.ps1` 授予服务权限
+- No arbitrary shell / PowerShell execution; system-level administration goes through
+  the user's SSH/remote-control channels
+- Only allowlisted services are operable; the kernel-level service DACL blocks everything
+  else regardless of configuration
+- To add a service or change its PIN policy, the user edits
+  `C:\Home\Tools\CarroDesk\app_data\config.json` → `Services.AllowedServices`
+  (`{name, desc, requiresPin}`) and grants service rights once via
+  `docs/remote-admin/grant-service-control.ps1` (admin terminal)
 
-## 深入资料
+## Deep reference
 
-拿不准用法、想看完整约定（口令策略细节、能力边界、更多示例）时：
+When unsure about usage, conventions or boundaries, read the embedded manual:
 
 ```text
 CarroDesk.Cli ctl host.guide
 ```
 
-返回 Markdown 手册全文（随宿主升级自动更新）。
+Returns the full Markdown manual (auto-updates with the host).

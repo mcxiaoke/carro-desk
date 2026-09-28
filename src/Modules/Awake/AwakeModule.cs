@@ -4,7 +4,9 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using CarroDesk.Core;
+using CarroDesk.Core.Commands;
 using CarroDesk.Core.Models;
+using CarroDesk.Host.Commands;
 using CarroDesk.Modules.Awake.Models;
 using CarroDesk.Modules.Awake.Services;
 using CarroDesk.Modules.Awake.Views;
@@ -12,7 +14,7 @@ using CarroDesk.Services.Localization;
 
 namespace CarroDesk.Modules.Awake
 {
-    public class AwakeModule : ModuleBase<AwakeConfig>
+    public class AwakeModule : ModuleBase<AwakeConfig>, ICommandProvider
     {
         public override string Id => "Awake";
         public override string Name => Loc.T("Tray.AwakeTitle", "保持唤醒 (Awake)");
@@ -86,6 +88,95 @@ namespace CarroDesk.Modules.Awake
             UpdateTrayHeaderAndToolTip();
             RequestTrayRefresh();
         }
+
+        #region IPC 能力（awake.status / awake.on / awake.off，IPC 设计 §4.2）
+
+        /// <summary>minutes 上限 1440（24h）：防误触发超长保持；更长用 Indefinite。</summary>
+        private const int MaxMinutes = 1440;
+
+        public IEnumerable<CommandDescriptor> GetCommands()
+        {
+            yield return new CommandDescriptor
+            {
+                Name = "awake.status",
+                Summary = "查询保持唤醒状态：模式（passive/indefinite/timed/untiltime）、剩余分钟、是否激活、电池暂停、进程联动",
+                Risk = CommandRisk.ReadOnly,
+                Handler = _ => StatusResult()
+            };
+            yield return new CommandDescriptor
+            {
+                Name = "awake.on",
+                Summary = "保持唤醒：不带 minutes = 无限期；带 minutes（1-1440 分钟）= 定时。" +
+                          "运行时状态不持久化，宿主重启后回到配置模式",
+                Risk = CommandRisk.Low,
+                Params = new[]
+                {
+                    new CommandParam
+                    {
+                        Name = "minutes", Type = "int", Required = false,
+                        Description = "定时时长（分钟，1-1440）；缺省 = 无限期保持唤醒"
+                    }
+                },
+                Handler = OnHandler
+            };
+            yield return new CommandDescriptor
+            {
+                Name = "awake.off",
+                Summary = "取消保持唤醒（回到 passive，恢复系统电源计划；并抑制进程联动自动重新开启）",
+                Risk = CommandRisk.Low,
+                Handler = _ => OffHandler()
+            };
+        }
+
+        private CommandResult OnHandler(CommandRequest request)
+        {
+            if (Service == null)
+                return CommandResult.Fail(CommandErrorCodes.Internal, "awake service not initialized");
+
+            object value;
+            if (request.Params != null && request.Params.TryGetValue("minutes", out value) && value != null)
+            {
+                var minutes = Convert.ToInt32(value);
+                if (minutes < 1 || minutes > MaxMinutes)
+                    return CommandResult.Fail(CommandErrorCodes.InvalidParams,
+                        "minutes must be 1-" + MaxMinutes + " (use no param for indefinite), got: " + minutes);
+                Service.SetTimed(minutes);
+            }
+            else
+            {
+                Service.SetIndefinite();
+            }
+            return StatusResult();
+        }
+
+        private CommandResult OffHandler()
+        {
+            if (Service == null)
+                return CommandResult.Fail(CommandErrorCodes.Internal, "awake service not initialized");
+            // SetPassiveByUser：同时抑制进程联动，避免 5 秒后被 AutoAwakeProcesses 重新拉起
+            Service.SetPassiveByUser();
+            return StatusResult();
+        }
+
+        private CommandResult StatusResult()
+        {
+            if (Service == null)
+                return CommandResult.Fail(CommandErrorCodes.Internal, "awake service not initialized");
+
+            var timed = Service.Mode == AwakeMode.Timed || Service.Mode == AwakeMode.UntilTime;
+            return CommandResult.Success(new
+            {
+                mode = Service.Mode.ToString().ToLowerInvariant(),
+                isActive = Service.IsActive,
+                remainingMinutes = timed ? (int?)Math.Ceiling(Service.RemainingTime.TotalMinutes) : null,
+                expireAt = timed ? Service.ExpireTime.ToString("yyyy-MM-dd HH:mm:ss") : null,
+                keepDisplayOn = Service.KeepDisplayOn,
+                batteryPaused = Service.IsBatteryPaused,
+                processTriggered = Service.IsProcessTriggered ? Service.ActiveProcessTrigger : null
+            });
+        }
+
+        #endregion
 
         public bool SaveAndApplyConfig(AwakeConfig candidate)
         {

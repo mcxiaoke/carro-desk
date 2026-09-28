@@ -44,6 +44,7 @@
     <Compile Include="McpStdioTests.cs" />
     <Compile Include="ServiceControlModuleTests.cs" />
     <Compile Include="HostCommandsTests.cs" />
+    <Compile Include="AwakeCapabilityTests.cs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -55,7 +55,7 @@
 
 工具清单来自宿主的能力注册表（`host.capabilities.list`），**随 CarroDesk 升级自动增长**，本手册不逐一维护调用细节——以 schema 为准。
 
-## 4. 当前能力清单（2026-09-28，8 项）
+## 4. 当前能力清单（2026-09-28，11 项）
 
 | 工具 | 风险 | 口令 | 说明 |
 |---|---|---|---|
@@ -67,6 +67,22 @@
 | `services.status` | 只读 | — | 查询授权服务（含 desc 与各自的口令策略） |
 | `services.start` | 特权 | **按服务** | 启动已授权服务；`name` 参数描述里带 服务名=描述 映射 |
 | `services.stop` | 特权 | **按服务** | 停止已授权服务；同上 |
+| `awake.status` | 只读 | — | 保持唤醒状态：模式/剩余分钟/是否激活/电池暂停/进程联动 |
+| `awake.on` | 低 | — | 保持唤醒：缺省无限期；`minutes`（1-1440）=定时。运行时状态，重启后回到配置模式 |
+| `awake.off` | 低 | — | 取消保持唤醒（回到 passive，并抑制进程联动自动重开） |
+
+## 4.3 保持唤醒（awake.*）
+
+```text
+awake.on                    → 无限期保持唤醒
+awake.on  {"minutes":120}   → 保持 2 小时（1-1440）
+awake.off                   → 取消（回到 passive）
+awake.status                → mode/isActive/remainingMinutes/expireAt/keepDisplayOn
+```
+
+- `awake.on`/`awake.off` **不需要口令**（低风险能力）
+- 运行时状态：不持久化，宿主重启后回到 config.json 中 Awake 模块配置的模式
+- 「机器睡眠远程就废了」的正解是让宿主的 Awake 模块保持唤醒（无限期，或进程联动盯住助手进程），而不是依赖单次调用
 
 ## 4.1 按服务口令策略（services.*）
 
