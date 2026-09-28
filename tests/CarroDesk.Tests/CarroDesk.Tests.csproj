@@ -42,11 +42,16 @@
     <Compile Include="ControlArgsTests.cs" />
     <Compile Include="PipeRpcClientTests.cs" />
     <Compile Include="McpStdioTests.cs" />
+    <Compile Include="ServiceControlModuleTests.cs" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="MSTest" Version="3.4.3" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.10.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="System.ServiceProcess" />
   </ItemGroup>
 
   <ItemGroup>

@@ -111,6 +111,8 @@
     "MonitorProfileTipFormat": "Current Profile: {0} (Brightness: {1}%, Contrast: {2}%)",
     "AwakeTitle": "Keep Awake",
     "AwakeDesc": "Prevent computer from sleeping or turning off screens",
+    "ServiceControlTitle": "Service Control (Services)",
+    "ServiceControlDesc": "Start/stop allowlisted Windows services remotely",
     "AwakeRoot": "Awake",
     "AwakeModePassive": "Off (Passive / Follow Windows)",
     "AwakeModeIndefinite": "Keep Awake Indefinitely",

@@ -111,6 +111,8 @@
     "MonitorProfileTipFormat": "当前显示器配置: {0} (亮度: {1}%, 对比度: {2}%)",
     "AwakeTitle": "保持唤醒 (Awake)",
     "AwakeDesc": "阻止计算机休眠或关闭屏幕",
+    "ServiceControlTitle": "服务控制 (Services)",
+    "ServiceControlDesc": "远程启停已授权的 Windows 服务",
     "AwakeRoot": "保持唤醒",
     "AwakeModePassive": "关闭 (遵循系统电源计划)",
     "AwakeModeIndefinite": "无限期保持唤醒",

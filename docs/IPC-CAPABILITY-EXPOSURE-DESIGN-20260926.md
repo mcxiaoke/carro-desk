@@ -323,7 +323,7 @@ CarroDesk.exe ctl tasks.run --name backup
 | `host.status` / `host.capabilities.list` | ✅ | 状态查询 |
 | `screenlock.*` / `audio.output.set` / `awake.*` / `automute.toggle` / `monitor.profile.apply` | ✅ | 白名单内常规能力 |
 | `tasks.run` | ✅ | 仅限 tasks.json 已有任务 |
-| `services.status` / `services.start` / `services.stop`（**S6 新增**） | ✅（受限） | 仅限 §11.2 路径 A 中 DACL 已授权的服务；**远程下 `start`/`stop` 均须随命令附口令（PIN）**；安全边界=服务对象 DACL + 口令知识型确认 |
+| `services.status` / `services.start` / `services.stop`（**S6 已实现**） | ✅（受限） | 仅限 §11.2 路径 A 中 DACL 已授权的服务（`Services.AllowedServices` 双重白名单）；**start/stop 一律 RequiresPin**（v1.2 口令即确认，本机与远程统一，比原"本机 start 直执行"更严格）；安全边界=服务对象 DACL + 口令知识型确认 |
 | `clipboard.history.search` | ❌ | 隐私边界，默认不开 |
 | `host.exit` | ❌ | 永不远程开放 |
 | 任意 shell / 真 SYSTEM 动作 | ❌ | 走 docs/remote-admin 通道（SSH/WinRM/Agent，Tailscale 内，人打字） |
@@ -391,6 +391,8 @@ CarroDesk.exe ctl tasks.run --name backup
 
 之后 CarroDesk 侧代码（放 `src/Modules/…/Services/`）无需任何提权：
 
+> **S6 已落地**：模块为 `src/Modules/ServiceControl/`（能力 `services.status/start/stop`）；一次性授权脚本为 `docs/remote-admin/grant-service-control.ps1`（自动备份原 DACL、幂等、按当前用户 SID 追加 ACE）。
+
 ```csharp
 using (var svc = new ServiceController(serviceName))
 {
@@ -440,7 +442,7 @@ schtasks /create /tn CarroDesk.Priv /tr "<helper.exe> <固定参数>" /sc ONCE /
 |---|---|---|
 | ReadOnly / Low | 允许 | 允许（受白名单约束） |
 | TaskExec | 允许 | 允许（仅限 tasks.json 已有任务） |
-| `services.start/stop`（DACL 已授权服务，§9.5） | 允许（start 直执行；stop 需 PIN 弹窗） | **允许**（须随命令内联附口令，PinGuard 校验+限流） |
+| `services.start/stop`（DACL 已授权服务，§9.5） | 允许（**需 PIN**，与本机远程统一） | **允许**（须随命令内联附口令，PinGuard 校验+限流） |
 | **Privileged** | 允许（需 PIN 且 §11.2 授权到位） | **允许（v1.2）**：须随请求附口令，PinGuard 校验+失败限流，全量审计 |
 
 理由：一旦让远程通道直达特权能力，整机安全性就等价于**微信账号的安全性** —— 账号被盗即等于本机管理员权限外泄。v1.2 修订：远程特权采用**「口令即确认」**——口令本身即授权凭据（知识型），替代「人在桌面点弹窗」，因此无人值守可用；残余风险=口令强度与消息通道泄露，缓解手段：PinGuard 失败限流、口令原文绝不落审计、口令泄露即换。同时 `services.*` 的授权粒度仍是**服务对象 DACL**（§11.2 路径 A），内核对象权限兜底不变。若口令模型不可接受，退回「人在回路」方案：

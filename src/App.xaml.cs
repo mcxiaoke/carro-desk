@@ -306,6 +306,20 @@ namespace CarroDesk
             I18nService.Instance.SetLanguage(c.Language);
             Modules?.ReloadAll();
             AutoStartService.Sync(c.AutoStart);
+            // 能力注册表重建（S6）：模块允许清单等配置变更后，services.* 的参数枚举随之刷新
+            try
+            {
+                var commandRegistry = Services?.GetService<CommandRegistry>();
+                if (commandRegistry != null && Modules != null)
+                {
+                    commandRegistry.Rebuild(Modules.CollectCommands());
+                    HostCommands.Install(commandRegistry, Modules);
+                }
+            }
+            catch (Exception ex)
+            {
+                Services?.GetService<ILoggerService>()?.LogError("Commands", "配置重载后重建能力注册表失败", ex);
+            }
             try { ProcessExclusionService.InvalidateCache(); } catch { /* intentionally ignored: cache invalidation */ }
             RegisterFloatingPanelHotkey();
             FloatingPanelWindow.Instance?.RefreshSettings();

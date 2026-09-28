@@ -7,6 +7,7 @@ using CarroDesk.Modules.Awake;
 using CarroDesk.Modules.ClipboardHistory;
 using CarroDesk.Modules.MonitorProfile;
 using CarroDesk.Modules.ScreenLock;
+using CarroDesk.Modules.ServiceControl;
 using CarroDesk.Modules.TaskScheduler;
 
 namespace CarroDesk.Host.Modules
@@ -39,6 +40,8 @@ namespace CarroDesk.Host.Modules
             modules.RegisterModule(new MonitorProfileModule());
             modules.RegisterModule(new AwakeModule());
             modules.RegisterModule(new ClipboardHistoryModule());
+            // 服务控制（S6）：无托盘 UI，仅经 IPC 能力通道暴露 services.*
+            modules.RegisterModule(new ServiceControlModule());
         }
 
         private sealed class HostStatusProvider : IHostStatusProvider
