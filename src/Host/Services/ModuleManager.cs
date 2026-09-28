@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Windows.Threading;
 using CarroDesk.Core;
+using CarroDesk.Core.Commands;
 using CarroDesk.Core.Models;
 
 namespace CarroDesk.Host.Services
@@ -138,6 +139,40 @@ namespace CarroDesk.Host.Services
             {
                 return _modules.OfType<T>().FirstOrDefault();
             }
+        }
+
+        public ModuleStatus GetModuleStatus(string id)
+        {
+            var module = GetModule(id);
+            return module != null ? module.Status : ModuleStatus.Created;
+        }
+
+        /// <summary>
+        /// 拉取全部模块暴露的命令能力（ICommandProvider，pull 模式，IPC 设计 §4.1）。
+        /// 与 GetAllTrayMenuItems 同构：逐模块 try/catch 隔离，坏模块不影响其余能力收集。
+        /// </summary>
+        public List<KeyValuePair<string, CommandDescriptor>> CollectCommands()
+        {
+            var logger = GetLogger();
+            var collected = new List<KeyValuePair<string, CommandDescriptor>>();
+            foreach (var module in Modules)
+            {
+                var provider = module as ICommandProvider;
+                if (provider == null) continue;
+                try
+                {
+                    foreach (var descriptor in provider.GetCommands() ?? Enumerable.Empty<CommandDescriptor>())
+                    {
+                        if (descriptor == null) continue;
+                        collected.Add(new KeyValuePair<string, CommandDescriptor>(module.Id, descriptor));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogError(module.Id, "收集模块命令能力失败", ex);
+                }
+            }
+            return collected;
         }
 
         public IEnumerable<TrayMenuItem> GetAllTrayMenuItems()

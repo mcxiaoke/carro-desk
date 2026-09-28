@@ -8,6 +8,7 @@ namespace CarroDesk.Models
         public string PinSalt { get; set; } = "";
         public string PinHash { get; set; } = "";
         public string Language { get; set; } = "auto";
+        public IpcSettings Ipc { get; set; } = new IpcSettings();
 
         // 桌面悬浮控制面板配置
         public string FloatingPanelHotkey { get; set; } = "Win+Alt+C";
@@ -62,6 +63,8 @@ namespace CarroDesk.Models
             target.FloatingPanelLocked = FloatingPanelLocked;
             target.FloatingPanelX = FloatingPanelX;
             target.FloatingPanelY = FloatingPanelY;
+            // 深拷贝：Ipc 节若只传引用，一次 Clone/CopyTo 后两份设置会共享同一可变对象
+            target.Ipc = Ipc != null ? Ipc.Clone() : new IpcSettings();
         }
 
         public static AppSettings Merge(AppSettings loaded)
@@ -71,6 +74,7 @@ namespace CarroDesk.Models
             if (string.IsNullOrEmpty(loaded.Language)) loaded.Language = def.Language;
             if (string.IsNullOrEmpty(loaded.FloatingPanelHotkey)) loaded.FloatingPanelHotkey = def.FloatingPanelHotkey;
             if (string.IsNullOrEmpty(loaded.FloatingPanelPosition)) loaded.FloatingPanelPosition = def.FloatingPanelPosition;
+            if (loaded.Ipc == null) loaded.Ipc = new IpcSettings();
             return loaded;
         }
     }

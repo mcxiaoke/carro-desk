@@ -37,6 +37,8 @@
     <Compile Include="ConfigAndTriggerTests.cs" />
     <Compile Include="ClipboardHistoryModuleTests.cs" />
     <Compile Include="UiRenderingTests.cs" />
+    <Compile Include="CommandHostTests.cs" />
+    <Compile Include="IpcPipeTests.cs" />
   </ItemGroup>
 
   <ItemGroup>

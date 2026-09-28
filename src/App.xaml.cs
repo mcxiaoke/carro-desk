@@ -5,8 +5,12 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using CarroDesk.Core;
+using CarroDesk.Core.Commands;
 using CarroDesk.Host.Services;
+using CarroDesk.Host.Commands;
+using CarroDesk.Host.Ipc;
 using CarroDesk.Host.Modules;
+using CarroDesk.Models;
 using Hardcodet.Wpf.TaskbarNotification;
 using Microsoft.Win32;
 using CarroDesk.Services;
@@ -156,6 +160,48 @@ namespace CarroDesk
             // 5. 初始化并启动模块
             Modules.InitializeAll(Services);
             Modules.StartAll();
+
+            // 6. 命令内核 + 管道控制通道（IPC 设计 §8 S1/S2）：能力白名单 + 分发器 + 传输适配器
+            var ipcSettings = _configManager.Current.Ipc ?? new IpcSettings();
+            ICommandAuditSink auditSink = ipcSettings.AuditEnabled
+                ? (ICommandAuditSink)new FileCommandAuditSink()
+                : new NullCommandAuditSink();
+
+            var commandRegistry = new CommandRegistry();
+            try
+            {
+                commandRegistry.Rebuild(Modules.CollectCommands());
+                HostCommands.Install(commandRegistry, Modules);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError("Commands", "命令能力注册失败，能力通道降级为空", ex);
+            }
+            Services.AddSingleton(commandRegistry);
+
+            var commandHost = new CommandHost(
+                commandRegistry,
+                id => string.Equals(id, HostCommands.ModuleId, StringComparison.OrdinalIgnoreCase)
+                    ? ModuleStatus.Running
+                    : Modules.GetModuleStatus(id),
+                sharedPinGuard,
+                auditSink,
+                null,
+                logger);
+            Services.AddSingleton(commandHost);
+
+            if (ipcSettings.Enabled)
+            {
+                var pipeServer = new NamedPipeCommandServer(
+                    commandHost,
+                    string.IsNullOrWhiteSpace(ipcSettings.PipeName)
+                        ? NamedPipeCommandServer.BuildDefaultPipeName()
+                        : ipcSettings.PipeName.Trim(),
+                    logger);
+                pipeServer.Start();
+                Services.AddSingleton(pipeServer);
+                logger.LogInfo("Ipc", "控制管道已启动: " + pipeServer.PipeName);
+            }
 
             Exit += OnAppExit;
             UpdateTrayText();
