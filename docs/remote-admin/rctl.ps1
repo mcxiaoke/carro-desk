@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
   在电脑上通过 RemoteAdminAgent 以 SYSTEM 身份执行命令。

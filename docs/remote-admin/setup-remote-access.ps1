@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
   开发机远程管理通道初始化：RDP / WinRM / SSH / SYSTEM Agent（四通道可单独或全部启用）。

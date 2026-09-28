@@ -43,6 +43,7 @@
 | `setup-remote-access.ps1` | 一键/分通道初始化，自动提权、幂等，记录原始状态以便回滚 |
 | `remote-admin-agent.ps1` | 以 SYSTEM 运行的 HTTP 执行端（由计划任务拉起，含手机网页控制台） |
 | `rctl.ps1` | 电脑端命令行客户端，调 Agent 执行命令 |
+| `grant-service-control.ps1` | 把指定服务（可批量，逗号分隔）的 启动/停止 权限授予当前用户（服务 DACL 追加 ACE，自动备份、幂等、写回前 .NET 预检）；`-DryRun` 免管理员预览 |
 | `uninstall-remote-access.ps1` | 按 `state.json` 回滚全部改动 |
 | `README.md` | 本文档 |
 

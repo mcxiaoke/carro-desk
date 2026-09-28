@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
   RemoteAdminAgent：以 SYSTEM 身份运行的极小 HTTP 执行端。
