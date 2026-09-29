@@ -24,3 +24,5 @@ FodyWeavers.xsd
   
 # vstest 运行产物（blame-hang dump 等）  
 TestResults/  
+# Release outputs 
+release/ 
