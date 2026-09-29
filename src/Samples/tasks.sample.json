@@ -73,5 +73,16 @@
   //   "trigger": { "type": "interval", "every": "1h" },
   //   "action": { "file": "backup.js", "args": "--out backup-{{yyyyMMdd}}.zip" },
   //   "when": { "onlyIdle": true, "acPower": true }
+  // },
+
+  // 样例 8: 后台常驻任务（推荐姿势：Startup + detach + killWithHost=true）
+  //   宿主登录后拉起守护进程；宿主退出时进程树随之回收，宿主重启后重新拉起，天然单实例。
+  //   mode=detach 时超时/失败重试/允许并发均不可用（校验拒绝）。
+  //   killWithHost=false 可让进程独立于宿主存活，但宿主重启后可能产生重复实例（孤儿自负）。
+  // {
+  //   "name": "my-daemon",
+  //   "trigger": { "type": "startup", "delaySec": 15 },
+  //   "action": { "file": "daemon.js", "args": "--listen 8123" },
+  //   "options": { "mode": "detach", "killWithHost": true }
   // }
 ]

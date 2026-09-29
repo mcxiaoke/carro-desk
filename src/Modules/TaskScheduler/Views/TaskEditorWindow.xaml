@@ -117,7 +117,7 @@
         </Style>
         <!-- 任务列表项右键菜单 -->
         <ContextMenu x:Key="TaskItemContextMenu">
-            <MenuItem Header="测试运行 (Test Run)" FontWeight="SemiBold" Click="OnMenuTestRunClick"/>
+            <MenuItem x:Name="MenuTestRunItem" Header="测试运行 (Test Run)" FontWeight="SemiBold" Click="OnMenuTestRunClick"/>
             <MenuItem Header="查看该任务日志" Click="OnMenuViewLogClick"/>
             <Separator/>
             <MenuItem Header="复制任务" Click="OnDuplicateClick"/>
@@ -334,6 +334,15 @@
                             <CheckBox x:Name="AllowConcurrentBox" Content="{loc:Loc Tasks.AllowConcurrent, Default='允许并发'}" Margin="0,4,16,4"/>
                             <CheckBox x:Name="NotifyBox" Content="{loc:Loc Tasks.NotifyOnFailure, Default='失败时通知'}" IsChecked="True" Margin="0,4,16,4"/>
                         </WrapPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                            <TextBlock Text="{loc:Loc Tasks.RunModeLabel, Default='运行模式'}" VerticalAlignment="Center" Foreground="#FF444444" Margin="0,0,8,0"/>
+                            <ComboBox x:Name="RunModeBox" Width="200" Height="24" SelectionChanged="RunModeBox_SelectionChanged">
+                                <ComboBoxItem Content="{loc:Loc Tasks.RunModeWait, Default='标准执行（等待退出）'}" Tag="wait"/>
+                                <ComboBoxItem Content="{loc:Loc Tasks.RunModeDetach, Default='后台常驻（不等待退出）'}" Tag="detach"/>
+                            </ComboBox>
+                            <CheckBox x:Name="KillWithHostBox" Content="{loc:Loc Tasks.KillWithHost, Default='随宿主退出终止'}" Margin="12,0,0,0" VerticalAlignment="Center" ToolTip="{loc:Loc Tasks.KillWithHostTip, Default='仅常驻模式：宿主退出/停止时是否连带终止该进程树。关闭后进程将独立存活（孤儿进程自负）'}"/>
+                        </StackPanel>
+                        <TextBlock x:Name="RunModeHint" Text="{loc:Loc Tasks.RunModeHint, Default='常驻模式下超时/失败重试/允许并发不可用（保存时校验拒绝）'}" Foreground="#FF888888" FontSize="11" Margin="0,2,0,0" Visibility="Collapsed"/>
                         <Grid Margin="0,4,0,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="85"/>
@@ -381,7 +390,14 @@
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
                     <CheckBox x:Name="GlobalEnabledBox" Content="{loc:Loc Tasks.GlobalEnabledLabel, Default='启用任务调度'}" Margin="0,0,14,0" VerticalAlignment="Center" FontWeight="SemiBold" Click="OnGlobalEnabledClick" ToolTip="{loc:Loc Tasks.GlobalEnabledTooltip, Default='总开关：关闭后所有计划任务暂停执行'}"/>
                     <Separator Width="1" Height="20" Margin="0,0,10,0" VerticalAlignment="Center"/>
-                    <Button Content="{loc:Loc Tasks.TestRun, Default='测试运行'}" Height="30" Padding="12,0" Margin="0,0,6,0" Click="OnTestRunClick" ToolTip="{loc:Loc Tasks.TestRunTooltip, Default='直接试跑当前任务配置并查看返回状态和日志'}"/>
+                    <!-- 测试运行与停止按钮同位叠加：运行期间只露出停止（LocExtension 是动态绑定，
+                         代码里改 Content 会被语言切换覆盖，故用两个按钮切换可见性） -->
+                    <Grid Height="30" MinWidth="76" Margin="0,0,6,0">
+                        <Button x:Name="TestRunButton" Content="{loc:Loc Tasks.TestRun, Default='测试运行'}" Padding="12,0" Click="OnTestRunClick" ToolTip="{loc:Loc Tasks.TestRunTooltip, Default='直接试跑当前任务配置并查看返回状态和日志'}"/>
+                        <Button x:Name="TestStopButton" Content="{loc:Loc Tasks.TestRunStop, Default='停止测试'}" Padding="12,0" Click="OnStopTestRunClick" Visibility="Collapsed" ToolTip="{loc:Loc Tasks.TestRunStopTooltip, Default='终止正在运行的测试进程树'}"/>
+                    </Grid>
+                    <Button x:Name="StopTaskButton" Content="{loc:Loc Tasks.StopTaskBtn, Default='停止任务'}" Height="30" Padding="10,0" Margin="0,0,6,0" Click="OnStopTaskClick" Visibility="Collapsed" ToolTip="{loc:Loc Tasks.StopTaskTip, Default='终止该任务当前运行中的实例（整棵进程树）'}"/>
+                    <TextBlock x:Name="RunStatusText" Text="" VerticalAlignment="Center" Margin="6,0,8,0" Foreground="#FF6B7280" FontSize="11"/>
                     <Button Content="📄 查看当前日志" Height="30" Padding="10,0" Margin="0,0,6,0" Click="OnViewCurrentLogClick" ToolTip="打开当前选定任务的日志文件"/>
                     <Button Content="📂 日志目录" Height="30" Padding="8,0" Click="OnOpenLogDirClick" ToolTip="在系统文件管理器中打开 logs 目录"/>
                 </StackPanel>

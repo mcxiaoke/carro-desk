@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using CarroDesk.Core;
@@ -18,6 +19,15 @@ namespace CarroDesk.Modules.TaskScheduler.Views
         private bool _isUpdating = false;
         private readonly ITaskSchedulerService _scheduler;
         private readonly Action _onReloadCompleted;
+
+        // 测试运行状态：活动标志同时是防重入闸（按钮、右键菜单两条入口共用）；
+        // _testRunAbandoned 表示窗口关闭时放弃接收结果（进程已被取消终止）；
+        // detach 任务的测试实例不进调度器注册表，句柄由编辑器全权持有（停止按钮/关窗即终止）
+        private const int TestRunFallbackTimeoutSec = 10;
+        private bool _testRunActive;
+        private bool _testRunAbandoned;
+        private CancellationTokenSource _testRunCts;
+        private TaskProcessHandle _testRunHandle;
 
         public TaskEditorWindow(ITaskSchedulerService scheduler = null, Action onReloadCompleted = null)
         {
@@ -43,6 +53,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
         private void OnClosed(object sender, EventArgs e)
         {
             I18nService.Instance.LanguageChanged -= OnLanguageChanged;
+            if (_runStatusTimer != null) { try { _runStatusTimer.Stop(); } catch { } _runStatusTimer = null; }
         }
 
         private void OnLoaded(object sender, RoutedEventArgs e)
@@ -52,6 +63,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             RefreshScriptQuick();
             InitTemplateQuick();
             if (_tasks.Count > 0) TaskList.SelectedIndex = 0;
+            StartRunStatusTimer();
         }
 
         private void OnGlobalEnabledClick(object sender, RoutedEventArgs e)
@@ -236,6 +248,8 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             HiddenBox.IsChecked = task.Options.Hidden;
             AllowConcurrentBox.IsChecked = task.Options.AllowConcurrent;
             NotifyBox.IsChecked = task.Options.NotifyOnFailure;
+            SelectRunMode(task.Options.IsDetach ? "detach" : "wait");
+            KillWithHostBox.IsChecked = task.Options.KillWithHost;
             TimeoutBox.Text = task.Options.TimeoutSec.ToString();
             RetryBox.Text = task.Options.Retry.ToString();
             OnlyIdleBox.IsChecked = task.When.OnlyIdle;
@@ -499,6 +513,9 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             t.Options.Hidden = HiddenBox.IsChecked == true;
             t.Options.AllowConcurrent = AllowConcurrentBox.IsChecked == true;
             t.Options.NotifyOnFailure = NotifyBox.IsChecked == true;
+            var modeSel = RunModeBox.SelectedItem as ComboBoxItem;
+            t.Options.Mode = modeSel != null && modeSel.Tag != null ? modeSel.Tag.ToString() : "wait";
+            t.Options.KillWithHost = KillWithHostBox.IsChecked == true;
             int to, rt;
             if (int.TryParse(TimeoutBox.Text.Trim(), out to)) t.Options.TimeoutSec = to;
             if (int.TryParse(RetryBox.Text.Trim(), out rt)) t.Options.Retry = rt;
@@ -666,7 +683,55 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                 return false;
             }
 
+            // detach（常驻）组合校验：与模型层 TaskDefinition.Validate 保持一致，编辑器先给出友好提示
+            if (built.Options != null && built.Options.IsDetach)
+            {
+                if (built.Options.TimeoutSec > 0)
+                {
+                    error = Loc.T("Tasks.ValDetachTimeout", "后台常驻模式不能设置超时（常驻进程不会被定时终止）");
+                    controlToFocus = TimeoutBox;
+                    return false;
+                }
+                if (built.Options.Retry > 0)
+                {
+                    error = Loc.T("Tasks.ValDetachRetry", "后台常驻模式不能设置失败重试（没有退出码可供重试判定）");
+                    controlToFocus = RetryBox;
+                    return false;
+                }
+                if (built.Options.AllowConcurrent)
+                {
+                    error = Loc.T("Tasks.ValDetachConcurrent", "后台常驻模式不能与\"允许并发\"同用（避免重复拉起多个常驻实例）");
+                    controlToFocus = AllowConcurrentBox;
+                    return false;
+                }
+            }
+
             return true;
+        }
+
+        private void RunModeBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            UpdateRunModeUi();
+        }
+
+        private void UpdateRunModeUi()
+        {
+            var sel = RunModeBox.SelectedItem as ComboBoxItem;
+            bool detach = sel != null && sel.Tag != null &&
+                string.Equals(sel.Tag.ToString(), "detach", StringComparison.OrdinalIgnoreCase);
+            KillWithHostBox.Visibility = detach ? Visibility.Visible : Visibility.Collapsed;
+            RunModeHint.Visibility = detach ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private void SelectRunMode(string tag)
+        {
+            tag = (tag ?? "wait").ToLowerInvariant();
+            for (int i = 0; i < RunModeBox.Items.Count; i++)
+            {
+                var it = RunModeBox.Items[i] as ComboBoxItem;
+                if (it != null && it.Tag != null && it.Tag.ToString() == tag) { RunModeBox.SelectedIndex = i; return; }
+            }
+            RunModeBox.SelectedIndex = 0;
         }
 
         private void FocusInput(Control ctrl)
@@ -900,6 +965,10 @@ namespace CarroDesk.Modules.TaskScheduler.Views
 
         private async void OnTestRunClick(object sender, RoutedEventArgs e)
         {
+            // 防重入：运行中一律忽略（停止由 TestStopButton 负责）。
+            // 右键菜单路径 sender 不是 Button，只靠按钮 IsEnabled 挡不住重复触发。
+            if (_testRunActive) return;
+
             var selected = TaskList.SelectedItem as TaskDefinition;
             var cur = BuildCurrent();
             string err;
@@ -911,28 +980,188 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                 MessageBox.Show(Loc.T("Tasks.TestError", err), Loc.T("Config.ValidationFailed", "校验失败"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
-            ValidateText.Text = Loc.T("Tasks.TestRunning", "正在运行测试...");
-            var btn = sender as Button;
-            if (btn != null) btn.IsEnabled = false;
 
+            // 任务自身未设超时的测试运行给 10s 兜底：被测程序常驻不退出时测试也能自动结束
+            if (cur.Options != null && cur.Options.IsDetach)
+            {
+                // 常驻任务：启动即返回，不等待也无 10s 兜底；句柄由编辑器持有，不进调度器注册表
+                StartTestRunDetached(cur);
+                return;
+            }
+
+            if (cur.Options != null && cur.Options.TimeoutSec <= 0)
+                cur.Options.TimeoutSec = TestRunFallbackTimeoutSec;
+
+            _testRunActive = true;
+            _testRunCts = new CancellationTokenSource();
+            SetTestRunUi(running: true);
+            ValidateText.Text = Loc.T("Tasks.TestRunning", "正在运行测试...");
+
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var outcome = new TaskRunOutcome();
             try
             {
-                var sw = System.Diagnostics.Stopwatch.StartNew();
-                int exitCode = await TaskRunner.RunAsync(cur, "manual-test").ConfigureAwait(true);
+                int exitCode = await TaskRunner.RunAsync(cur, "manual-test", _testRunCts.Token, outcome).ConfigureAwait(true);
                 sw.Stop();
-                string status = exitCode == 0 ? Loc.T("Common.Success", "成功") : Loc.T("Tasks.FailedExitCode", exitCode);
+                if (_testRunAbandoned) return; // 窗口已关闭，不再回弹状态与弹窗
+
+                string status;
+                var img = MessageBoxImage.Information;
+                if (outcome.Cancelled)
+                {
+                    status = Loc.T("Tasks.TestRunCancelled", "已手动终止");
+                    img = MessageBoxImage.Warning;
+                }
+                else if (outcome.TimedOut)
+                {
+                    status = Loc.T("Tasks.TestRunTimeout", "超时终止 (超过 {0} 秒未退出)",
+                        cur.Options != null ? cur.Options.TimeoutSec : TestRunFallbackTimeoutSec);
+                    img = MessageBoxImage.Warning;
+                }
+                else if (exitCode == 0)
+                {
+                    status = Loc.T("Common.Success", "成功");
+                }
+                else
+                {
+                    status = Loc.T("Tasks.FailedExitCode", exitCode);
+                    img = MessageBoxImage.Warning;
+                }
                 ValidateText.Text = Loc.T("Tasks.TestCompletedSummary", status, sw.Elapsed.TotalSeconds);
-                MessageBox.Show(Loc.T("Tasks.TestResult", status, sw.Elapsed.TotalSeconds, cur.Name), Loc.T("Tasks.TestResultTitle", "测试结果"), MessageBoxButton.OK, exitCode == 0 ? MessageBoxImage.Information : MessageBoxImage.Warning);
+                MessageBox.Show(Loc.T("Tasks.TestResult", status, sw.Elapsed.TotalSeconds, cur.Name), Loc.T("Tasks.TestResultTitle", "测试结果"), MessageBoxButton.OK, img);
             }
             catch (Exception ex)
             {
+                if (_testRunAbandoned) return;
                 ValidateText.Text = Loc.T("Tasks.TestException", ex.Message);
                 MessageBox.Show(Loc.T("Tasks.TestException", ex.Message), Loc.T("Common.Error", "错误"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
             finally
             {
-                if (btn != null) btn.IsEnabled = true;
+                _testRunActive = false;
+                if (_testRunCts != null) { try { _testRunCts.Dispose(); } catch { } _testRunCts = null; }
+                SetTestRunUi(running: false);
             }
+        }
+
+        private void StartTestRunDetached(TaskDefinition cur)
+        {
+            _testRunActive = true;
+            SetTestRunUi(running: true);
+            ValidateText.Text = Loc.T("Tasks.TestStarting", "正在启动测试进程...");
+
+            TaskProcessHandle handle;
+            int code = TaskRunner.StartDetached(cur, "manual-test", out handle);
+            if (code != 0 || handle == null)
+            {
+                _testRunActive = false;
+                SetTestRunUi(running: false);
+                string failMsg = Loc.T("Tasks.TestStartFailed", "启动失败，详见任务日志");
+                ValidateText.Text = failMsg;
+                MessageBox.Show(failMsg, Loc.T("Tasks.TestResultTitle", "测试结果"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            _testRunHandle = handle;
+            ValidateText.Text = Loc.T("Tasks.TestRunDetachedStatus", "已启动 pid={0}，后台运行中", handle.Pid);
+            MessageBox.Show(
+                Loc.T("Tasks.TestRunDetachedStarted", "测试进程已启动 pid={0}，在后台继续运行。\n可点\"停止测试\"或关闭本窗口终止它。", handle.Pid),
+                Loc.T("Tasks.TestResultTitle", "测试结果"), MessageBoxButton.OK, MessageBoxImage.Information);
+
+            handle.Exited += (h, exitCode) => Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (!ReferenceEquals(_testRunHandle, h)) return;
+                _testRunHandle = null;
+                _testRunActive = false;
+                SetTestRunUi(running: false);
+                ValidateText.Text = Loc.T("Tasks.TestRunDetachedExited", "测试进程已退出 (pid={0}, exit={1})",
+                    h.Pid, exitCode.HasValue ? exitCode.Value.ToString() : "?");
+            }));
+            handle.BeginExitWatch();
+        }
+
+        private void OnStopTestRunClick(object sender, RoutedEventArgs e)
+        {
+            var handle = _testRunHandle;
+            if (handle != null)
+            {
+                ValidateText.Text = Loc.T("Tasks.TestRunStopping", "正在停止测试进程...");
+                TestStopButton.IsEnabled = false;
+                try { handle.Stop(); } catch { }
+                return;
+            }
+            if (!_testRunActive) return;
+            ValidateText.Text = Loc.T("Tasks.TestRunStopping", "正在停止测试进程...");
+            TestStopButton.IsEnabled = false;
+            var cts = _testRunCts;
+            try { if (cts != null) cts.Cancel(); } catch { }
+        }
+
+        private void OnStopTaskClick(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var cur = TaskList.SelectedItem as TaskDefinition;
+                string name = cur != null ? cur.Name : NameBox.Text.Trim();
+                if (_scheduler == null || string.IsNullOrWhiteSpace(name)) return;
+                if (_scheduler.TryStop(name)) ValidateText.Text = Loc.T("Tasks.StopTaskRequested", "已发送停止命令");
+                else ValidateText.Text = Loc.T("Tasks.StopTaskNotRunning", "该任务当前没有运行中的实例");
+            }
+            catch (Exception ex)
+            {
+                ValidateText.Text = Loc.T("Tasks.StopTaskFailed", "停止失败: {0}", ex.Message);
+            }
+        }
+
+        // 底栏运行状态轮询：选中任务的运行实例（pid/时长）与停止按钮可见性。
+        // 用 1s DispatcherTimer 而非事件推送——调度器与编辑器的任务对象可能不同实例，按名查询最可靠。
+        private System.Windows.Threading.DispatcherTimer _runStatusTimer;
+
+        private void StartRunStatusTimer()
+        {
+            if (_runStatusTimer != null) return;
+            _runStatusTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+            _runStatusTimer.Tick += (s, e) => RefreshRunStatus();
+            _runStatusTimer.Start();
+        }
+
+        private void RefreshRunStatus()
+        {
+            try
+            {
+                var cur = TaskList.SelectedItem as TaskDefinition;
+                string name = cur != null ? cur.Name : NameBox.Text.Trim();
+                TaskRunInfo run = null;
+                if (_scheduler != null && !string.IsNullOrWhiteSpace(name))
+                {
+                    foreach (var r in _scheduler.GetRunning())
+                    {
+                        if (string.Equals(r.Name, name, StringComparison.OrdinalIgnoreCase)) { run = r; break; }
+                    }
+                }
+                if (run != null)
+                {
+                    RunStatusText.Text = Loc.T("Tasks.RunStatusRunning", "运行中 pid={0} ({1:0}s)", run.Pid, run.DurationSec);
+                    StopTaskButton.Visibility = Visibility.Visible;
+                }
+                else
+                {
+                    RunStatusText.Text = "";
+                    StopTaskButton.Visibility = Visibility.Collapsed;
+                }
+            }
+            catch { }
+        }
+
+        private void SetTestRunUi(bool running)
+        {
+            TestRunButton.IsEnabled = !running;
+            TestStopButton.Visibility = running ? Visibility.Visible : Visibility.Collapsed;
+            TestStopButton.IsEnabled = true;
+            // 右键菜单在 Window.Resources 中，x:Name 不生成代码字段，按位置取第一项（测试运行）
+            var menu = TryFindResource("TaskItemContextMenu") as ContextMenu;
+            var testRunItem = menu != null && menu.Items.Count > 0 ? menu.Items[0] as MenuItem : null;
+            if (testRunItem != null) testRunItem.IsEnabled = !running;
         }
 
         private void OnItemEnabledToggleClick(object sender, RoutedEventArgs e)
@@ -1053,6 +1282,15 @@ namespace CarroDesk.Modules.TaskScheduler.Views
 
         protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
         {
+            // 关窗时若有测试运行未结束：wait 取消令牌、detach 停止句柄——测试进程树都被终止，结果不再回弹 UI
+            if (_testRunActive)
+            {
+                _testRunAbandoned = true;
+                var cts = _testRunCts;
+                try { if (cts != null) cts.Cancel(); } catch { }
+                var handle = _testRunHandle;
+                try { if (handle != null) handle.Stop(); } catch { }
+            }
             base.OnClosing(e);
         }
     }

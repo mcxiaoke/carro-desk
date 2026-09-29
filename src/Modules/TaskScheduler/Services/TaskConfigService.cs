@@ -331,6 +331,10 @@ namespace CarroDesk.Services.Tasks
             if (op.Retry != 0) o["retry"] = op.Retry;
             if (!op.NotifyOnFailure) o["notifyOnFailure"] = false;
             if (!string.IsNullOrWhiteSpace(op.WorkDir)) o["workDir"] = op.WorkDir;
+            // 非缺省值才落盘，保持旧文件形态不变
+            if (op.IsDetach) o["mode"] = "detach";
+            if (!op.KillWithHost) o["killWithHost"] = false;
+            if (op.SingleInstance) o["singleInstance"] = true;
             return o;
         }
 
@@ -483,6 +487,10 @@ namespace CarroDesk.Services.Tasks
                     opt.Retry = GetInt(od, 0, "retry");
                     opt.WorkDir = GetStr(od, "workDir");
                     opt.NotifyOnFailure = GetBool(od, true, "notifyOnFailure", "notify");
+                    opt.Mode = GetStr(od, "mode");
+                    if (string.IsNullOrWhiteSpace(opt.Mode)) opt.Mode = "wait";
+                    opt.KillWithHost = GetBool(od, true, "killWithHost");
+                    opt.SingleInstance = GetBool(od, false, "singleInstance");
                 }
                 if (obj["hidden"] != null) opt.Hidden = GetBool(obj, opt.Hidden, "hidden");
                 if (obj["timeoutSec"] != null) opt.TimeoutSec = GetInt(obj, opt.TimeoutSec, "timeoutSec", "timeout");

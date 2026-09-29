@@ -95,10 +95,13 @@ src/
 | `trigger` | object | 必填 | 见 §4.2 |
 | `action` | object | 必填 | 见 §4.3 |
 | `options.hidden` | bool | true | 是否无窗口执行 |
-| `options.timeoutSec` | int | 0 | 0=不限，>0 超时 kill 进程树 |
-| `options.allowConcurrent` | bool | false | false 时上次未结束则跳过本次 |
-| `options.retry` | int | 0 | 失败重试次数（非 0 退出码） |
+| `options.timeoutSec` | int | 0 | 0=不限，>0 超时 kill 进程树。**detach 模式下必须为 0（校验拒绝）** |
+| `options.allowConcurrent` | bool | false | false 时上次未结束则跳过本次。**detach 模式下必须为 false（校验拒绝）** |
+| `options.retry` | int | 0 | 失败重试次数（非 0 退出码）。**detach 模式下必须为 0（校验拒绝）** |
 | `options.workDir` | string | action.workDir | 覆盖工作目录（options 优先） |
+| `options.mode` | string | "wait" | `wait`=启动后等待退出（现状语义）；`detach`=启动即返回、进程后台常驻。见 §4.7 常驻任务 |
+| `options.killWithHost` | bool | true | 宿主退出时是否连带终止该任务进程树。常驻任务若需跨宿主存活须显式 false（注意孤儿/重复实例风险，推荐用 startup+detach+killWithHost=true 组合实现"宿主重启自动拉起+天然单实例"） |
+| `options.singleInstance` | bool | false | 任务级命名 mutex 单实例互斥（规划中，尚未生效） |
 
 ### 4.2 Trigger
 
@@ -164,6 +167,15 @@ src/
 ### 4.6 Options 扩展
 
 `options.notifyOnFailure` 默认 `true`，非 0 退出码时 `TaskSchedulerService.RecordFailureNotify` 经 `App.ShowBalloonPublic` 气泡提示并记入 `最近运行`。
+
+### 4.7 常驻任务（mode=detach）
+
+`options.mode: "detach"` 使任务启动后**立即返回、进程后台常驻**（默认 `wait` 保持"启动并等待退出"语义）：
+
+- 调度器不等待退出：不占执行等待、不阻塞触发循环；进程实例由运行注册表跟踪（`IsRunning`/`GetRunning`/`TryStop`），编辑器底栏可见运行状态并可"停止任务"。
+- 退出 watcher：进程退出后写 `finished` 日志；被主动停止记 `stopped`、退出码 0 记 `ok`、意外退出记 `fail:<code>` 并按 `notifyOnFailure` 通知。
+- 组合约束（加载与保存时校验拒绝）：detach + `timeoutSec>0` / `retry>0` / `allowConcurrent=true` 一律非法。
+- 生命周期由 `killWithHost` 决定：`true`（默认）进程树挂 kill-on-close 作业对象，宿主退出/崩溃/更新连带回收；`false` 进程独立存活，宿主退出仅解除跟踪（日志注明），但宿主重启后可能重复实例——推荐用 `startup + detach + killWithHost=true` 实现"宿主拉起常驻 + 天然单实例"。详见 `docs/TASKS-PERSISTENT-RUN-DESIGN-20260928.md`。
 
 ## 5. 调度器设计 `TaskSchedulerService`
 

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Threading;
 using Microsoft.Win32;
@@ -19,7 +20,7 @@ namespace CarroDesk.Services.Tasks
         private List<TaskDefinition> _tasks = new List<TaskDefinition>();
         private List<ITrigger> _triggers = new List<ITrigger>();
         private readonly HashSet<string> _firedStartupTasks = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        private Dictionary<string, bool> _running = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        private Dictionary<string, RunSlot> _running = new Dictionary<string, RunSlot>(StringComparer.OrdinalIgnoreCase);
         private bool _started;
         private bool _globalEnabled = true;
         private readonly IIdleService _idleService;
@@ -138,6 +139,7 @@ namespace CarroDesk.Services.Tasks
             _started = false;
             try { SystemEvents.PowerModeChanged -= OnPowerModeChanged; } catch { }
             StopTriggers();
+            StopRunningInstances();
             TaskLogger.Info("system", "TaskScheduler stopped");
         }
 
@@ -389,22 +391,45 @@ namespace CarroDesk.Services.Tasks
                 return;
             }
 
+            // 占槽即防重：槽在进程真正启动前就存在，启动窗口期内的并发触发不会漏判。
+            // wait 模式在 finally 清槽；detach 模式的槽由退出 watcher 清理。
+            RunSlot slot = new RunSlot();
             bool skip = false;
             lock (_lock)
             {
-                bool isRunning;
-                if (_running.TryGetValue(task.Name, out isRunning) && isRunning)
+                if (_running.ContainsKey(task.Name))
                 {
                     bool allow = task.Options != null && task.Options.AllowConcurrent;
                     if (!allow) skip = true;
                 }
-                if (!skip) _running[task.Name] = true;
+                if (!skip) _running[task.Name] = slot;
             }
             if (skip)
             {
                 TaskLogger.Warn(task.Name, "skipped(" + reason + ") concurrent execution not allowed");
                 return;
             }
+
+            // detach（常驻）模式：启动即返回，不等退出；配置校验已拒绝 detach+retry/timeout 组合
+            if (task.Options != null && task.Options.IsDetach)
+            {
+                TaskProcessHandle handle;
+                int code = TaskRunner.StartDetached(task, reason, out handle);
+                if (code != 0 || handle == null)
+                {
+                    RemoveSlot(task.Name, slot);
+                    AddRecent(task.Name, "fail");
+                    RecordFailureNotify(task, -1);
+                    return;
+                }
+                slot.Handle = handle;
+                AddRecent(task.Name, "started");
+                TaskLogger.Info(task.Name, "detached: running in background pid=" + handle.Pid + " killWithHost=" + handle.KillWithHost);
+                handle.Exited += (h, exitCode) => OnDetachedExited(task, slot, h, exitCode);
+                handle.BeginExitWatch();
+                return;
+            }
+
             int lastCode = 0;
             try
             {
@@ -421,7 +446,11 @@ namespace CarroDesk.Services.Tasks
                     int code = 0;
                     try
                     {
-                        code = await TaskRunner.RunAsync(task, reason + (attempt > 1 ? " retry#" + attempt : "")).ConfigureAwait(false);
+                        code = await TaskRunner.RunAsync(
+                            task,
+                            reason + (attempt > 1 ? " retry#" + attempt : ""),
+                            CancellationToken.None, null,
+                            h => slot.Handle = h).ConfigureAwait(false);
                     }
                     catch (Exception ex)
                     {
@@ -436,7 +465,7 @@ namespace CarroDesk.Services.Tasks
             }
             finally
             {
-                lock (_lock) _running[task.Name] = false;
+                RemoveSlot(task.Name, slot);
             }
             // failure notify
             try
@@ -458,6 +487,120 @@ namespace CarroDesk.Services.Tasks
             catch { }
         }
 
+        /// <summary>运行槽：存在即"该任务有实例在运行"；Handle 在进程真正启动后回填。</summary>
+        private sealed class RunSlot
+        {
+            public TaskProcessHandle Handle;
+        }
+
+        private void RemoveSlot(string name, RunSlot slot)
+        {
+            lock (_lock)
+            {
+                RunSlot cur;
+                if (_running.TryGetValue(name, out cur) && ReferenceEquals(cur, slot)) _running.Remove(name);
+            }
+        }
+
+        /// <summary>
+        /// detach 实例退出（后台 watcher 线程）：清运行槽 + recent + 意外退出通知。
+        /// 被主动停止（用户/宿主退出清理）不算失败，不触发通知。
+        /// </summary>
+        private void OnDetachedExited(TaskDefinition task, RunSlot slot, TaskProcessHandle handle, int? exitCode)
+        {
+            try
+            {
+                RemoveSlot(task.Name, slot);
+                if (handle.WasStopped)
+                {
+                    AddRecent(task.Name, "stopped");
+                    return;
+                }
+                if (exitCode.HasValue && exitCode.Value == 0)
+                {
+                    AddRecent(task.Name, "ok");
+                    return;
+                }
+                AddRecent(task.Name, exitCode.HasValue ? "fail:" + exitCode.Value : "fail");
+                RecordFailureNotify(task, exitCode ?? -1);
+            }
+            catch { }
+        }
+
+        public IReadOnlyList<TaskRunInfo> GetRunning()
+        {
+            var list = new List<TaskRunInfo>();
+            lock (_lock)
+            {
+                foreach (var s in _running.Values)
+                {
+                    var h = s != null ? s.Handle : null;
+                    if (h == null) continue;
+                    list.Add(new TaskRunInfo
+                    {
+                        Name = h.Definition != null ? h.Definition.Name : "",
+                        Pid = h.Pid,
+                        StartedAt = h.StartedAt,
+                        KillWithHost = h.KillWithHost
+                    });
+                }
+            }
+            return list.AsReadOnly();
+        }
+
+        public bool IsRunning(string taskName)
+        {
+            if (string.IsNullOrEmpty(taskName)) return false;
+            lock (_lock) return _running.ContainsKey(taskName);
+        }
+
+        public bool TryStop(string taskName)
+        {
+            if (string.IsNullOrEmpty(taskName)) return false;
+            TaskProcessHandle handle;
+            lock (_lock)
+            {
+                RunSlot s;
+                if (!_running.TryGetValue(taskName, out s)) return false;
+                handle = s != null ? s.Handle : null;
+            }
+            if (handle == null) return false;
+            try
+            {
+                handle.Stop();
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>宿主/调度器退出：killWithHost=true 的实例整树终止；false 的解除跟踪、进程继续存活。</summary>
+        private void StopRunningInstances()
+        {
+            List<TaskProcessHandle> handles;
+            lock (_lock)
+            {
+                handles = new List<TaskProcessHandle>();
+                foreach (var s in _running.Values)
+                {
+                    if (s != null && s.Handle != null) handles.Add(s.Handle);
+                }
+                _running.Clear();
+            }
+            foreach (var h in handles)
+            {
+                try
+                {
+                    if (h.KillWithHost) h.Stop();
+                    else TaskLogger.Info(h.Definition.Name, "host exiting, detached process left running (pid=" + h.Pid + ", killWithHost=false)");
+                    h.Dispose();
+                }
+                catch { }
+            }
+        }
+
         private bool IsTaskStillEnabled(TaskDefinition task)
         {
             if (task == null) return false;
@@ -469,11 +612,20 @@ namespace CarroDesk.Services.Tasks
         }
 
         private List<string> _recent = new List<string>();
+        private void AddRecent(string name, string status)
+        {
+            // watcher 线程与执行线程都会写入；Monitor 可重入，调用点的既有 lock 不受影响
+            lock (_lock)
+            {
+                string entry = string.Format("{0:HH:mm:ss} {1} {2}", DateTime.Now, name, status);
+                _recent.Insert(0, entry);
+                if (_recent.Count > 10) _recent.RemoveAt(10);
+            }
+        }
+
         private void AddRecent(string name, int code)
         {
-            string entry = string.Format("{0:HH:mm:ss} {1} {2}", DateTime.Now, name, code == 0 ? "ok" : "fail:" + code);
-            _recent.Insert(0, entry);
-            if (_recent.Count > 10) _recent.RemoveAt(10);
+            AddRecent(name, code == 0 ? "ok" : "fail:" + code);
         }
         public IReadOnlyList<string> GetRecent()
         {

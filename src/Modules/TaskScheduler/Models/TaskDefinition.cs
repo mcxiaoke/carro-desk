@@ -68,6 +68,24 @@ namespace CarroDesk.Models
         public int Retry { get; set; } = 0;
         public string WorkDir { get; set; } = "";
         public bool NotifyOnFailure { get; set; } = true;
+
+        /// <summary>
+        /// 运行模式："wait"（默认，启动后等待退出，现状语义）| "detach"（启动即返回，进程后台常驻）。
+        /// 用字符串而非枚举：tasks.json 是可手改文件，保持与既有小写键风格一致且无转换器依赖。
+        /// </summary>
+        public string Mode { get; set; } = "wait";
+
+        /// <summary>宿主退出时是否连带终止该任务进程树（kill-on-close 作业对象）。常驻任务若需跨宿主存活须显式设 false。</summary>
+        public bool KillWithHost { get; set; } = true;
+
+        /// <summary>跨宿主重启的单实例互斥（任务级命名 mutex）。B1 仅占字段，mutex 实现在后续期。</summary>
+        public bool SingleInstance { get; set; } = false;
+
+        [JsonIgnore]
+        public bool IsDetach
+        {
+            get { return string.Equals(Mode, "detach", StringComparison.OrdinalIgnoreCase); }
+        }
     }
 
     public class TaskDefinition
@@ -215,6 +233,18 @@ namespace CarroDesk.Models
             }
             if (Options != null && Options.TimeoutSec < 0) return "timeoutSec invalid";
             if (Options != null && Options.Retry < 0) return "retry invalid";
+            if (Options != null && !string.IsNullOrWhiteSpace(Options.Mode))
+            {
+                string m = Options.Mode.Trim().ToLowerInvariant();
+                if (m != "wait" && m != "detach") return "options.mode invalid (wait|detach)";
+            }
+            if (Options != null && Options.IsDetach)
+            {
+                // 常驻语义与"等待退出"才有的机制互斥，宁可配置期报错也不静默失效
+                if (Options.TimeoutSec > 0) return "detach mode conflicts with timeoutSec>0 (detached process is never timed out)";
+                if (Options.Retry > 0) return "detach mode conflicts with retry>0 (no exit code to retry on)";
+                if (Options.AllowConcurrent) return "detach mode conflicts with allowConcurrent=true (multiple daemon instances are almost always a mistake)";
+            }
             return null;
         }
 

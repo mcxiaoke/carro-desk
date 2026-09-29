@@ -68,6 +68,12 @@ namespace CarroDesk.Tests
             return TaskRunner.RunAsync(task, "unit-test").GetAwaiter().GetResult();
         }
 
+        private static int Run(TaskDefinition task, CancellationToken ct, out TaskRunOutcome outcome)
+        {
+            outcome = new TaskRunOutcome();
+            return TaskRunner.RunAsync(task, "unit-test", ct, outcome).GetAwaiter().GetResult();
+        }
+
         private static string ReadTaskLog(string taskName)
         {
             string path = TaskLogger.GetTaskLogPath(taskName);
@@ -210,6 +216,76 @@ namespace CarroDesk.Tests
             }
             Assert.IsFalse(IsProcessAlive(pid.Value),
                 "超时后子进程 " + pid.Value + " 仍然存活，终止逻辑失效（可能残留孤儿进程）");
+        }
+
+        [TestMethod]
+        public void Timeout_WithOutcome_ReportsTimedOut()
+        {
+            string bat = WriteProbeBat("slow2.bat", sleep: true);
+            var task = NewTask("t_outcome_timeout", bat, "", timeoutSec: 1);
+
+            TaskRunOutcome outcome;
+            int code = Run(task, CancellationToken.None, out outcome);
+
+            Assert.AreEqual(-1, code, "超时任务应返回 -1");
+            Assert.IsTrue(outcome.TimedOut, "应报告 TimedOut=true");
+            Assert.IsFalse(outcome.Cancelled, "未请求取消，不应报告 Cancelled");
+        }
+
+        [TestMethod]
+        public void Cancel_UserStop_KillsProcess_AndReportsCancelled()
+        {
+            string bat = WriteProbeBat("stoppable.bat", sleep: true);
+            var task = NewTask("t_cancel", bat, "");
+
+            // 2 秒后触发取消（脚本本身要跑约 29 秒）
+            using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2)))
+            {
+                var sw = Stopwatch.StartNew();
+                TaskRunOutcome outcome;
+                int code = Run(task, cts.Token, out outcome);
+                sw.Stop();
+
+                Assert.AreEqual(-1, code, "取消后应返回 -1");
+                Assert.IsTrue(outcome.Cancelled, "应报告 Cancelled=true");
+                Assert.IsFalse(outcome.TimedOut, "用户停止不应被报告为超时");
+                Assert.IsTrue(sw.Elapsed.TotalSeconds < 8,
+                    "取消后应尽快返回（实际 " + sw.Elapsed.TotalSeconds + "s），而不是等脚本自然结束");
+
+                int? pid = ExtractPid("t_cancel");
+                Assert.IsNotNull(pid, "未从日志中解析到 pid，任务可能根本没启动");
+
+                var wait = Stopwatch.StartNew();
+                while (wait.Elapsed < TimeSpan.FromSeconds(5) && IsProcessAlive(pid.Value))
+                {
+                    Thread.Sleep(100);
+                }
+                Assert.IsFalse(IsProcessAlive(pid.Value),
+                    "取消后子进程 " + pid.Value + " 仍然存活，停止逻辑失效");
+            }
+        }
+
+        [TestMethod]
+        public void NormalExit_WithOutcome_ReportsExitCode()
+        {
+            string bat = WriteProbeBat("outcome.bat", exitCode: 5);
+
+            TaskRunOutcome outcome;
+            int code = Run(NewTask("t_outcome", bat, ""), CancellationToken.None, out outcome);
+
+            Assert.AreEqual(5, code);
+            Assert.AreEqual(5, outcome.ExitCode, "outcome.ExitCode 应回传真实退出码");
+            Assert.IsFalse(outcome.TimedOut);
+            Assert.IsFalse(outcome.Cancelled);
+        }
+
+        [TestMethod]
+        public void LegacyOverload_StillWorks_AfterCancellationOverloadAdded()
+        {
+            string bat = WriteProbeBat("legacy.bat", exitCode: 9);
+            int code = Run(NewTask("t_legacy", bat, ""));
+
+            Assert.AreEqual(9, code, "两参旧重载行为不应改变");
         }
     }
 }
