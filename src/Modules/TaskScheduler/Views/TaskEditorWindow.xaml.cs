@@ -250,6 +250,9 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             NotifyBox.IsChecked = task.Options.NotifyOnFailure;
             SelectRunMode(task.Options.IsDetach ? "detach" : "wait");
             KillWithHostBox.IsChecked = task.Options.KillWithHost;
+            RestartBox.IsChecked = task.Options.RestartOnFailure;
+            RestartDelaySecBox.Text = task.Options.RestartDelaySec.ToString();
+            RestartLimitBox.Text = task.Options.RestartLimit.ToString();
             TimeoutBox.Text = task.Options.TimeoutSec.ToString();
             RetryBox.Text = task.Options.Retry.ToString();
             OnlyIdleBox.IsChecked = task.When.OnlyIdle;
@@ -516,6 +519,10 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             var modeSel = RunModeBox.SelectedItem as ComboBoxItem;
             t.Options.Mode = modeSel != null && modeSel.Tag != null ? modeSel.Tag.ToString() : "wait";
             t.Options.KillWithHost = KillWithHostBox.IsChecked == true;
+            t.Options.Restart = RestartBox.IsChecked == true ? "on-failure" : "none";
+            int rd, rl;
+            if (int.TryParse(RestartDelaySecBox.Text.Trim(), out rd)) t.Options.RestartDelaySec = rd;
+            if (int.TryParse(RestartLimitBox.Text.Trim(), out rl)) t.Options.RestartLimit = rl;
             int to, rt;
             if (int.TryParse(TimeoutBox.Text.Trim(), out to)) t.Options.TimeoutSec = to;
             if (int.TryParse(RetryBox.Text.Trim(), out rt)) t.Options.Retry = rt;
@@ -704,6 +711,21 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                     controlToFocus = AllowConcurrentBox;
                     return false;
                 }
+                if (built.Options.RestartOnFailure)
+                {
+                    if (built.Options.RestartDelaySec < 1 || built.Options.RestartDelaySec > 3600)
+                    {
+                        error = Loc.T("Tasks.ValRestartDelayRange", "重启间隔必须在 1 到 3600 秒之间");
+                        controlToFocus = RestartDelaySecBox;
+                        return false;
+                    }
+                    if (built.Options.RestartLimit < 1 || built.Options.RestartLimit > 100)
+                    {
+                        error = Loc.T("Tasks.ValRestartLimitRange", "最大重启次数必须在 1 到 100 之间");
+                        controlToFocus = RestartLimitBox;
+                        return false;
+                    }
+                }
             }
 
             return true;
@@ -720,6 +742,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             bool detach = sel != null && sel.Tag != null &&
                 string.Equals(sel.Tag.ToString(), "detach", StringComparison.OrdinalIgnoreCase);
             KillWithHostBox.Visibility = detach ? Visibility.Visible : Visibility.Collapsed;
+            PanelRestart.Visibility = detach ? Visibility.Visible : Visibility.Collapsed;
             RunModeHint.Visibility = detach ? Visibility.Visible : Visibility.Collapsed;
         }
 
@@ -1052,6 +1075,15 @@ namespace CarroDesk.Modules.TaskScheduler.Views
 
             TaskProcessHandle handle;
             int code = TaskRunner.StartDetached(cur, "manual-test", out handle);
+            if (code == TaskRunner.StartSkippedSingleInstance)
+            {
+                _testRunActive = false;
+                SetTestRunUi(running: false);
+                string skipMsg = Loc.T("Tasks.TestRunSingleInstanceSkip", "已有运行实例（单实例互斥），未启动测试进程");
+                ValidateText.Text = skipMsg;
+                MessageBox.Show(skipMsg, Loc.T("Tasks.TestResultTitle", "测试结果"), MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
             if (code != 0 || handle == null)
             {
                 _testRunActive = false;
@@ -1146,7 +1178,17 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                 }
                 else
                 {
-                    RunStatusText.Text = "";
+                    // 未运行：检查熔断标记（守护连续失败超预算），提示复位途径
+                    var sup = _scheduler != null && !string.IsNullOrWhiteSpace(name) ? _scheduler.GetSupervision(name) : null;
+                    if (sup != null && sup.MarkedFailed)
+                    {
+                        RunStatusText.Text = Loc.T("Tasks.RunStatusMarked",
+                            "已标记失败（连续失败 {0} 次）——保存任务或手动运行可重置", sup.ConsecutiveFailures);
+                    }
+                    else
+                    {
+                        RunStatusText.Text = "";
+                    }
                     StopTaskButton.Visibility = Visibility.Collapsed;
                 }
             }

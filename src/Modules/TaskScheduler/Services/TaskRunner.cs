@@ -72,17 +72,38 @@ namespace CarroDesk.Services.Tasks
             }
         }
 
+        /// <summary>StartDetached 返回码：已跳过启动（单实例互斥：同任务已有实例在运行）。</summary>
+        public const int StartSkippedSingleInstance = 2;
+
         /// <summary>
         /// detach 模式启动：启动进程后立即返回（0=成功），进程在后台常驻。
         /// 调用方持有句柄：先订阅 <see cref="TaskProcessHandle.Exited"/> 再调用
         /// <see cref="TaskProcessHandle.BeginExitWatch"/>（顺序不能反，否则快速退出的实例会错过事件），
-        /// 停止用 <see cref="TaskProcessHandle.Stop"/>。启动失败返回 -1（句柄为 null，原因已记任务日志）。
+        /// 停止用 <see cref="TaskProcessHandle.Stop"/>。
+        /// 返回 0=成功；-1=启动失败（原因已记任务日志）；2=单实例跳过（options.singleInstance 且互斥体被持有）。
         /// </summary>
         public static int StartDetached(TaskDefinition task, string reason, out TaskProcessHandle handle)
         {
             handle = null;
             if (task == null) return -1;
-            if (!TryStart(task, reason, out handle)) return -1;
+
+            // 单实例互斥：必须先于进程启动获取，冲突的启动不会产生任何进程
+            TaskSingleInstanceMutex singleInstance = null;
+            if (task.Options != null && task.Options.SingleInstance)
+            {
+                if (!TaskSingleInstanceMutex.TryAcquire(task.Name, out singleInstance))
+                {
+                    TaskLogger.Info(task.Name, "singleInstance: already running (mutex held), skip start (" + reason + ")");
+                    return StartSkippedSingleInstance;
+                }
+            }
+
+            if (!TryStart(task, reason, out handle))
+            {
+                if (singleInstance != null) singleInstance.Dispose();
+                return -1;
+            }
+            if (singleInstance != null) handle.AttachMutex(singleInstance);
             return 0;
         }
 

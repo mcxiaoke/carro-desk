@@ -335,6 +335,10 @@ namespace CarroDesk.Services.Tasks
             if (op.IsDetach) o["mode"] = "detach";
             if (!op.KillWithHost) o["killWithHost"] = false;
             if (op.SingleInstance) o["singleInstance"] = true;
+            if (op.RestartOnFailure) o["restart"] = "on-failure";
+            if (op.RestartDelaySec != 5) o["restartDelaySec"] = op.RestartDelaySec;
+            if (op.RestartLimit != 3) o["restartLimit"] = op.RestartLimit;
+            if (op.StableUptimeSec != 60) o["stableUptimeSec"] = op.StableUptimeSec;
             return o;
         }
 
@@ -491,6 +495,11 @@ namespace CarroDesk.Services.Tasks
                     if (string.IsNullOrWhiteSpace(opt.Mode)) opt.Mode = "wait";
                     opt.KillWithHost = GetBool(od, true, "killWithHost");
                     opt.SingleInstance = GetBool(od, false, "singleInstance");
+                    opt.Restart = GetStr(od, "restart");
+                    if (string.IsNullOrWhiteSpace(opt.Restart)) opt.Restart = "none";
+                    opt.RestartDelaySec = GetInt(od, 5, "restartDelaySec", "restartDelay");
+                    opt.RestartLimit = GetInt(od, 3, "restartLimit", "maxRestarts");
+                    opt.StableUptimeSec = GetInt(od, 60, "stableUptimeSec", "minUptimeSec");
                 }
                 if (obj["hidden"] != null) opt.Hidden = GetBool(obj, opt.Hidden, "hidden");
                 if (obj["timeoutSec"] != null) opt.TimeoutSec = GetInt(obj, opt.TimeoutSec, "timeoutSec", "timeout");

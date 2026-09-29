@@ -343,6 +343,15 @@
                             <CheckBox x:Name="KillWithHostBox" Content="{loc:Loc Tasks.KillWithHost, Default='随宿主退出终止'}" Margin="12,0,0,0" VerticalAlignment="Center" ToolTip="{loc:Loc Tasks.KillWithHostTip, Default='仅常驻模式：宿主退出/停止时是否连带终止该进程树。关闭后进程将独立存活（孤儿进程自负）'}"/>
                         </StackPanel>
                         <TextBlock x:Name="RunModeHint" Text="{loc:Loc Tasks.RunModeHint, Default='常驻模式下超时/失败重试/允许并发不可用（保存时校验拒绝）'}" Foreground="#FF888888" FontSize="11" Margin="0,2,0,0" Visibility="Collapsed"/>
+                        <StackPanel x:Name="PanelRestart" Orientation="Horizontal" Margin="0,4,0,0" Visibility="Collapsed">
+                            <CheckBox x:Name="RestartBox" Content="{loc:Loc Tasks.RestartOnFailure, Default='意外退出自动重启'}" VerticalAlignment="Center" Margin="0,0,12,0" ToolTip="{loc:Loc Tasks.RestartTip, Default='守护重启：意外退出（非手动停止）后按固定间隔自动拉起；连续失败超过上限则标记失败、停止重启，保存任务或手动运行可复位。稳定存活超过阈值（默认 60s，stableUptimeSec）会重置失败计数'}"/>
+                            <TextBlock Text="{loc:Loc Tasks.RestartDelay, Default='重启间隔'}" VerticalAlignment="Center" Foreground="#FF444444"/>
+                            <TextBox x:Name="RestartDelaySecBox" Width="50" Height="24" Margin="4,0,2,0" Padding="4,1" TextAlignment="Center" Text="5"/>
+                            <TextBlock Text="{loc:Loc Common.Seconds, Default='秒'}" VerticalAlignment="Center" Foreground="#FF666666" Margin="0,0,12,0"/>
+                            <TextBlock Text="{loc:Loc Tasks.RestartLimit, Default='最大重启'}" VerticalAlignment="Center" Foreground="#FF444444"/>
+                            <TextBox x:Name="RestartLimitBox" Width="50" Height="24" Margin="4,0,2,0" Padding="4,1" TextAlignment="Center" Text="3"/>
+                            <TextBlock Text="{loc:Loc Common.Times, Default='次'}" VerticalAlignment="Center" Foreground="#FF666666"/>
+                        </StackPanel>
                         <Grid Margin="0,4,0,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="85"/>

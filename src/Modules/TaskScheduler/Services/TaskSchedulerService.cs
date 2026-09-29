@@ -210,6 +210,8 @@ namespace CarroDesk.Services.Tasks
             lock (_lock)
             {
                 _tasks = result.Tasks ?? new List<TaskDefinition>();
+                // 配置变化 = 用户干预信号：清空守护计数与失败标记（同"保存任务即可重置"的语义）
+                _supervision.Clear();
             }
             if (!_globalEnabled)
             {
@@ -413,20 +415,48 @@ namespace CarroDesk.Services.Tasks
             // detach（常驻）模式：启动即返回，不等退出；配置校验已拒绝 detach+retry/timeout 组合
             if (task.Options != null && task.Options.IsDetach)
             {
+                // 熔断标记后：自动触发路径一律跳过，等待用户干预；手动/热键运行视为显式复位意图
+                SupervisionState sup = GetSupervisionState(task.Name);
+                bool userDriven = string.Equals(reason, "manual", StringComparison.OrdinalIgnoreCase) ||
+                                  string.Equals(reason, "hotkey", StringComparison.OrdinalIgnoreCase);
+                if (sup != null && sup.MarkedFailed)
+                {
+                    if (!userDriven)
+                    {
+                        RemoveSlot(task.Name, slot);
+                        TaskLogger.Warn(task.Name, "skipped(" + reason + ") marked failed after " + sup.ConsecutiveFailures +
+                            " consecutive failures; reset by editing+saving the task or a manual/hotkey run");
+                        return;
+                    }
+                    lock (_lock) _supervision.Remove(task.Name);
+                    TaskLogger.Info(task.Name, "failed mark reset by " + reason + " run");
+                }
+
                 TaskProcessHandle handle;
                 int code = TaskRunner.StartDetached(task, reason, out handle);
-                if (code != 0 || handle == null)
+                if (code == TaskRunner.StartSkippedSingleInstance)
                 {
+                    // 单实例互斥：已有实例在运行（含跨宿主重启的旧实例），不算失败、不计数
                     RemoveSlot(task.Name, slot);
-                    AddRecent(task.Name, "fail");
-                    RecordFailureNotify(task, -1);
+                    AddRecent(task.Name, "skipped");
                     return;
                 }
-                slot.Handle = handle;
-                AddRecent(task.Name, "started");
-                TaskLogger.Info(task.Name, "detached: running in background pid=" + handle.Pid + " killWithHost=" + handle.KillWithHost);
-                handle.Exited += (h, exitCode) => OnDetachedExited(task, slot, h, exitCode);
-                handle.BeginExitWatch();
+                if (code != 0 || handle == null)
+                {
+                    if (task.Options.RestartOnFailure)
+                    {
+                        // 启动失败同样进入守护决策（坏路径也是 crash loop 的一种）
+                        HandleDetachFailure(task, slot, "start", -1);
+                    }
+                    else
+                    {
+                        RemoveSlot(task.Name, slot);
+                        AddRecent(task.Name, "fail");
+                        RecordFailureNotify(task, -1);
+                    }
+                    return;
+                }
+                AttachDetached(task, slot, handle);
                 return;
             }
 
@@ -491,7 +521,25 @@ namespace CarroDesk.Services.Tasks
         private sealed class RunSlot
         {
             public TaskProcessHandle Handle;
+
+            /// <summary>TryStop 置位：终止活实例并取消挂起中的自动重启（等价 systemctl stop 的语义）。</summary>
+            public volatile bool StopRequested;
         }
+
+        /// <summary>
+        /// detach 任务的守护状态（按任务名）：连续异常失败计数 + 熔断标记。
+        /// 预算耗尽标记失败后，只有用户干预（保存重载 / 手动或热键运行 / 重载清空）才能复位；
+        /// 实例稳定存活（stableUptimeSec）或成功退出（exit 0）会复位计数。内存态，随宿主会话。
+        /// </summary>
+        private sealed class SupervisionState
+        {
+            public int ConsecutiveFailures;
+            public bool MarkedFailed;
+            public DateTime? MarkedAt;
+            public int? LastExitCode;
+        }
+
+        private readonly Dictionary<string, SupervisionState> _supervision = new Dictionary<string, SupervisionState>(StringComparer.OrdinalIgnoreCase);
 
         private void RemoveSlot(string name, RunSlot slot)
         {
@@ -502,29 +550,190 @@ namespace CarroDesk.Services.Tasks
             }
         }
 
+        private void AttachDetached(TaskDefinition task, RunSlot slot, TaskProcessHandle handle)
+        {
+            slot.Handle = handle;
+            AddRecent(task.Name, "started");
+            TaskLogger.Info(task.Name, "detached: running in background pid=" + handle.Pid + " killWithHost=" + handle.KillWithHost);
+            handle.Exited += (h, exitCode) => OnDetachedExited(task, slot, h, exitCode);
+            handle.BeginExitWatch();
+        }
+
         /// <summary>
-        /// detach 实例退出（后台 watcher 线程）：清运行槽 + recent + 意外退出通知。
-        /// 被主动停止（用户/宿主退出清理）不算失败，不触发通知。
+        /// detach 实例退出（后台 watcher 线程）：清运行槽 + recent + 意外退出通知/守护重启决策。
+        /// 被主动停止（用户/宿主退出清理）不算失败，不触发通知、不参与重启。
         /// </summary>
         private void OnDetachedExited(TaskDefinition task, RunSlot slot, TaskProcessHandle handle, int? exitCode)
         {
             try
             {
-                RemoveSlot(task.Name, slot);
-                if (handle.WasStopped)
+                if (handle.WasStopped || slot.StopRequested)
                 {
+                    RemoveSlot(task.Name, slot);
                     AddRecent(task.Name, "stopped");
                     return;
                 }
+
+                // 稳定存活复位（pm2 min_uptime / supervisord startsecs 语义）：
+                // 存活达 stableUptimeSec 的实例退出时重置连续失败计数，长稳后的偶发崩溃不被历史连坐。
+                // 0 = 计数永不自动复位。
+                int stable = task.Options != null ? task.Options.StableUptimeSec : 60;
+                double uptimeSec = (DateTime.Now - handle.StartedAt).TotalSeconds;
+                if (stable > 0 && uptimeSec >= stable)
+                {
+                    lock (_lock) _supervision.Remove(task.Name);
+                }
+
                 if (exitCode.HasValue && exitCode.Value == 0)
                 {
+                    // 成功退出同样复位计数：计数只反映"连续的异常失败"
+                    lock (_lock) _supervision.Remove(task.Name);
+                    RemoveSlot(task.Name, slot);
                     AddRecent(task.Name, "ok");
                     return;
                 }
+
+                if (task.Options != null && task.Options.RestartOnFailure)
+                {
+                    // 守护路径：重启延迟期内槽保持占用，防止触发器在窗口期并发拉起第二个实例
+                    HandleDetachFailure(task, slot, "exit", exitCode ?? -1);
+                    return;
+                }
+
+                RemoveSlot(task.Name, slot);
                 AddRecent(task.Name, exitCode.HasValue ? "fail:" + exitCode.Value : "fail");
                 RecordFailureNotify(task, exitCode ?? -1);
             }
             catch { }
+        }
+
+        /// <summary>
+        /// 守护决策：异常失败计数 → 预算内则延迟重启，耗尽则熔断标记失败。
+        /// 熔断参考 systemd StartLimitBurst（进入 failed 态等人工复位）与 pm2 max_restarts（errored 态）。
+        /// </summary>
+        private void HandleDetachFailure(TaskDefinition task, RunSlot slot, string what, int exitCode)
+        {
+            // 槽保留（重启延迟期内占住防重位），但活句柄清空：
+            // TryStop 依此区分"杀实例"与"取消挂起重启"，GetRunning 也不会再报已死的 pid
+            slot.Handle = null;
+            int failures;
+            lock (_lock)
+            {
+                SupervisionState sup;
+                if (!_supervision.TryGetValue(task.Name, out sup))
+                {
+                    sup = new SupervisionState();
+                    _supervision[task.Name] = sup;
+                }
+                sup.ConsecutiveFailures++;
+                sup.LastExitCode = exitCode;
+                failures = sup.ConsecutiveFailures;
+            }
+
+            int limit = task.Options != null ? task.Options.RestartLimit : 3;
+            int delay = task.Options != null ? task.Options.RestartDelaySec : 5;
+
+            if (failures > limit)
+            {
+                bool notify;
+                lock (_lock)
+                {
+                    SupervisionState sup;
+                    if (!_supervision.TryGetValue(task.Name, out sup)) return;
+                    sup.MarkedFailed = true;
+                    sup.MarkedAt = DateTime.Now;
+                    notify = true;
+                }
+                RemoveSlot(task.Name, slot);
+                TaskLogger.Error(task.Name, "supervise: marked FAILED after " + failures + " consecutive failures (last " +
+                    what + " exit=" + exitCode + "); auto-restart disabled until task is saved/reloaded or manually/hotkey run");
+                AddRecent(task.Name, "marked");
+                if (notify) NotifyMarkedFailed(task, failures);
+                return;
+            }
+
+            TaskLogger.Warn(task.Name, "supervise: " + what + " failure #" + failures + "/" + (limit + 1) +
+                " exit=" + exitCode + ", restart in " + delay + "s");
+            var t = task;
+            var s = slot;
+            Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(Math.Max(1, delay))).ConfigureAwait(false);
+                    RestartContinue(t, s);
+                }
+                catch (Exception ex)
+                {
+                    try { TaskLogger.Error(t.Name, "supervise restart error: " + ex); } catch { }
+                }
+            });
+        }
+
+        /// <summary>重启延续：校验槽/任务/调度器仍然有效后重新拉起；启动失败递归回守护决策直至预算耗尽。</summary>
+        private void RestartContinue(TaskDefinition task, RunSlot slot)
+        {
+            try
+            {
+                // 槽已不在册 = 用户停止 / 宿主退出 / 配置重载替换过：放弃重启
+                lock (_lock)
+                {
+                    RunSlot cur;
+                    if (!_running.TryGetValue(task.Name, out cur) || !ReferenceEquals(cur, slot))
+                    {
+                        TaskLogger.Info(task.Name, "supervise: restart cancelled (slot released)");
+                        return;
+                    }
+                }
+                if (!_started || !_globalEnabled || !IsTaskStillEnabled(task) || slot.StopRequested)
+                {
+                    RemoveSlot(task.Name, slot);
+                    TaskLogger.Info(task.Name, "supervise: restart cancelled (task disabled/stopped or scheduler stopped)");
+                    return;
+                }
+
+                TaskProcessHandle handle;
+                int code = TaskRunner.StartDetached(task, "supervise", out handle);
+                if (code == TaskRunner.StartSkippedSingleInstance)
+                {
+                    RemoveSlot(task.Name, slot);
+                    AddRecent(task.Name, "skipped");
+                    return;
+                }
+                if (code != 0 || handle == null)
+                {
+                    HandleDetachFailure(task, slot, "start", -1);
+                    return;
+                }
+                AttachDetached(task, slot, handle);
+            }
+            catch (Exception ex)
+            {
+                TaskLogger.Error(task.Name, "supervise restart exception: " + ex);
+                RemoveSlot(task.Name, slot);
+                AddRecent(task.Name, "fail");
+            }
+        }
+
+        private void NotifyMarkedFailed(TaskDefinition task, int failures)
+        {
+            try
+            {
+                if (task.Options != null && !task.Options.NotifyOnFailure) return;
+                Notify(Loc.T("Tasks.MarkedFailedNotify",
+                    "任务 [{0}] 连续异常退出 {1} 次，已标记失败并停止自动重启。\n修复后重新保存任务，或手动/热键运行即可重置。",
+                    task.Name, failures));
+            }
+            catch { }
+        }
+
+        private SupervisionState GetSupervisionState(string taskName)
+        {
+            lock (_lock)
+            {
+                SupervisionState s;
+                return _supervision.TryGetValue(taskName ?? "", out s) ? s : null;
+            }
         }
 
         public IReadOnlyList<TaskRunInfo> GetRunning()
@@ -562,9 +771,15 @@ namespace CarroDesk.Services.Tasks
             {
                 RunSlot s;
                 if (!_running.TryGetValue(taskName, out s)) return false;
+                if (s != null) s.StopRequested = true; // 同时取消挂起中的自动重启（systemctl stop 语义）
                 handle = s != null ? s.Handle : null;
+                if (handle == null)
+                {
+                    // 重启延迟期内没有活进程：取消挂起重启即可，立即出册
+                    _running.Remove(taskName);
+                }
             }
-            if (handle == null) return false;
+            if (handle == null) return true;
             try
             {
                 handle.Stop();
@@ -574,6 +789,25 @@ namespace CarroDesk.Services.Tasks
             {
                 return false;
             }
+        }
+
+        /// <summary>detach 任务的守护状态快照：连续失败计数与熔断标记（供 UI 展示"已标记失败"）。</summary>
+        public TaskSupervisionInfo GetSupervision(string taskName)
+        {
+            var info = new TaskSupervisionInfo();
+            if (string.IsNullOrEmpty(taskName)) return info;
+            lock (_lock)
+            {
+                SupervisionState s;
+                if (_supervision.TryGetValue(taskName, out s))
+                {
+                    info.MarkedFailed = s.MarkedFailed;
+                    info.ConsecutiveFailures = s.ConsecutiveFailures;
+                    info.LastExitCode = s.LastExitCode;
+                    info.MarkedAt = s.MarkedAt;
+                }
+            }
+            return info;
         }
 
         /// <summary>宿主/调度器退出：killWithHost=true 的实例整树终止；false 的解除跟踪、进程继续存活。</summary>

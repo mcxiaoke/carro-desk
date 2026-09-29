@@ -79,10 +79,15 @@
   //   宿主登录后拉起守护进程；宿主退出时进程树随之回收，宿主重启后重新拉起，天然单实例。
   //   mode=detach 时超时/失败重试/允许并发均不可用（校验拒绝）。
   //   killWithHost=false 可让进程独立于宿主存活，但宿主重启后可能产生重复实例（孤儿自负）。
+  //   restart=on-failure 启用守护：意外退出按 restartDelaySec(默认5s) 自动重启，
+  //   连续失败超过 restartLimit(默认3) 次则标记失败、停止重启（保存任务或手动运行复位）；
+  //   实例存活超过 stableUptimeSec(默认60s) 的退出会重置失败计数。
+  //   singleInstance=true 用任务级命名互斥体防止重复实例（含跨宿主重启）。
   // {
   //   "name": "my-daemon",
   //   "trigger": { "type": "startup", "delaySec": 15 },
   //   "action": { "file": "daemon.js", "args": "--listen 8123" },
-  //   "options": { "mode": "detach", "killWithHost": true }
+  //   "options": { "mode": "detach", "killWithHost": true, "restart": "on-failure",
+  //                "restartDelaySec": 5, "restartLimit": 3, "singleInstance": true }
   // }
 ]

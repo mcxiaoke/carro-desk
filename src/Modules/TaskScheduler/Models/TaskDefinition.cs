@@ -78,13 +78,39 @@ namespace CarroDesk.Models
         /// <summary>宿主退出时是否连带终止该任务进程树（kill-on-close 作业对象）。常驻任务若需跨宿主存活须显式设 false。</summary>
         public bool KillWithHost { get; set; } = true;
 
-        /// <summary>跨宿主重启的单实例互斥（任务级命名 mutex）。B1 仅占字段，mutex 实现在后续期。</summary>
+        /// <summary>跨宿主重启的单实例互斥（任务级命名 mutex）。仅 detach 模式可用（校验拒绝其它组合）。</summary>
         public bool SingleInstance { get; set; } = false;
+
+        /// <summary>
+        /// 守护重启策略（仅 detach）： "none"（默认，意外退出只记录/通知）| "on-failure"（意外退出自动重启）。
+        /// 参考 systemd Restart=on-failure / pm2 / Windows 任务计划的"失败时重启"。
+        /// wait 模式的等价物是 retry，二者互斥（校验保证）。
+        /// </summary>
+        public string Restart { get; set; } = "none";
+
+        /// <summary>重启延迟秒数（1..3600，默认 5）。固定间隔，与任务计划程序/systemd 默认行为一致。</summary>
+        public int RestartDelaySec { get; set; } = 5;
+
+        /// <summary>连续异常失败预算（1..100，默认 3）：预算内自动重启，耗尽即标记失败、停止自动重启。</summary>
+        public int RestartLimit { get; set; } = 3;
+
+        /// <summary>
+        /// 稳定存活阈值秒（0..86400，默认 60）：实例存活达此时长后的退出重置连续失败计数
+        /// （参考 pm2 min_uptime / supervisord startsecs，防止长稳运行后的偶发崩溃被历史失败连坐）。
+        /// 0 表示计数永不自动复位。
+        /// </summary>
+        public int StableUptimeSec { get; set; } = 60;
 
         [JsonIgnore]
         public bool IsDetach
         {
             get { return string.Equals(Mode, "detach", StringComparison.OrdinalIgnoreCase); }
+        }
+
+        [JsonIgnore]
+        public bool RestartOnFailure
+        {
+            get { return string.Equals(Restart, "on-failure", StringComparison.OrdinalIgnoreCase); }
         }
     }
 
@@ -244,6 +270,20 @@ namespace CarroDesk.Models
                 if (Options.TimeoutSec > 0) return "detach mode conflicts with timeoutSec>0 (detached process is never timed out)";
                 if (Options.Retry > 0) return "detach mode conflicts with retry>0 (no exit code to retry on)";
                 if (Options.AllowConcurrent) return "detach mode conflicts with allowConcurrent=true (multiple daemon instances are almost always a mistake)";
+            }
+            if (Options != null && Options.SingleInstance && !Options.IsDetach)
+                return "options.singleInstance requires mode=detach (wait mode is deduped in-host already)";
+            if (Options != null && !string.IsNullOrWhiteSpace(Options.Restart))
+            {
+                string r = Options.Restart.Trim().ToLowerInvariant();
+                if (r != "none" && r != "on-failure") return "options.restart invalid (none|on-failure)";
+            }
+            if (Options != null && Options.RestartOnFailure)
+            {
+                if (!Options.IsDetach) return "options.restart=on-failure requires mode=detach (wait mode uses retry instead)";
+                if (Options.RestartDelaySec < 1 || Options.RestartDelaySec > 3600) return "restartDelaySec must be 1..3600";
+                if (Options.RestartLimit < 1 || Options.RestartLimit > 100) return "restartLimit must be 1..100";
+                if (Options.StableUptimeSec < 0 || Options.StableUptimeSec > 86400) return "stableUptimeSec must be 0..86400";
             }
             return null;
         }

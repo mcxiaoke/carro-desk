@@ -27,6 +27,7 @@ namespace CarroDesk.Services.Tasks
         private int _exitWatchStarted;
         private bool _exitRaised;
         private bool _disposed;
+        private TaskSingleInstanceMutex _singleInstanceMutex;
 
         internal TaskProcessHandle(TaskDefinition task, Process proc, ProcessJob job)
         {
@@ -139,14 +140,23 @@ namespace CarroDesk.Services.Tasks
         /// <summary>
         /// 启动后台退出监视（detach 模式专用）：进程退出后写 finished 日志并触发 <see cref="Exited"/>。
         /// 幂等；监视在后台线程池执行，不占用任何执行槽。
+        /// 监视完成后句柄自动 Dispose——事件处理器只允许读取快照字段（Pid/WasStopped 等），
+        /// 这同时保证单实例互斥体在重启延迟期内及时释放（下一轮启动可重新获取）。
         /// </summary>
         public void BeginExitWatch()
         {
             if (Interlocked.Exchange(ref _exitWatchStarted, 1) != 0) return;
             Task.Run(async () =>
             {
-                int code = await WaitAsync(CancellationToken.None, null).ConfigureAwait(false);
-                RaiseExited(code);
+                try
+                {
+                    int code = await WaitAsync(CancellationToken.None, null).ConfigureAwait(false);
+                    RaiseExited(code);
+                }
+                finally
+                {
+                    Dispose();
+                }
             });
         }
 
@@ -165,11 +175,15 @@ namespace CarroDesk.Services.Tasks
             }
             catch { }
             try { KillTree(_proc, Pid); } catch { }
+            // 停止即实例终结：立即释放单实例互斥体（正常路径由 watcher 的 Dispose 释放，
+            // 这里兜底覆盖无 watcher 的停止路径），保证随后的启动/重启能立即取到互斥体
+            try { if (_singleInstanceMutex != null) _singleInstanceMutex.Dispose(); } catch { }
         }
 
         /// <summary>
         /// 释放句柄（被动）：不主动杀进程。
         /// 注意 killWithHost=true 时关闭 kill-on-close 作业对象本身就会终止仍在运行的进程树——这正是该选项的语义。
+        /// 单实例互斥体在此一并弃置（abandoned），下一个启动者按"前持有者死亡"接手。
         /// </summary>
         public void Dispose()
         {
@@ -177,6 +191,13 @@ namespace CarroDesk.Services.Tasks
             _disposed = true;
             try { if (_proc != null) _proc.Dispose(); } catch { }
             try { if (_job != null) _job.Dispose(); } catch { }
+            try { if (_singleInstanceMutex != null) _singleInstanceMutex.Dispose(); } catch { }
+        }
+
+        /// <summary>仅 detach 启动路径使用：把启动前获取的单实例互斥体移交句柄托管（Dispose 时释放）。</summary>
+        internal void AttachMutex(TaskSingleInstanceMutex mutex)
+        {
+            _singleInstanceMutex = mutex;
         }
 
         private void RaiseExited(int code)
