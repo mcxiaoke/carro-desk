@@ -21,7 +21,7 @@
 
   <PropertyGroup>
     <Major>1</Major>
-    <Minor>0</Minor>
+    <Minor>1</Minor>
     <Patch>0</Patch>
     <VersionPrefix>$(Major).$(Minor).$(Patch)</VersionPrefix>
     <!-- 基准日：DaysSinceEpoch = today.Subtract(epoch).Days -->

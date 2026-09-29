@@ -1,175 +1,187 @@
-# ScreenLock — 电脑闲时伪锁屏工具设计方案
+# CarroDesk 架构设计
 
-> 版本：v0.1（2026-08-24）
+> 版本：v2.0（2026-09-29，随代码现状更新）
 > 平台：Windows 10 / 11
-> 技术栈：.NET Framework 4.8 + WPF（C#）
+> 技术栈：.NET Framework 4.8 + WPF（C# 7.3）
 
 ## 1. 项目定位
 
-一个常驻系统托盘的工具：用户离开电脑超过设定空闲时长后，弹出一个**全屏、置顶、覆盖所有显示器**的锁屏界面（非 Windows 真实锁定会话），拦截大部分鼠标/键盘操作；输入正确 PIN 后界面隐藏，重新开始计时。
+CarroDesk 是一个常驻系统托盘的**模块化工作机管家**：宿主进程承载一组功能模块（锁屏、计划任务、保持唤醒、服务控制、音频/显示器辅助功能等），并通过命名管道 IPC + 命令内核把精选能力安全地暴露给外部客户端（CLI 单文件 exe、MCP stdio 适配器），供人或 AI 助手远程驱动本机的低风险操作。
 
-**定位说明**：本工具是"防误碰 / 提醒"性质，不是安全软件。Ctrl+Alt+Del 属于系统级安全边界（SECURE DESKTOP），任何用户态程序都无法拦截，详见 §8 已知限制。
+演进历史：项目起源于 ScreenLock（闲时伪锁屏工具），2026-09 完成模块化宿主改造（`MODULAR-HOST-DESIGN.md` v2.0）并更名 CarroDesk；锁屏功能保留为 ScreenLock 模块。
 
-## 2. 功能需求
+设计原则：
 
-| 编号 | 需求 | 说明 |
+- **In-Process Modular Monolith**：单进程多模块，无插件动态加载，模块间只经宿主上下文通信
+- **瘦上下文**：模块只能从 `IModuleContext` 拿服务（pull），禁止向容器注册服务
+- **能力即白名单**：IPC 只暴露显式注册的能力，未注册的一切不可达
+- **纵深防御**：能力白名单 → 模块状态校验 → 参数 schema → 口令 → 限流 → 审计，服务控制另有内核 DACL 兜底
+
+## 2. 总体结构
+
+```
+CarroDesk.slnx
+├── src/                      CarroDesk.exe（WPF 宿主）
+│   ├── App.xaml(.cs)         入口：单实例互斥、全局异常、托盘、ctl 二实例转发
+│   ├── Core/                 模块契约层
+│   │   ├── IModule.cs / ModuleBase.cs        生命周期与状态机
+│   │   ├── IModuleContext.cs                 只读服务上下文
+│   │   └── Commands/ICommandProvider.cs      能力暴露接口（pull 模式）
+│   ├── Host/                 宿主层
+│   │   ├── Commands/         CommandHost 分发、CommandRegistry 白名单、
+│   │   │                     审计、限流、错误码、host.* 内置能力
+│   │   ├── Ipc/              NamedPipeCommandServer、FrameCodec、RpcProtocol、
+│   │   │                     McpStdioServer（MCP stdio 适配器）
+│   │   ├── Modules/          ModuleRegistry（标准模块装配）
+│   │   └── Services/         ModuleManager、ServiceContainer(DI)、
+│   │                         ConfigManager、DynamicTrayController、HotkeyService…
+│   ├── Modules/              功能模块（见 §3）
+│   ├── Services/             ConfigService、PinService(+PinGuard)、
+│   │                         ProcessExclusionService、Tasks 运行时…
+│   └── Views/                LockWindow、TaskEditorWindow、TrayContextMenu 等
+├── cli/CarroDesk.Cli/        CarroDesk.Cli.exe（Costura 单文件；ctl / --mcp）
+├── tests/CarroDesk.Tests/    单元测试（291 通过）
+├── skills/carrodesk/         AI agent 技能（CLI 直控，MCP 无关）
+└── docs/                     设计文档、使用说明、AI 手册、remote-admin 脚本
+```
+
+## 3. 模块化宿主
+
+### 3.1 模块契约与生命周期
+
+`IModule` / `ModuleBase<TConfig>`（`src/Core/`）定义统一生命周期，状态机：
+
+```
+Created → Initialized → Running → Stopped
+                            └────→ Faulted（Start 异常时逆序清理后标记）
+                                    Disabled（config.Enabled=false，跳过启动）
+```
+
+`ModuleBase` 提供的公共服务：配置节泛型加载、幂等 Start/Stop、托管热键注册（`RegisterManagedHotkey`，停止自动注销）、配置热重载回调 `OnConfigReloaded`、语言切换回调 `OnLanguageChanged`、托盘菜单项 `GetTrayMenuItems()`、能力暴露 `GetCommands()`（`ICommandProvider`，与托盘菜单同构的 pull 模式）。
+
+模块清单（`src/Host/Modules/ModuleRegistry.cs` 一次注册）：
+
+| 模块 | Order | 职责 | IPC 能力 |
+|---|---|---|---|
+| ScreenLock | — | 空闲/热键 PIN 锁屏 | — |
+| TaskScheduler | — | 计划任务调度与执行 | —（B4 二期） |
+| Awake | 15 | 保持唤醒 | awake.status / awake.on / awake.off |
+| AudioSwitch | — | 热键切默认音频设备 | — |
+| AppAutoMute | — | 目标进程自动静音 | — |
+| MonitorProfile | 30 | DDC 显示器配置档定时切换 | — |
+| ClipboardHistory | 35 | 剪贴板历史 | — |
+| ServiceControl | 900 | Windows 服务启停（无托盘 UI） | services.status / services.start / services.stop |
+
+宿主自身作为伪模块（`id: "host"`，`isHost: true`）提供 `host.hello / host.guide / host.status / host.modules.list / host.capabilities.list` 五个能力。`capabilityCount: 0` 表示该模块尚未开放能力（分批开放中），不是故障。
+
+### 3.2 宿主服务
+
+- **ModuleManager**：按 Order 装配/启停，`CollectCommands()` 汇总各模块能力（逐模块 try/catch 隔离故障），`GetModuleStatus()` 输出状态快照
+- **ServiceContainer**：手写 DI；模块可 `GetService<T>()` 取共享服务（PinService、HotkeyService、日志、通知等）
+- **DynamicTrayController + MenuProjectionEngine**：`TrayContextMenu.xaml` 预留 `PluginSlotAnchorTop/Bottom` 双锚点，各模块菜单项按 Order 注入（250ms 防抖）；顶层静态项：桌面控制面板、开机自启、配置编辑器、打开配置目录、重载配置、语言、退出（需验 PIN）
+- **ConfigManager/ConfigService**：JSON 配置 + 热重载；数据目录优先级 `CARRODESK_DATA_DIR` > 便携模式（exe 旁 `portable.ini` → `app_data\`）> `%AppData%\CarroDesk\`
+
+## 4. IPC 层（S1–S4 已实现，S5 预留）
+
+```
+外部客户端                     宿主
+─────────────                 ─────────────────────────────────────
+CarroDesk.Cli.exe ctl ──┐
+CarroDesk.exe ctl ──────┤     NamedPipeCommandServer（每用户管道，ACL 限本用户+SYSTEM）
+  （二实例转发）          ├──→    ↓ FrameCodec：[int32 LE 长度][UTF-8 JSON]，1MB 上限
+CarroDesk.Cli --mcp ────┘       RpcProtocol：JSON-RPC 2.0 + pin/source 扩展字段
+  （stdio ↔ 管道桥）               ↓
+                               CommandHost（命令内核，固定校验序）
+                                 ↓
+                         CommandRegistry（能力白名单）→ 模块实现
+```
+
+### 4.1 传输
+
+- 管道名 `\\.\pipe\CarroDesk.ctl.<用户SID>`（缺 SID 退化 `.default`）；`PipeSecurity` 仅当前用户 SID + SYSTEM
+- 帧协议：4 字节小端长度 + UTF-8 JSON，单帧上限 1MB，超限断开；显式 64KB 缓冲区避免双向写死锁
+- `CarroDesk.exe ctl ...` 作为二实例把命令转发给已运行的宿主后退出（与 CLI 共用 `ControlArgs` 解析）
+
+### 4.2 命令内核（CommandHost）
+
+校验顺序固定，任一步失败即短路返回：
+
+| 步骤 | 校验 | 失败错误码 |
 |---|---|---|
-| F1 | 闲时检测 | 通过 `GetLastInputInfo` 检测系统空闲时间，默认阈值 **5 分钟**，可配置 |
-| F2 | 全屏锁屏 | 覆盖全部显示器，无边框、置顶、不显示在任务栏 |
-| F3 | 输入拦截 | 低级键盘钩子拦截 Win 键组合、Alt+Tab、Alt+F4、Ctrl+Esc 等 |
-| F4 | PIN 解锁 | 输入正确 PIN 后隐藏锁屏、重置计时；首次运行引导设置 PIN，之后可修改 |
-| F5 | 防暴力破解 | 连续输错 5 次，每次尝试间隔递增 30 秒 |
-| F6 | 配置文件 | JSON 格式，用户可直接用任意编辑器修改；托盘右键 **Reload Config** 热加载 |
-| F7 | 开机自启 | 写注册表 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`，可配置开关 |
-| F8 | 托盘图标 | 右键菜单：锁定、Reload Config、打开配置目录、退出（退出需 PIN） |
+| 1 | 能力存在于注册表 | -32601 CapabilityNotFound |
+| 2 | 所属模块 Running | -32001 ModuleUnavailable |
+| 3 | 参数 schema（未知参数拒绝；string/int/bool 收敛；枚举精确匹配） | -32602 InvalidParams |
+| 4 | 口令（`RequiresPinFor` 动态判定 + PinGuard 挑战） | -32002 PinRequired |
+| 5 | 限流（默认每能力×来源 30 次/分钟） | -32003 RateLimited |
+| 6 | 执行（默认超时 5000ms） | 超时 -32004 / 异常折叠 -32010 |
 
-## 3. 总体架构
+错误码全集：-32700 ParseError、-32601、-32602、-32001、-32002、-32003、-32004、-32010 Internal、-32020 TransportError（客户端连不上管道，通常宿主未运行）。
 
-```
-ScreenLock.exe
-├── App.xaml(.cs)            入口：单实例互斥(Mutex)、全局异常处理、托盘初始化
-├── Models/
-│   └── AppSettings.cs       配置模型
-├── Services/
-│   ├── ConfigService.cs     JSON 配置读写 + 热加载(Reload)
-│   ├── IdleDetector.cs      GetLastInputInfo 轮询(1s DispatcherTimer)
-│   ├── KeyboardBlocker.cs   WH_KEYBOARD_LL 低级钩子
-│   ├── PinService.cs        PIN 哈希校验、防暴力破解计数
-│   ├── LockController.cs    锁定状态机：计时→锁定→解锁
-│   └── AutoStartService.cs  注册表自启项管理
-└── Views/
-    ├── LockWindow.xaml      全屏锁屏 UI(PIN 输入框、错误提示)
-    ├── FirstRunWindow.xaml  首次运行 PIN 设置向导
-    └── PinChangeWindow.xaml 修改 PIN(需旧 PIN)
-```
+**审计**：每次调用写 `ipc-audit.log`（1MB 轮转），参数只记 SHA-256 摘要，`pin` 单独提取不进摘要与参数（只记 PinUsed 布尔）。
 
-### 3.1 配置文件
+### 4.3 口令（PinService + PinGuard）
 
-路径：`%AppData%\ScreenLock\config.json`（托盘菜单可直接打开所在目录）。
+- PIN 哈希 PBKDF2-SHA256 100k 迭代 + 随机盐，兼容旧 SHA256 哈希透明升级；数据在 config.json `PinSalt/PinHash`
+- PinGuard：连错 5 次进入封锁期，第 n 次超限封锁 `(n-4)*30s` 递增，封锁期内正确口令也拒绝（-32002 blocked）
+- 宿主退出、锁屏解锁等敏感动作复用同一 PIN 校验
 
-```json
-{
-  "IdleMinutes": 5,
-  "AutoStart": true,
-  "PinHash": "<SHA256>",
-  "PinSalt": "<base64>",
-  "ShowClock": true,
-  "OverlayOpacity": 0.88,
-  "TasksEnabled": true,
-  "ExcludeProcesses": ["GenshinImpact.exe", "notepad.exe"],
-  "UnlockOnResume": true,
-  "FailedAttempts": 0
-}
-```
+### 4.4 客户端
 
-- 除 PIN 相关字段外均可直接改 JSON；托盘右键 Reload Config 后生效。
-- `PinHash` = SHA256(salt + PIN)，盐值随机生成，PIN 明文不落盘。
-- `AutoStart` 字段与注册表 Run 键保持同步（改 JSON 后 reload 时同步注册表）。
-- `TasksEnabled` 总开关（默认 true），`ExcludeProcesses` 为排除进程列表（见 §3.2），支持 `["game.exe"]` 或 `"game.exe, notepad.exe"`，大小写不敏感，可含 `.exe` 或全路径，列出进程运行时暂停空闲计时。
+- **CLI**（`cli/CarroDesk.Cli`）：`ctl <capability> [--json] [--pin xx] [--pipe name] [--timeout ms] [--source s] [--<param> <value>]`；退出码 0 成功 / 1 用法错误 / 2 业务错误 / 3 连不上宿主
+- **MCP stdio 适配器**（`McpStdioServer`）：`--mcp` 启动；`initialize` 回显协议版本 + 行为约定 instructions，`tools/list` 首次经 `host.capabilities.list` 拉取并缓存（自动随宿主升级），`tools/call` 按约定把 `arguments.pin` 提取为请求口令；stdout 只出协议 JSON，日志走 stderr
+- **host.guide**：返回宿主内嵌的 `docs/AI-AGENT-MANUAL.md` 全文，AI 助手的深度用法参考，随宿主发布自动更新
 
-### 3.2 空闲检测（IdleDetector）
+### 4.5 安全边界（明确不做的）
 
-```csharp
-[StructLayout(LayoutKind.Sequential)]
-struct LASTINPUTINFO { public uint cbSize; public uint dwTime; }
+- ❌ 任意 shell / PowerShell 执行 —— 系统性管理走 `docs/remote-admin/` 的 SSH/Agent 带外通道
+- ❌ 剪贴板内容读取、任意文件读写、配置整体覆写
+- ❌ `host.exit` 等远程退出宿主的能力永不开放
+- ❌ 授权清单之外的服务操作 —— 配置只是参数枚举，真正的边界是服务对象 DACL（管理员一次性授予，见 `docs/remote-admin/grant-service-control.ps1`）
 
-[DllImport("user32.dll")]
-static extern bool GetLastInputInfo(ref LASTINPUTINFO plii);
-```
+## 5. 任务系统（TaskScheduler）
 
-- `DispatcherTimer` 每 1000ms 轮询一次；
-- `idle = Environment.TickCount - (int)info.dwTime`（注意 TickCount 回绕处理，用无符号差值计算）；
-- `App.ShouldSuspendIdle()` 聚合多重暂停条件：会话已锁(`_sessionLocked`)/暂停计时(`_pauseUntil`)/全屏忙碌(`IsSystemBusy`)**/排除进程运行中**；任一命中则冻结 `_effectiveMs` 累计，不计入空闲时长；
-- 排除进程由 `ProcessExclusionService.IsExcludedRunning(ExcludeProcesses)` 判定（`Path.GetFileName` 去路径、去 `.exe`、大小写不敏感、`Process.GetProcesses()` 比对 `ProcessName`，2s 缓存），适用于游戏挂机等场景；
-- 达到 `IdleMinutes * 60_000` 且未被暂停时触发锁定。
+### 5.1 调度
 
-### 3.3 锁屏窗口（LockWindow）
+触发器 11 类：startup / interval / daily / cron（5 字段）/ sessionLock / sessionUnlock / idle / manual / hotkey / watch（FileSystemWatcher，500ms 防抖）。`tasks.json` 支持注释，托盘热重载；条件 `when`（onlyIdle/acPower/networkAvailable/fileExists/fileNotExists）不满足记 `skipped(condition)`。`file/args/workDir` 支持 `%VAR%` 与 `{{date}}` 等模板。
 
-关键属性：
+### 5.2 运行模式（B1：wait / detach）
 
-```
-WindowStyle="None"
-ResizeMode="NoResize"
-WindowState="Normal"          ← 手动设置尺寸而非 Maximized（绕过 Maximized 下任务栏仍可见的问题）
-Topmost="True"
-ShowInTaskbar="False"
-ShowActivated="True"
-Background="#CC000000"        半透明黑，可看到背后内容轮廓（可配置纯色）
-```
+`options.mode` 决定任务的运行形态：
 
-- **多显示器**：为 `Screen.AllScreens()` 中每块屏幕创建一个 `LockWindow` 实例，手动 `Left/Top/Width/Height` 对齐各屏边界；主屏窗口承载 PIN 输入框，副屏窗口仅遮挡。
-- **置顶保活**：`DispatcherTimer` 每 500ms 调 `SetWindowPos(HWND_TOPMOST, SWP_NOACTIVATE)` 兜底。
-- **焦点保护**：监听 `Deactivated` → 强制 `Activate()` 并聚焦 PIN 输入框。
-- **睡眠唤醒**：注册 `SystemEvents.PowerModeChanged`(Resume) 事件，唤醒后若空闲已超阈值则立即锁定。
+- **`wait`（默认）**：宿主拉起子进程并等待退出，受 `timeoutSec`/`retry`/`allowConcurrent` 约束，输出进任务日志
+- **`detach`**：启动后立即返回，任务作为常驻后台进程存在；`timeoutSec/retry/allowConcurrent` 不可用（`Validate()` 拒绝）
+  - `killWithHost`（默认 true）：经 Job Object 挂 kill-on-close，宿主退出子进程随之结束；false 时脱离（Stop 走 `taskkill /T /F` 降级链）
+  - `singleInstance`（B2）：命名互斥体 `Local\CarroDesk.Task.<name>` 防重复拉起；进程内登记表先行防重入，AbandonedMutex 视为前任死亡安全接管，失败 fail-open
+  - `restart: "on-failure"`（B3）：守护自动重启，`restartDelaySec`（1-3600，默认 5）、`restartLimit`（1-100，默认 3）、`stableUptimeSec`（默认 60，稳定运行满即复位连续失败计数）；超限熔断标记 failed，保存任务/手动运行/宿主重启可复位
 
-### 3.4 键盘拦截（KeyboardBlocker）
+内部实现：运行注册表 `Dictionary<name, RunSlot>`（`TaskProcessHandle` 统一封装进程+Job Object+退出监视）；任务编辑器"测试运行"有 10s 兜底超时、独立停止按钮与防重入，detach 任务测试运行不等待。
 
-- `SetWindowsHookEx(WH_KEYBOARD_LL, hookProc, GetModuleHandle(null), 0)` 安装全局低级钩子；
-- 拦截规则（返回 1 吞掉按键）：
-  - `Win` / `Win+*` 全部组合
-  - `Alt+Tab`、`Alt+Esc`、`Alt+F4`
-  - `Ctrl+Esc`
-  - `LWin Menu` / `Apps` 键可选
-- 放行规则：数字键、退格、Enter、方向键等（供 PIN 输入使用）；
-- 锁定期间启用钩子，解锁后立即卸载（不影响正常使用）；
-- 注意钩子回调必须保持委托引用防止 GC 回收，处理需快速返回。
+## 6. 服务控制（ServiceControl）
 
-### 3.5 PIN 校验与防暴力（PinService）
+双层安全：
 
-- 哈希算法：`SHA256(UTF8(salt || pin))`，盐 16 字节随机数；
-- 校验使用固定时间比较（逐字节异或累积）避免时序侧信道；
-- 失败计数存入配置：错 5 次后进入惩罚期，第 n 次惩罚 = `(n-4)*30s`，惩罚期内输入框禁用并显示倒计时；
-- 成功解锁清零计数。
+1. **配置层**：config.json `Services.AllowedServices: [{name, desc, requiresPin}]`（兼容旧字符串写法）；`services.start/stop` 的 `name` 参数 AllowedValues 即清单，清单外一律 -32602
+2. **内核层**：服务对象 SDDL DACL 由管理员一次性授予 ACE（`docs/remote-admin/grant-service-control.ps1`，支持批量与 `-DryRun` 预览，备份原 SDDL 可回滚）；未授予时服务启停返回拒绝并指引运行脚本
 
-### 3.6 状态机（LockController）
+按服务口令策略：`requiresPin: false`（如无害高频的 GameViewerService）免 PIN；`requiresPin: true`（如停掉会断 RDP 的 TermService）必须带 PIN，缺/错均 -32002。Access denied（Win32 错 5）时返回授予脚本指引。
 
-```
-Unlocked --(空闲达到阈值 / 托盘手动锁定)--> Locked
-Locked   --(PIN 正确)--------------------> Unlocked（隐藏窗口、卸载钩子、重置计时）
-FirstRun --(未设置过 PIN)----------------> FirstRunWindow 引导设置
-```
+## 7. ScreenLock 模块（保留功能）
 
-## 4. 关键实现细节
+空闲（`GetLastInputInfo` 轮询）或热键触发全屏、置顶、覆盖全部显示器的伪锁屏，PIN 解锁（复用全局 PinService），低级键盘钩子拦截 Win/Alt+Tab/Alt+F4 等。暂停条件聚合：会话已锁 / 暂停计时 / 全屏忙碌 / **排除进程运行中**（`ExcludeProcesses`，`ProcessExclusionService` 2s 缓存，适合游戏挂机）。属"防误碰/提醒"性质，非安全软件（Ctrl+Alt+Del 不可拦截）。
 
-1. **单实例**：`Mutex(false, "Global\\ScreenLock_SingleInstance")`，重复启动时激活已有进程即可。
-2. **任务栏遮挡**：不用 `Maximized`（其不会盖住任务栏），改为取工作区+任务栏高度的全屏矩形直接设 Width/Height。
-3. **触摸/边缘手势**：锁定期间钩子同时吞掉鼠标 `WM_XBUTTONDOWN` 以外的中键/侧键（低级鼠标钩子可选，一期先不做，窗口铺满通常够用）。
-4. **退出保护**：托盘菜单"退出"弹出 PIN 验证小窗，验证通过才调用 `Application.Current.Shutdown()`。
-5. **异常兜底**：`AppDomain.UnhandledException` 记日志到 `%AppData%\ScreenLock\log.txt`，避免静默崩溃导致永远锁死。
-6. **编码**：源码与配置一律 UTF-8。
+## 8. 构建、测试与发布
 
-## 5. 开发环境与构建
+- `CarroDesk.slnx`：`src`（主程序）、`cli/CarroDesk.Cli`（单文件 CLI）、`tests/CarroDesk.Tests`
+- 全部 .NET Framework 4.8 / C# 7.3，Win10/11 免安装运行时；CLI 经 Costura 内嵌依赖输出单 exe
+- 测试：`tests/CarroDesk.Tests`（291 通过，2026-09-29）
+- 发布产物保持最小集：exe + 配置样例 + pdb；部署目标如 `C:\Home\Tools\CarroDesk\`（便携 + `app_data\`）
 
-- IDE：Visual Studio 2026（本机已装全套 .NET / MSVC 工具链）
-- 目标框架：`.NET Framework 4.8`（WPF），Win10/11 系统自带运行时，无需额外安装依赖
-- 输出：单 exe 即可（.NET Framework 无需自包含发布），可后续加 Inno Setup 打包（暂不需要）
+## 9. 相关设计文档
 
-## 6. 开发步骤
-
-| 阶段 | 内容 | 验收标准 |
-|---|---|---|
-| S1 | 项目骨架、单实例、托盘图标、JSON 配置读写 + Reload | 托盘可用，改 JSON 后 reload 生效 |
-| S2 | 闲时检测 + 单屏锁窗显示/隐藏 | 空闲到点弹全屏窗，PIN 正确后消失 |
-| S3 | 键盘钩子拦截 | 锁定期间 Win/Alt+Tab/Alt+F4 失效，数字输入正常 |
-| S4 | 首次运行 PIN 设置 + 修改 + 防暴力破解 | 流程完整，错 5 次进入惩罚倒计时 |
-| S5 | 多显示器覆盖、开机自启、睡眠唤醒锁定、退出验 PIN | 全功能回归通过 |
-
-## 7. 目录规划
-
-```
-screenlock/
-├── docs/
-│   └── DESIGN.md        本文档
-├── src/                 WPF 项目源码
-├── temp/                临时产物
-└── README.md            使用说明（后期补充）
-```
-
-## 8. 已知限制
-
-1. **Ctrl+Alt+Del 无法拦截**：系统安全边界，用户可借此打开任务管理器结束进程。缓解手段（按需追加，一期不做）：
-   - 进程名低调命名；
-   - 双进程看门狗互拉；
-   - 组策略 `DisallowRun` 屏蔽 taskmgr（需专业版且影响全局，副作用大）。
-2. **UAC 提权窗口**：若后台有管理员权限程序弹窗，可能压过本程序（本程序不以管理员运行）。必要时可在清单中声明 `requireAdministrator`，但会影响开机自启体验，默认不做。
-3. **RDP 会话**：远程桌面断开时窗口行为待实测，如有问题在 Session 切换事件中强制锁定即可。
+- `MODULAR-HOST-DESIGN.md` —— 模块化宿主总设计（v2.0，已兑现）
+- `IPC-CAPABILITY-EXPOSURE-DESIGN-20260926.md` —— IPC/能力暴露设计（S1-S4 已实现，S5 远程网关预留）
+- `SERVICE-CONTROL-PLAN-20260928.md` —— 服务控制方案（已实施）
+- `TASKS-PERSISTENT-RUN-DESIGN-20260928.md` —— 常驻任务设计（B1/B2/B3 已实施，B4 tasks.* 能力二期）
+- `MODULE-DEVELOPMENT-GUIDE.md` —— 模块开发指南
+- `I18N-DESIGN.md`、`AUTORUN-DESIGN.md`、`HOTKEY-SYSTEM-REFACTOR-PROPOSAL-20260918.md` —— 专项设计
+- `CHANGES-20260926.md` —— 变更日志
