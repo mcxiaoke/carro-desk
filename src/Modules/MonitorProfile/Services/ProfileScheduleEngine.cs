@@ -19,11 +19,19 @@ namespace CarroDesk.Modules.MonitorProfile.Services
         private readonly MonitorDdcService _ddcService;
         private readonly ILoggerService _logger;
         private readonly Dispatcher _dispatcher;
+        private readonly IDisplayPowerListener _displayPowerListener;
+        private readonly bool _ownsDisplayListener;
+
+        private readonly object _reapplyLock = new object();
+        private CancellationTokenSource _reapplyCts;
 
         private MonitorProfileConfig _config;
         private DispatcherTimer _timer;
         private bool _isDisposed;
         private int _lifecycleGeneration;
+
+        public IDisplayPowerListener DisplayPowerListener => _displayPowerListener;
+        public bool IsDisplayOn => _displayPowerListener == null || _displayPowerListener.IsDisplayOn;
 
         public MonitorTimeSetting LastAppliedSetting { get; private set; }
         public int CurrentBrightness { get; private set; } = -1;
@@ -32,17 +40,40 @@ namespace CarroDesk.Modules.MonitorProfile.Services
         public event Action<string, int, int> SettingApplied;
         public event Action StateChanged;
 
-        public ProfileScheduleEngine(MonitorDdcService ddcService, Dispatcher dispatcher, ILoggerService logger = null)
+        public ProfileScheduleEngine(MonitorDdcService ddcService, Dispatcher dispatcher, ILoggerService logger = null, IDisplayPowerListener displayPowerListener = null)
         {
             _ddcService = ddcService ?? throw new ArgumentNullException(nameof(ddcService));
             _dispatcher = dispatcher ?? Dispatcher.CurrentDispatcher;
             _logger = logger;
+
+            if (displayPowerListener != null)
+            {
+                _displayPowerListener = displayPowerListener;
+                _ownsDisplayListener = false;
+            }
+            else
+            {
+                _displayPowerListener = new DisplayPowerListener(_dispatcher, _logger);
+                _ownsDisplayListener = true;
+            }
+        }
+
+        private void LogDebug(string message)
+        {
+            System.Diagnostics.Debug.WriteLine($"[DEBUG] [MonitorSchedule] {message}");
         }
 
         public void Start(MonitorProfileConfig config)
         {
             Interlocked.Increment(ref _lifecycleGeneration);
             _config = config ?? MonitorProfileConfig.CreateDefault();
+
+            // 启动显示器电源监听
+            if (_displayPowerListener != null)
+            {
+                _displayPowerListener.DisplayPowerChanged += OnDisplayPowerChanged;
+                _displayPowerListener.Start();
+            }
 
             // 监听系统电源事件与锁屏唤醒事件
             SystemEvents.PowerModeChanged += OnPowerModeChanged;
@@ -59,13 +90,23 @@ namespace CarroDesk.Modules.MonitorProfile.Services
             }
             _timer.Start();
 
-            // 启动时初次异步应用当前设置
-            ApplyCurrentSetting(force: true);
+            // 启动时初次异步应用当前设置（若显示器点亮开启）
+            if (IsDisplayOn)
+            {
+                ApplyCurrentSetting(force: true);
+            }
         }
 
         public void Stop()
         {
             Interlocked.Increment(ref _lifecycleGeneration);
+            lock (_reapplyLock)
+            {
+                _reapplyCts?.Cancel();
+                _reapplyCts?.Dispose();
+                _reapplyCts = null;
+            }
+
             if (_timer != null)
             {
                 _timer.Stop();
@@ -75,6 +116,12 @@ namespace CarroDesk.Modules.MonitorProfile.Services
 
             SystemEvents.PowerModeChanged -= OnPowerModeChanged;
             SystemEvents.SessionSwitch -= OnSessionSwitch;
+
+            if (_displayPowerListener != null)
+            {
+                _displayPowerListener.DisplayPowerChanged -= OnDisplayPowerChanged;
+                _displayPowerListener.Stop();
+            }
         }
 
         public void UpdateConfig(MonitorProfileConfig newConfig)
@@ -88,7 +135,27 @@ namespace CarroDesk.Modules.MonitorProfile.Services
             if (_config == null || !_config.Enabled || !_config.AutoSchedule)
                 return;
 
+            if (!IsDisplayOn)
+            {
+                LogDebug("显示器处于关闭或休眠状态，跳过定时检查");
+                return;
+            }
+
             ApplyCurrentSetting(force: false);
+        }
+
+        private void OnDisplayPowerChanged(bool isDisplayOn)
+        {
+            if (isDisplayOn)
+            {
+                if (_config == null || !_config.Enabled || !_config.AutoSchedule) return;
+                _logger?.LogInfo("MonitorSchedule", "检测到显示器点亮开启，延迟 3 秒应用当前时间段配置");
+                ScheduleDelayedReapply(3000, true);
+            }
+            else
+            {
+                _logger?.LogInfo("MonitorSchedule", "检测到显示器已关闭或休眠，暂停定时调节与硬件通信");
+            }
         }
 
         private void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
@@ -97,8 +164,7 @@ namespace CarroDesk.Modules.MonitorProfile.Services
             {
                 if (_config == null || !_config.Enabled || !_config.AutoSchedule) return;
                 _logger?.LogInfo("MonitorSchedule", "检测到系统从睡眠/休眠唤醒，准备延迟应用亮度配置");
-                // 唤醒后 DP/HDMI 握手存在物理延迟，延迟 2.5 秒和 5 秒双阶段自愈重试
-                ScheduleDelayedReapply(2500, true);
+                ScheduleDelayedReapply(3000, true);
             }
         }
 
@@ -108,28 +174,53 @@ namespace CarroDesk.Modules.MonitorProfile.Services
             {
                 if (_config == null || !_config.Enabled || !_config.AutoSchedule) return;
                 _logger?.LogInfo("MonitorSchedule", "检测到用户会话解锁，准备重新校准显示器配置");
-                ScheduleDelayedReapply(1500, false);
+                ScheduleDelayedReapply(3000, false);
             }
         }
 
         private void ScheduleDelayedReapply(int delayMs, bool retryOnFail)
         {
-            int generation = Volatile.Read(ref _lifecycleGeneration);
-            Task.Run(async () =>
+            lock (_reapplyLock)
             {
-                await Task.Delay(delayMs);
-                if (generation != Volatile.Read(ref _lifecycleGeneration) ||
-                    _config == null || !_config.Enabled || !_config.AutoSchedule || _isDisposed) return;
-                int count = ApplyCurrentSettingSync(force: true);
-                if (count == 0 && retryOnFail)
+                _reapplyCts?.Cancel();
+                _reapplyCts?.Dispose();
+                _reapplyCts = new CancellationTokenSource();
+                var cts = _reapplyCts;
+
+                int generation = Volatile.Read(ref _lifecycleGeneration);
+                Task.Run(async () =>
                 {
-                    _logger?.LogWarning("MonitorSchedule", "唤醒初次重连未探测到物理显示器，将在 5 秒后执行兜底重试");
-                    await Task.Delay(5000);
-                    if (generation != Volatile.Read(ref _lifecycleGeneration) ||
-                        _config == null || !_config.Enabled || !_config.AutoSchedule || _isDisposed) return;
-                    ApplyCurrentSettingSync(force: true);
-                }
-            });
+                    try
+                    {
+                        await Task.Delay(delayMs, cts.Token);
+                        if (cts.IsCancellationRequested || generation != Volatile.Read(ref _lifecycleGeneration) ||
+                            _config == null || !_config.Enabled || !_config.AutoSchedule || _isDisposed) return;
+
+                        if (!IsDisplayOn)
+                        {
+                            LogDebug("延迟重试触发时显示器仍处于熄灭状态，跳过应用");
+                            return;
+                        }
+
+                        int count = ApplyCurrentSettingSync(force: true);
+                        if (count == 0 && retryOnFail)
+                        {
+                            _logger?.LogWarning("MonitorSchedule", "唤醒初次重连未探测到物理显示器，将在 5 秒后执行兜底重试");
+                            await Task.Delay(5000, cts.Token);
+                            if (cts.IsCancellationRequested || generation != Volatile.Read(ref _lifecycleGeneration) ||
+                                _config == null || !_config.Enabled || !_config.AutoSchedule || _isDisposed) return;
+
+                            if (!IsDisplayOn) return;
+
+                            ApplyCurrentSettingSync(force: true);
+                        }
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // 正常取消
+                    }
+                });
+            }
         }
 
         /// <summary>
@@ -192,6 +283,12 @@ namespace CarroDesk.Modules.MonitorProfile.Services
         {
             if (_config == null || !_config.Enabled) return;
 
+            if (!IsDisplayOn)
+            {
+                LogDebug("显示器处于关闭或休眠状态，跳过应用配置");
+                return;
+            }
+
             string activeProfile = _config.ActiveProfile ?? "Daily";
             var activeSetting = GetActiveSettingForProfile(activeProfile);
             if (activeSetting == null) return;
@@ -208,6 +305,12 @@ namespace CarroDesk.Modules.MonitorProfile.Services
         private int ApplyCurrentSettingSync(bool force = false)
         {
             if (_config == null || !_config.Enabled) return 0;
+
+            if (!IsDisplayOn)
+            {
+                LogDebug("显示器处于关闭或休眠状态，跳过同步应用配置");
+                return 0;
+            }
 
             string activeProfile = _config.ActiveProfile ?? "Daily";
             var activeSetting = GetActiveSettingForProfile(activeProfile);
@@ -315,6 +418,10 @@ namespace CarroDesk.Modules.MonitorProfile.Services
             {
                 _isDisposed = true;
                 Stop();
+                if (_ownsDisplayListener && _displayPowerListener != null)
+                {
+                    _displayPowerListener.Dispose();
+                }
             }
         }
     }

@@ -127,9 +127,27 @@ namespace CarroDesk.Modules.MonitorProfile.Services
             _logger?.LogInfo(LogTag, message);
         }
 
+        private void LogDebug(string message)
+        {
+            System.Diagnostics.Debug.WriteLine($"[DEBUG] [{LogTag}] {message}");
+        }
+
         private void LogError(string message, Exception ex = null)
         {
             _logger?.LogError(LogTag, message, ex);
+        }
+
+        /// <summary>
+        /// 判断 Win32 错误码是否代表显示器处于休眠、黑屏未就绪或 I2C 通信被显卡切断。
+        /// </summary>
+        public static bool IsDisplaySleepingOrNotReady(int errorCode)
+        {
+            // -1071241847 = 0xC0262589 (STATUS_GRAPHICS_I2C_ERROR_TRANSMITTING_DATA)
+            // -1071241846 = 0xC026258A (STATUS_GRAPHICS_I2C_ERROR_RECEIVING_DATA)
+            return errorCode == -1071241847 ||
+                   errorCode == -1071241846 ||
+                   (uint)errorCode == 0xC0262589 ||
+                   (uint)errorCode == 0xC026258A;
         }
 
         /// <summary>
@@ -223,6 +241,7 @@ namespace CarroDesk.Modules.MonitorProfile.Services
             }
 
             int successCount = 0;
+            bool sleepOrOffDetected = false;
             try
             {
                 foreach (var handle in physicalHandles)
@@ -237,7 +256,15 @@ namespace CarroDesk.Modules.MonitorProfile.Services
                     else
                     {
                         int err = Marshal.GetLastWin32Error();
-                        Log($"DDC: 显示器句柄 {handle} 部分设置失败 (brightness={bOk}, contrast={cOk}, Win32错误: {err})");
+                        if (IsDisplaySleepingOrNotReady(err))
+                        {
+                            sleepOrOffDetected = true;
+                            LogDebug($"DDC: 显示器句柄 {handle} 处于休眠或未就绪状态 (Win32错误: {err})");
+                        }
+                        else
+                        {
+                            Log($"DDC: 显示器句柄 {handle} 部分设置失败 (brightness={bOk}, contrast={cOk}, Win32错误: {err})");
+                        }
                     }
                 }
             }
@@ -251,6 +278,12 @@ namespace CarroDesk.Modules.MonitorProfile.Services
 
             if (successCount == 0)
             {
+                if (sleepOrOffDetected)
+                {
+                    LogDebug("DDC: 物理显示器处于休眠或未就绪状态，跳过 WMI 回退");
+                    return 0;
+                }
+
                 Log("DDC: 所有物理显示器设置失败，回退至 WMI 设置亮度");
                 return SetBrightnessViaWmi(brightness) ? 1 : 0;
             }
@@ -293,6 +326,13 @@ namespace CarroDesk.Modules.MonitorProfile.Services
 
                 if (!bOk && !cOk)
                 {
+                    int err = Marshal.GetLastWin32Error();
+                    if (IsDisplaySleepingOrNotReady(err))
+                    {
+                        LogDebug($"DDC: 主显示器处于休眠或未就绪状态 (Win32错误: {err})，跳过 WMI 回退");
+                        return false;
+                    }
+
                     if (GetBrightnessViaWmi(out brightness))
                     {
                         contrast = 50;
@@ -616,8 +656,15 @@ namespace CarroDesk.Modules.MonitorProfile.Services
 
         #region WMI Fallback
 
+        private bool _wmiSupported = true;
+
         private bool SetBrightnessViaWmi(int brightness)
         {
+            if (!_wmiSupported)
+            {
+                return false;
+            }
+
             try
             {
                 using (var searcher = new ManagementObjectSearcher(@"root\WMI", "SELECT * FROM WmiMonitorBrightnessMethods"))
@@ -644,6 +691,12 @@ namespace CarroDesk.Modules.MonitorProfile.Services
                     return anyApplied;
                 }
             }
+            catch (ManagementException mex)
+            {
+                _wmiSupported = false;
+                Log($"WMI 亮度设置接口不受当前系统或外接显示器支持: {mex.Message}，已禁用后续 WMI 回退尝试");
+                return false;
+            }
             catch (Exception ex)
             {
                 LogError($"WMI 设置亮度失败 ({brightness})", ex);
@@ -654,6 +707,11 @@ namespace CarroDesk.Modules.MonitorProfile.Services
         private bool GetBrightnessViaWmi(out int brightness)
         {
             brightness = 0;
+            if (!_wmiSupported)
+            {
+                return false;
+            }
+
             try
             {
                 using (var searcher = new ManagementObjectSearcher(@"root\WMI", "SELECT CurrentBrightness FROM WmiMonitorBrightness"))
@@ -668,6 +726,12 @@ namespace CarroDesk.Modules.MonitorProfile.Services
                         }
                     }
                 }
+                return false;
+            }
+            catch (ManagementException mex)
+            {
+                _wmiSupported = false;
+                Log($"WMI 亮度读取接口不受当前系统或外接显示器支持: {mex.Message}，已禁用后续 WMI 读取尝试");
                 return false;
             }
             catch (Exception ex)

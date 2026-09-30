@@ -182,5 +182,86 @@ namespace CarroDesk.Tests
             Assert.AreEqual(85, reloaded.Profiles["CustomMode"][0].Brightness);
             Assert.AreEqual(90, reloaded.Profiles["CustomMode"][0].Contrast);
         }
+
+        [TestMethod]
+        public void MonitorDdcService_IsDisplaySleepingOrNotReady_IdentifiesSleepErrorCodes()
+        {
+            // Win32 0xC0262589 = -1071241847 (STATUS_GRAPHICS_I2C_ERROR_TRANSMITTING_DATA)
+            Assert.IsTrue(MonitorDdcService.IsDisplaySleepingOrNotReady(-1071241847));
+            Assert.IsTrue(MonitorDdcService.IsDisplaySleepingOrNotReady(unchecked((int)0xC0262589)));
+
+            // Win32 0xC026258A = -1071241846 (STATUS_GRAPHICS_I2C_ERROR_RECEIVING_DATA)
+            Assert.IsTrue(MonitorDdcService.IsDisplaySleepingOrNotReady(-1071241846));
+            Assert.IsTrue(MonitorDdcService.IsDisplaySleepingOrNotReady(unchecked((int)0xC026258A)));
+
+            // 其它普通错误不应被判定为休眠
+            Assert.IsFalse(MonitorDdcService.IsDisplaySleepingOrNotReady(0));
+            Assert.IsFalse(MonitorDdcService.IsDisplaySleepingOrNotReady(1));
+            Assert.IsFalse(MonitorDdcService.IsDisplaySleepingOrNotReady(5));
+            Assert.IsFalse(MonitorDdcService.IsDisplaySleepingOrNotReady(-1));
+        }
+
+        [TestMethod]
+        public void ProfileScheduleEngine_WhenDisplayIsOff_SkipsHardwareCalls()
+        {
+            var fakeListener = new FakeDisplayPowerListener { IsDisplayOn = false };
+            var ddc = new MonitorDdcService();
+            using (var engine = new ProfileScheduleEngine(ddc, System.Windows.Threading.Dispatcher.CurrentDispatcher, null, fakeListener))
+            {
+                var cfg = new MonitorProfileConfig
+                {
+                    ActiveProfile = "Test"
+                };
+                cfg.Profiles["Test"] = new List<MonitorTimeSetting>
+                {
+                    new MonitorTimeSetting { Time = "00:00", Brightness = 80, Contrast = 70 }
+                };
+
+                engine.Start(cfg);
+
+                Assert.IsFalse(engine.IsDisplayOn);
+                // 息屏时调用 ApplyCurrentSetting 应直接被短路，不会写入 LastAppliedSetting
+                engine.ApplyCurrentSetting(force: true);
+                Assert.IsNull(engine.LastAppliedSetting);
+            }
+        }
+
+        [TestMethod]
+        public void ProfileScheduleEngine_DisplayPowerEvent_StartsAndStopsListener()
+        {
+            var fakeListener = new FakeDisplayPowerListener { IsDisplayOn = false };
+            var ddc = new MonitorDdcService();
+            using (var engine = new ProfileScheduleEngine(ddc, System.Windows.Threading.Dispatcher.CurrentDispatcher, null, fakeListener))
+            {
+                Assert.IsFalse(fakeListener.IsStarted);
+                var cfg = new MonitorProfileConfig { Enabled = false };
+                engine.Start(cfg);
+                Assert.IsTrue(fakeListener.IsStarted);
+
+                engine.Stop();
+                Assert.IsTrue(fakeListener.IsStopped);
+            }
+        }
+    }
+
+    internal class FakeDisplayPowerListener : IDisplayPowerListener
+    {
+        public bool IsDisplayOn { get; set; } = true;
+
+        public event Action<bool> DisplayPowerChanged;
+
+        public bool IsStarted { get; private set; }
+        public bool IsStopped { get; private set; }
+        public bool IsDisposed { get; private set; }
+
+        public void Start() => IsStarted = true;
+        public void Stop() => IsStopped = true;
+        public void Dispose() => IsDisposed = true;
+
+        public void SimulatePowerChange(bool isOn)
+        {
+            IsDisplayOn = isOn;
+            DisplayPowerChanged?.Invoke(isOn);
+        }
     }
 }
