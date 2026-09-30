@@ -12,6 +12,11 @@ namespace CarroDesk.Modules.ScreenLock.Models
         public double OverlayOpacity { get; set; } = 0.88;
         public string Hotkey { get; set; } = "Ctrl+Alt+L";
 
+        public bool AutoLockEnabled { get; set; } = true;
+        public bool DevicePresenceEnabled { get; set; } = false;
+        public string TargetDeviceIP { get; set; } = "";
+        public int DeviceOfflineGraceSeconds { get; set; } = 30;
+
         [JsonConverter(typeof(StringOrStringListConverter))]
         public List<string> ExcludeProcesses { get; set; } = new List<string>();
         public bool UnlockOnResume { get; set; } = true;
@@ -22,6 +27,10 @@ namespace CarroDesk.Modules.ScreenLock.Models
             {
                 Enabled = Enabled,
                 IdleMinutes = IdleMinutes,
+                AutoLockEnabled = AutoLockEnabled,
+                DevicePresenceEnabled = DevicePresenceEnabled,
+                TargetDeviceIP = TargetDeviceIP,
+                DeviceOfflineGraceSeconds = DeviceOfflineGraceSeconds,
                 ShowClock = ShowClock,
                 OverlayOpacity = OverlayOpacity,
                 Hotkey = Hotkey,

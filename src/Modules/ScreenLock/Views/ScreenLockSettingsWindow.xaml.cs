@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using CarroDesk.Core;
 using CarroDesk.Host.Services;
 using CarroDesk.Modules.ScreenLock.Models;
+using CarroDesk.Modules.ScreenLock.Services;
 using CarroDesk.Services;
 using CarroDesk.Services.Localization;
 using CarroDesk.Services.Tasks;
@@ -48,6 +49,9 @@ namespace CarroDesk.Modules.ScreenLock.Views
 
         private void ApplyEditingToUi()
         {
+            AutoLockBox.IsChecked = _editing.AutoLockEnabled;
+            IdleBox.IsEnabled = _editing.AutoLockEnabled;
+
             string idleStr = _editing.IdleMinutes.ToString();
             bool found = false;
             for (int i = 0; i < IdleBox.Items.Count; i++)
@@ -68,6 +72,12 @@ namespace CarroDesk.Modules.ScreenLock.Views
             UpdateOpacityText(_editing.OverlayOpacity);
             UnlockOnResumeBox.IsChecked = _editing.UnlockOnResume;
             HotkeyBox.Text = string.IsNullOrWhiteSpace(_editing.Hotkey) ? "Ctrl+Alt+L" : _editing.Hotkey;
+
+            DevicePresenceBox.IsChecked = _editing.DevicePresenceEnabled;
+            DevicePresencePanel.IsEnabled = _editing.DevicePresenceEnabled;
+            TargetIPBox.Text = _editing.TargetDeviceIP ?? "";
+            GraceSecsBox.Text = _editing.DeviceOfflineGraceSeconds > 0 ? _editing.DeviceOfflineGraceSeconds.ToString() : "30";
+            DeviceTestStatusText.Text = "";
 
             ExcludeList.ItemsSource = null;
             var list = _editing.ExcludeProcesses != null ? ProcessHelper.NormalizeList(_editing.ExcludeProcesses) : new List<string>();
@@ -187,17 +197,76 @@ namespace CarroDesk.Modules.ScreenLock.Views
             OnExcludeDeleteClick(sender, null);
         }
 
+        private void AutoLockBox_CheckedChanged(object sender, RoutedEventArgs e)
+        {
+            if (IdleBox != null)
+            {
+                IdleBox.IsEnabled = AutoLockBox.IsChecked == true;
+            }
+        }
+
+        private void DevicePresenceBox_CheckedChanged(object sender, RoutedEventArgs e)
+        {
+            if (DevicePresencePanel != null)
+            {
+                DevicePresencePanel.IsEnabled = DevicePresenceBox.IsChecked == true;
+            }
+        }
+
+        private async void OnTestDeviceClick(object sender, RoutedEventArgs e)
+        {
+            string ip = TargetIPBox.Text.Trim();
+            if (string.IsNullOrWhiteSpace(ip) || !System.Net.IPAddress.TryParse(ip, out var addr) || addr.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
+            {
+                DeviceTestStatusText.Foreground = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString("#FFD93025");
+                DeviceTestStatusText.Text = Loc.T("Config.TestDeviceInvalidIP", "IP 地址格式不正确");
+                return;
+            }
+
+            BtnTestDevice.IsEnabled = false;
+            DeviceTestStatusText.Foreground = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString("#FF888888");
+            DeviceTestStatusText.Text = Loc.T("Config.TestDeviceTesting", "正在探测...");
+
+            try
+            {
+                bool online = await IpPresenceDetector.ProbeAsync(ip);
+                if (online)
+                {
+                    DeviceTestStatusText.Foreground = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString("#FF0F9D58");
+                    DeviceTestStatusText.Text = Loc.T("Config.TestDeviceOnline", "设备在线 (响应正常)");
+                }
+                else
+                {
+                    DeviceTestStatusText.Foreground = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString("#FFD93025");
+                    DeviceTestStatusText.Text = Loc.T("Config.TestDeviceOffline", "设备离线 (无响应)");
+                }
+            }
+            catch (Exception ex)
+            {
+                DeviceTestStatusText.Foreground = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString("#FFD93025");
+                DeviceTestStatusText.Text = ex.Message;
+            }
+            finally
+            {
+                BtnTestDevice.IsEnabled = true;
+            }
+        }
+
         private void OnResetDefaultsClick(object sender, RoutedEventArgs e)
         {
             if (MessageBox.Show(Loc.T("Config.ResetDefaultsConfirm"), Loc.T("Config.ResetDefaultsTitle"), MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
                 return;
 
             var def = new ScreenLockConfig();
+            _editing.AutoLockEnabled = def.AutoLockEnabled;
             _editing.IdleMinutes = def.IdleMinutes;
             _editing.ShowClock = def.ShowClock;
             _editing.OverlayOpacity = def.OverlayOpacity;
             _editing.Hotkey = def.Hotkey;
             _editing.UnlockOnResume = def.UnlockOnResume;
+            _editing.DevicePresenceEnabled = def.DevicePresenceEnabled;
+            _editing.TargetDeviceIP = def.TargetDeviceIP;
+            _editing.DeviceOfflineGraceSeconds = def.DeviceOfflineGraceSeconds;
             _editing.ExcludeProcesses = new List<string>();
             ApplyEditingToUi();
             ValidateText.Text = Loc.T("Config.ResetDefaultsTooltip");
@@ -221,6 +290,8 @@ namespace CarroDesk.Modules.ScreenLock.Views
         {
             if (_editing == null) _editing = new ScreenLockConfig();
 
+            _editing.AutoLockEnabled = AutoLockBox.IsChecked == true;
+
             string idleRaw = IdleBox.Text.Trim();
             if (idleRaw.Contains("-")) idleRaw = idleRaw.Split('-')[0].Trim();
             if (!int.TryParse(idleRaw, out int idle)) idle = _editing.IdleMinutes;
@@ -229,6 +300,18 @@ namespace CarroDesk.Modules.ScreenLock.Views
             _editing.OverlayOpacity = Math.Round(OpacitySlider.Value, 2);
             _editing.Hotkey = HotkeyBox.Text.Trim();
             _editing.UnlockOnResume = UnlockOnResumeBox.IsChecked == true;
+
+            _editing.DevicePresenceEnabled = DevicePresenceBox.IsChecked == true;
+            _editing.TargetDeviceIP = TargetIPBox.Text.Trim();
+            if (int.TryParse(GraceSecsBox.Text.Trim(), out int grace) && grace >= 5)
+            {
+                _editing.DeviceOfflineGraceSeconds = grace;
+            }
+            else
+            {
+                _editing.DeviceOfflineGraceSeconds = 30;
+            }
+
             var excl = ExcludeList.ItemsSource as List<string>;
             _editing.ExcludeProcesses = ProcessHelper.NormalizeList(excl);
         }
@@ -242,6 +325,13 @@ namespace CarroDesk.Modules.ScreenLock.Views
                 if (!HotkeyHelper.Validate(_editing.Hotkey, out string hkErr))
                 {
                     return Loc.T("Config.HotkeyInvalid", "全局锁屏热键格式无效: {0}", hkErr);
+                }
+            }
+            if (_editing.DevicePresenceEnabled && !string.IsNullOrWhiteSpace(_editing.TargetDeviceIP))
+            {
+                if (!System.Net.IPAddress.TryParse(_editing.TargetDeviceIP, out var ipAddr) || ipAddr.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
+                {
+                    return Loc.T("Config.TestDeviceInvalidIP", "IP 地址格式不正确");
                 }
             }
             foreach (var p in _editing.ExcludeProcesses)

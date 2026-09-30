@@ -9,6 +9,7 @@ using Microsoft.Win32;
 using CarroDesk.Services;
 using CarroDesk.Services.Localization;
 using CarroDesk.Modules.ScreenLock.Views;
+using CarroDesk.Modules.ScreenLock.Services;
 
 namespace CarroDesk.Modules.ScreenLock
 {
@@ -22,6 +23,7 @@ namespace CarroDesk.Modules.ScreenLock
 
         private bool _sessionLocked;
         private DateTime _pauseUntil = DateTime.MinValue;
+        private readonly IpPresenceDetector _presenceDetector = new IpPresenceDetector();
 
         // 闲时业务状态机（规范 §3.4）：纯 IIdleService 广播 + 模块内复刻 IdleDetector 语义
         private const double IdleIntervalMs = 1000;
@@ -119,7 +121,7 @@ namespace CarroDesk.Modules.ScreenLock
 
         private void OnIdleTick(TimeSpan rawIdle)
         {
-            if (Config == null || !Config.Enabled) return;
+            if (Config == null || !Config.Enabled || !Config.AutoLockEnabled) return;
             double thresholdMs = (Config != null ? Config.IdleMinutes : 0) * 60000.0;
             if (thresholdMs <= 0) return;
 
@@ -181,6 +183,7 @@ namespace CarroDesk.Modules.ScreenLock
                 _effectiveMs = 0;
                 _lastRawMs = -1;
             }
+            _presenceDetector?.Reset();
         }
 
         private bool ShouldSuspendIdle()
@@ -195,6 +198,18 @@ namespace CarroDesk.Modules.ScreenLock
                     return true;
             }
             catch { }
+
+            // 设备感知免锁屏：当启用且目标设备在场（在线或处于离线缓冲期内）时，挂起自动锁屏
+            try
+            {
+                if (Config != null && Config.DevicePresenceEnabled && !string.IsNullOrWhiteSpace(Config.TargetDeviceIP))
+                {
+                    if (_presenceDetector.IsPresentWithGrace(Config.TargetDeviceIP, Config.DeviceOfflineGraceSeconds))
+                        return true;
+                }
+            }
+            catch { }
+
             return false;
         }
 
@@ -205,7 +220,7 @@ namespace CarroDesk.Modules.ScreenLock
                 if (generation != _idleGeneration || _idleFired == false) return;
             }
             // Dispatcher 排队期间用户可能已恢复活动、暂停计时或切换会话；执行前必须复核。
-            if (_sessionLocked || Config == null || !Config.Enabled || ShouldSuspendIdle()) return;
+            if (_sessionLocked || Config == null || !Config.Enabled || !Config.AutoLockEnabled || ShouldSuspendIdle()) return;
             if (_idleService == null || _idleService.RawIdle.TotalMilliseconds < Config.IdleMinutes * 60000.0) return;
 
             if (!Controller.LockSafe())
@@ -239,7 +254,7 @@ namespace CarroDesk.Modules.ScreenLock
 
         private void OnPowerResume()
         {
-            if (_idleService == null || Config == null || !Config.Enabled) return;
+            if (_idleService == null || Config == null || !Config.Enabled || !Config.AutoLockEnabled) return;
             ResetIdleMachine();
             lock (_idleLock)
             {
@@ -331,6 +346,24 @@ namespace CarroDesk.Modules.ScreenLock
             RequestTrayRefresh();
         }
 
+        public void SetAutoLockEnabled(bool enabled)
+        {
+            if (Config != null)
+            {
+                bool previous = Config.AutoLockEnabled;
+                Config.AutoLockEnabled = enabled;
+                if (!SaveConfig())
+                {
+                    Config.AutoLockEnabled = previous;
+                    ShowNotify(Loc.T("Config.SaveFailed"), Loc.T("Common.Error", "错误"));
+                    return;
+                }
+            }
+            ResetIdleMachine();
+            UpdateTrayHeaderAndToolTip();
+            RequestTrayRefresh();
+        }
+
         public void PauseFor(TimeSpan span)
         {
             _pauseUntil = DateTime.Now.Add(span);
@@ -356,6 +389,10 @@ namespace CarroDesk.Modules.ScreenLock
             {
                 status = Loc.T("Tray.Paused", "已暂停");
             }
+            else if (Config != null && !Config.AutoLockEnabled)
+            {
+                status = Loc.T("Tray.Disabled", "已禁用");
+            }
             else
             {
                 int mins = Config != null ? Config.IdleMinutes : 0;
@@ -376,6 +413,10 @@ namespace CarroDesk.Modules.ScreenLock
             if (IsPaused)
             {
                 return Loc.T("Tray.StatusPausedDetail", PauseUntil);
+            }
+            if (Config != null && !Config.AutoLockEnabled)
+            {
+                return Loc.T("Tray.StatusDisabledDetail", "空闲锁定已禁用");
             }
             int mins = Config != null ? Config.IdleMinutes : 0;
             if (mins <= 0)
@@ -417,11 +458,20 @@ namespace CarroDesk.Modules.ScreenLock
             root.Children.Add(TrayMenuItem.Separator());
 
             // 2. 空闲锁定档位：当前档位用 IsChecked 表达，"0-禁用" 即禁用态
+            bool autoLockEnabled = Config?.AutoLockEnabled ?? true;
             var idleRoot = new TrayMenuItem
             {
                 Id = "screenlock_idle_root",
                 Header = Loc.T("Tray.IdleLock", "空闲锁定")
             };
+            idleRoot.Children.Add(new TrayMenuItem
+            {
+                Id = "screenlock_idle_enable_toggle",
+                Header = Loc.T("Tray.EnableAutoLock", "启用自动锁定"),
+                IsChecked = autoLockEnabled,
+                ClickAction = () => SetAutoLockEnabled(!autoLockEnabled)
+            });
+            idleRoot.Children.Add(TrayMenuItem.Separator());
             AddIdlePreset(idleRoot, 0, Loc.T("Tray.IdleDisabled", "0 - 禁用"), currentMinutes);
             foreach (var m in new[] { 1, 3, 5, 10, 15, 30 })
             {
@@ -429,7 +479,7 @@ namespace CarroDesk.Modules.ScreenLock
             }
             root.Children.Add(idleRoot);
 
-            // 3. 暂停计时：暂停态以其根节点 IsChecked 表达
+            // 3. 暂停计时：预设 [30分钟, 1小时, 2小时, 4小时, 8小时]
             var pauseRoot = new TrayMenuItem
             {
                 Id = "screenlock_pause_root",
@@ -439,7 +489,7 @@ namespace CarroDesk.Modules.ScreenLock
             };
             pauseRoot.Children.Add(new TrayMenuItem
             {
-                Id = "screenlock_pause_30",
+                Id = "screenlock_pause_30m",
                 Header = Loc.T("Tray.Pause30Min", "暂停 30 分钟"),
                 ClickAction = () => PauseFor(TimeSpan.FromMinutes(30))
             });
@@ -448,6 +498,24 @@ namespace CarroDesk.Modules.ScreenLock
                 Id = "screenlock_pause_1h",
                 Header = Loc.T("Tray.Pause1Hour", "暂停 1 小时"),
                 ClickAction = () => PauseFor(TimeSpan.FromHours(1))
+            });
+            pauseRoot.Children.Add(new TrayMenuItem
+            {
+                Id = "screenlock_pause_2h",
+                Header = Loc.T("Tray.Pause2Hours", "暂停 2 小时"),
+                ClickAction = () => PauseFor(TimeSpan.FromHours(2))
+            });
+            pauseRoot.Children.Add(new TrayMenuItem
+            {
+                Id = "screenlock_pause_4h",
+                Header = Loc.T("Tray.Pause4Hours", "暂停 4 小时"),
+                ClickAction = () => PauseFor(TimeSpan.FromHours(4))
+            });
+            pauseRoot.Children.Add(new TrayMenuItem
+            {
+                Id = "screenlock_pause_8h",
+                Header = Loc.T("Tray.Pause8Hours", "暂停 8 小时"),
+                ClickAction = () => PauseFor(TimeSpan.FromHours(8))
             });
             pauseRoot.Children.Add(new TrayMenuItem
             {
@@ -534,7 +602,7 @@ namespace CarroDesk.Modules.ScreenLock
             };
             var txt = new TextBox
             {
-                Text = "45",
+                Text = "30",
                 Height = 28,
                 VerticalContentAlignment = VerticalAlignment.Center,
                 Padding = new Thickness(4, 0, 4, 0),

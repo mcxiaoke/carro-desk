@@ -138,10 +138,16 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
-                            <TextBlock Text="{loc:Loc Config.IdleLockLabel, Default='闲时自动锁定'}" VerticalAlignment="Center" Foreground="#FF444444" Margin="0,0,10,0"/>
-                            <ComboBox x:Name="IdleBox" Grid.Column="1" Height="26" Margin="0,3" IsEditable="True" ToolTip="0=禁用，1-1440 分钟">
+                            <TextBlock Text="{loc:Loc Config.AutoLockEnabledLabel, Default='闲时自动锁定'}" VerticalAlignment="Center" Foreground="#FF444444" Margin="0,0,10,0"/>
+                            <CheckBox x:Name="AutoLockBox" Grid.Column="1" Grid.ColumnSpan="2" VerticalAlignment="Center" Margin="0,3" Checked="AutoLockBox_CheckedChanged" Unchecked="AutoLockBox_CheckedChanged">
+                                <TextBlock Text="{loc:Loc Config.AutoLockEnabledDesc, Default='启用后在空闲达到设定时长后自动锁屏'}" TextWrapping="Wrap"/>
+                            </CheckBox>
+
+                            <TextBlock Grid.Row="1" Text="{loc:Loc Config.IdleLockLabel, Default='空闲锁定时间'}" VerticalAlignment="Center" Foreground="#FF444444" Margin="0,8,10,0"/>
+                            <ComboBox x:Name="IdleBox" Grid.Row="1" Grid.Column="1" Height="26" Margin="0,8,0,0" IsEditable="True" ToolTip="0=禁用，1-1440 分钟">
                                 <ComboBoxItem Content="{loc:Loc Config.IdleDisabled}"/>
                                 <ComboBoxItem Content="1"/>
                                 <ComboBoxItem Content="3"/>
@@ -151,22 +157,22 @@
                                 <ComboBoxItem Content="30"/>
                                 <ComboBoxItem Content="60"/>
                             </ComboBox>
-                            <TextBlock Grid.Column="2" Text="{loc:Loc Config.IdleUnit, Default='分钟'}" TextWrapping="Wrap" VerticalAlignment="Center" Foreground="#FF888888" FontSize="11" Margin="8,0,0,0"/>
+                            <TextBlock Grid.Row="1" Grid.Column="2" Text="{loc:Loc Config.IdleUnit, Default='分钟'}" TextWrapping="Wrap" VerticalAlignment="Center" Foreground="#FF888888" FontSize="11" Margin="8,8,0,0"/>
 
-                            <TextBlock Grid.Row="1" Text="{loc:Loc Config.ShowClockLabel, Default='锁屏时钟'}" VerticalAlignment="Center" Margin="0,8,10,0" Foreground="#FF444444"/>
-                            <CheckBox x:Name="ShowClockBox" Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" VerticalAlignment="Center" Margin="0,8,0,0">
+                            <TextBlock Grid.Row="2" Text="{loc:Loc Config.ShowClockLabel, Default='锁屏时钟'}" VerticalAlignment="Center" Margin="0,8,10,0" Foreground="#FF444444"/>
+                            <CheckBox x:Name="ShowClockBox" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" VerticalAlignment="Center" Margin="0,8,0,0">
                                 <TextBlock Text="{loc:Loc Config.ShowClockDesc, Default='显示大号时钟'}" TextWrapping="Wrap"/>
                             </CheckBox>
 
-                            <TextBlock Grid.Row="2" Text="{loc:Loc Config.OpacityLabel, Default='遮罩透明度'}" VerticalAlignment="Center" Margin="0,8,10,0" Foreground="#FF444444"/>
-                            <Slider x:Name="OpacitySlider" Grid.Row="2" Grid.Column="1" Minimum="0.3" Maximum="1.0" TickFrequency="0.01" SmallChange="0.01" LargeChange="0.05" IsSnapToTickEnabled="True" Value="0.88" Margin="0,8,0,0" VerticalAlignment="Center" ValueChanged="OpacitySlider_ValueChanged"/>
-                            <TextBlock x:Name="OpacityText" Grid.Row="2" Grid.Column="2" Text="88%" VerticalAlignment="Center" Foreground="#FF555555" Margin="8,8,0,0"/>
+                            <TextBlock Grid.Row="3" Text="{loc:Loc Config.OpacityLabel, Default='遮罩透明度'}" VerticalAlignment="Center" Margin="0,8,10,0" Foreground="#FF444444"/>
+                            <Slider x:Name="OpacitySlider" Grid.Row="3" Grid.Column="1" Minimum="0.3" Maximum="1.0" TickFrequency="0.01" SmallChange="0.01" LargeChange="0.05" IsSnapToTickEnabled="True" Value="0.88" Margin="0,8,0,0" VerticalAlignment="Center" ValueChanged="OpacitySlider_ValueChanged"/>
+                            <TextBlock x:Name="OpacityText" Grid.Row="3" Grid.Column="2" Text="88%" VerticalAlignment="Center" Foreground="#FF555555" Margin="8,8,0,0"/>
 
-                            <TextBlock Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="2" Text="{loc:Loc Config.OpacityHint, Default='锁屏遮罩的不透明度'}" Foreground="#FF888888" FontSize="11" TextWrapping="Wrap" Margin="8,2,0,0"/>
+                            <TextBlock Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2" Text="{loc:Loc Config.OpacityHint, Default='锁屏遮罩的不透明度'}" Foreground="#FF888888" FontSize="11" TextWrapping="Wrap" Margin="8,2,0,0"/>
 
-                            <TextBlock Grid.Row="4" Text="{loc:Loc Config.HotkeyLabel, Default='全局锁屏热键'}" VerticalAlignment="Center" Margin="0,8,10,0" Foreground="#FF444444"/>
-                            <TextBox x:Name="HotkeyBox" Grid.Row="4" Grid.Column="1" Height="26" Margin="0,8,0,0" VerticalContentAlignment="Center" Padding="4,2" Text="Ctrl+Alt+L"/>
-                            <TextBlock Grid.Row="4" Grid.Column="2" Text="{loc:Loc Config.HotkeyDesc, Default='(一键立即锁屏，如 Ctrl+Alt+L)'}" TextWrapping="Wrap" VerticalAlignment="Center" Foreground="#FF888888" FontSize="11" Margin="8,8,0,0"/>
+                            <TextBlock Grid.Row="5" Text="{loc:Loc Config.HotkeyLabel, Default='全局锁屏热键'}" VerticalAlignment="Center" Margin="0,8,10,0" Foreground="#FF444444"/>
+                            <TextBox x:Name="HotkeyBox" Grid.Row="5" Grid.Column="1" Height="26" Margin="0,8,0,0" VerticalContentAlignment="Center" Padding="4,2" Text="Ctrl+Alt+L"/>
+                            <TextBlock Grid.Row="5" Grid.Column="2" Text="{loc:Loc Config.HotkeyDesc, Default='(一键立即锁屏，如 Ctrl+Alt+L)'}" TextWrapping="Wrap" VerticalAlignment="Center" Foreground="#FF888888" FontSize="11" Margin="8,8,0,0"/>
                         </Grid>
 
                         <!-- 解锁行为（整行换行，避免长文案挤压三列网格造成截断/重叠） -->
@@ -174,6 +180,41 @@
                         <CheckBox x:Name="UnlockOnResumeBox" FontSize="12" IsChecked="True">
                                 <TextBlock Text="{loc:Loc Config.UnlockOnResumeDesc, Default='会话恢复时自动解锁'}" TextWrapping="Wrap"/>
                             </CheckBox>
+                    </StackPanel>
+                </Border>
+
+                <!-- 设备感知免锁屏（移植自 Carrot.AutoLock） -->
+                <Border Background="White" CornerRadius="6" BorderBrush="#FFE4E7EB" BorderThickness="1" Padding="12,8" Margin="0,0,0,8">
+                    <StackPanel>
+                        <TextBlock Text="{loc:Loc Config.DevicePresenceTitle, Default='设备感知免锁（近场免打扰）'}" FontWeight="Bold" Foreground="#FF333333" Margin="0,0,0,4"/>
+                        <TextBlock Text="{loc:Loc Config.DevicePresenceDesc, Default='检测到指定 IP 设备在线时保持解锁，不触发自动锁屏'}" Foreground="#FF888888" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8"/>
+
+                        <CheckBox x:Name="DevicePresenceBox" Margin="0,0,0,8" Checked="DevicePresenceBox_CheckedChanged" Unchecked="DevicePresenceBox_CheckedChanged">
+                            <TextBlock Text="{loc:Loc Config.DevicePresenceEnabledLabel, Default='启用设备在线免锁屏'}" FontWeight="SemiBold" Foreground="#FF444444"/>
+                        </CheckBox>
+
+                        <Grid x:Name="DevicePresencePanel">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" MinWidth="100"/>
+                                <ColumnDefinition Width="150"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Text="{loc:Loc Config.TargetDeviceIPLabel, Default='目标设备 IP'}" VerticalAlignment="Center" Foreground="#FF444444" Margin="0,0,10,0"/>
+                            <TextBox x:Name="TargetIPBox" Grid.Column="1" Height="26" VerticalContentAlignment="Center" Padding="4,2"/>
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,0,0">
+                                <Button x:Name="BtnTestDevice" Content="{loc:Loc Config.TestDeviceBtn, Default='测试连接'}" Height="26" Padding="10,0" Click="OnTestDeviceClick"/>
+                                <TextBlock x:Name="DeviceTestStatusText" VerticalAlignment="Center" FontSize="11" Margin="8,0,0,0" TextWrapping="Wrap"/>
+                            </StackPanel>
+
+                            <TextBlock Grid.Row="1" Text="{loc:Loc Config.DeviceOfflineGraceLabel, Default='离线缓冲'}" VerticalAlignment="Center" Foreground="#FF444444" Margin="0,8,10,0"/>
+                            <TextBox x:Name="GraceSecsBox" Grid.Row="1" Grid.Column="1" Height="26" Margin="0,8,0,0" VerticalContentAlignment="Center" Padding="4,2" Text="30"/>
+                            <TextBlock Grid.Row="1" Grid.Column="2" Text="{loc:Loc Config.DeviceOfflineGraceUnit, Default='秒（防网络瞬断误锁，建议 30-60）'}" Foreground="#FF888888" FontSize="11" VerticalAlignment="Center" Margin="8,8,0,0" TextWrapping="Wrap"/>
+                        </Grid>
                     </StackPanel>
                 </Border>
 
