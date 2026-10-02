@@ -44,7 +44,7 @@ namespace CarroDesk.Host.Ipc
                 var request = new CommandRequest
                 {
                     Method = method.Trim(),
-                    Source = (string)obj["source"] ?? "pipe",
+                    Source = NormalizeSource((string)obj["source"]),
                     Pin = (string)obj["pin"],
                     Params = ExtractParams(obj["params"])
                 };
@@ -53,6 +53,32 @@ namespace CarroDesk.Host.Ipc
             catch
             {
                 return ParseError(id);
+            }
+        }
+
+        /// <summary>
+        /// 把请求体里的 source 归一化到封闭集合。
+        ///
+        /// 安全动因：source 参与限流键（能力 + 来源），而限流是按调用方声明的来源分桶的。
+        /// 若原样采信任意字符串，调用方每次换一个 source 即可让限流恒真，
+        /// 且限流字典键数随调用量无界增长（OOM）。因此未在白名单内的一律折叠为 unknown。
+        /// 保留白名单而非直接忽略，是为了不破坏 CLI/MCP 区分来源的既有语义与审计可读性。
+        /// </summary>
+        private static string NormalizeSource(string source)
+        {
+            if (string.IsNullOrWhiteSpace(source)) return "pipe";
+            switch (source.Trim().ToLowerInvariant())
+            {
+                case "cli":
+                case "pipe":
+                case "mcp":
+                case "local":
+                case "test":
+                case "custom":
+                case "http":
+                    return source.Trim().ToLowerInvariant();
+                default:
+                    return "unknown";
             }
         }
 

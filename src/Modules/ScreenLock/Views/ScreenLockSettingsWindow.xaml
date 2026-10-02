@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:loc="clr-namespace:CarroDesk.Services.Localization"
-        Title="{loc:Loc Tray.ScreenLockSettings, Default='屏幕锁定与闲时保护设置'}" Height="680" Width="580"
+        Title="{loc:Loc Tray.ScreenLockSettings, Default='屏幕锁定与闲时保护设置'}" Height="680" Width="580" MinWidth="520" MinHeight="560"
         WindowStartupLocation="CenterScreen" ResizeMode="CanResize"
         Background="#FFF6F7F9">
     <Window.Resources>
@@ -147,7 +147,7 @@
                             </CheckBox>
 
                             <TextBlock Grid.Row="1" Text="{loc:Loc Config.IdleLockLabel, Default='空闲锁定时间'}" VerticalAlignment="Center" Foreground="#FF444444" Margin="0,8,10,0"/>
-                            <ComboBox x:Name="IdleBox" Grid.Row="1" Grid.Column="1" Height="26" Margin="0,8,0,0" IsEditable="True" ToolTip="0=禁用，1-1440 分钟">
+                            <ComboBox x:Name="IdleBox" Grid.Row="1" Grid.Column="1" Height="26" Margin="0,8,0,0" IsEditable="True" ToolTip="{loc:Loc Config.IdleMinutesHint, Default='0=禁用，1-1440 分钟'}">
                                 <ComboBoxItem Content="{loc:Loc Config.IdleDisabled}"/>
                                 <ComboBoxItem Content="1"/>
                                 <ComboBoxItem Content="3"/>
@@ -259,7 +259,7 @@
                 <Button Content="{loc:Loc Common.ResetDefaults}" DockPanel.Dock="Left" Height="30" Padding="12,0" ToolTip="{loc:Loc Config.ResetDefaultsTooltip}" Click="OnResetDefaultsClick"/>
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
                     <Button Content="{loc:Loc Common.SaveAndApply}" Style="{StaticResource PrimaryBtn}" Height="30" Padding="16,0" Margin="0,0,8,0" Click="OnSaveApplyClick"/>
-                    <Button Content="{loc:Loc Common.Close}" Height="30" MinWidth="68" Padding="12,0" Click="OnCloseClick"/>
+                    <Button Content="{loc:Loc Common.Close}" Height="30" MinWidth="68" Padding="12,0" IsCancel="True" Click="OnCloseClick"/>
                 </StackPanel>
             </DockPanel>
         </Border>

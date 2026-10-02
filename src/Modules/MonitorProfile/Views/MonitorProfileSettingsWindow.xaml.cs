@@ -146,11 +146,25 @@ namespace CarroDesk.Modules.MonitorProfile.Views
             {
                 GridTimeSettings.ItemsSource = null;
                 TxtCurrentModeTitle.Text = Loc.T("Monitor.SelectProfile", "请选择一个情境模式");
+                UpdateTimeSettingsEmptyHint();
                 return;
             }
 
             TxtCurrentModeTitle.Text = Loc.T("Monitor.ProfileTimeSettings", "模式「{0}」的时间段设置", selected.Name);
             GridTimeSettings.ItemsSource = _modeSettings[selected.Name];
+            UpdateTimeSettingsEmptyHint();
+        }
+
+        /// <summary>
+        /// 时间点表格为空时显示占位提示。
+        /// 表格高度固定 160，若无提示用户无法区分「尚未配置」与「控件没加载出来」。
+        /// </summary>
+        private void UpdateTimeSettingsEmptyHint()
+        {
+            var empty = GridTimeSettings.ItemsSource == null
+                        || !GridTimeSettings.ItemsSource.Cast<object>().Any();
+            TxtTimeSettingsEmpty.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
+            GridTimeSettings.Visibility = empty ? Visibility.Collapsed : Visibility.Visible;
         }
 
         private void BtnSetActive_Click(object sender, RoutedEventArgs e)
@@ -196,6 +210,14 @@ namespace CarroDesk.Modules.MonitorProfile.Views
 
             var selected = LstModes.SelectedItem as ModeItemViewModel;
             if (selected == null) return;
+
+            // 删除情境模式会连带清掉该模式下已配置的全部时间点，且不可撤销。
+            // 与本窗口「恢复默认」以及 ScreenLock/AppAutoMute 清空列表保持一致加确认。
+            string deleteConfirm = Loc.T("Monitor.DeleteProfileConfirm", "确认删除情境模式“{0}”及其全部时间点设置吗？", selected.Name);
+            if (MessageBox.Show(deleteConfirm, Loc.T("Common.Confirm", "确认"), MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            {
+                return;
+            }
 
             string name = selected.Name;
             _modes.Remove(selected);
@@ -364,6 +386,7 @@ namespace CarroDesk.Modules.MonitorProfile.Views
             {
                 list.Add(item);
             }
+            UpdateTimeSettingsEmptyHint();
         }
 
         private void BtnDeleteTimeSetting_Click(object sender, RoutedEventArgs e)
@@ -381,6 +404,7 @@ namespace CarroDesk.Modules.MonitorProfile.Views
                     return;
                 }
                 list.Remove(setting);
+                UpdateTimeSettingsEmptyHint();
             }
         }
 

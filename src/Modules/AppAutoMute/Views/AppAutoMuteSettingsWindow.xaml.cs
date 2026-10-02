@@ -39,8 +39,22 @@ namespace CarroDesk.Modules.AppAutoMute.Views
 
             InitializeComponent();
             LstTargetApps.ItemsSource = _targetApps;
+            // 订阅集合变更统一维护空态提示，避免在每个增删点重复写可见性判断
+            _targetApps.CollectionChanged += (s, e) => UpdateTargetAppsEmptyHint();
             LoadCurrentSettings();
             LoadRunningApps();
+            UpdateTargetAppsEmptyHint();
+        }
+
+        /// <summary>
+        /// 受控列表为空时显示占位提示。
+        /// 列表高度固定 140，空白框无法区分「尚未添加」与「控件没加载出来」。
+        /// </summary>
+        private void UpdateTargetAppsEmptyHint()
+        {
+            var empty = _targetApps.Count == 0;
+            TxtTargetAppsEmpty.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
+            LstTargetApps.Visibility = empty ? Visibility.Collapsed : Visibility.Visible;
         }
 
         private void LoadCurrentSettings()

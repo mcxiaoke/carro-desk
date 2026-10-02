@@ -1,7 +1,8 @@
 <Window x:Class="CarroDesk.Modules.AppAutoMute.Views.AppAutoMuteSettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="应用后台自动静音设置" Height="720" Width="660" MinWidth="620" MinHeight="680"
+        xmlns:loc="clr-namespace:CarroDesk.Services.Localization"
+        Title="{loc:Loc AutoMute.SettingsTitle, Default='应用后台自动静音设置'}" Height="720" Width="660" MinWidth="620" MinHeight="680"
         WindowStartupLocation="CenterScreen" ResizeMode="CanResize"
         Background="#FFF6F7F9"
         FontFamily="Segoe UI, Microsoft YaHei UI">
@@ -119,10 +120,10 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel Margin="0,0,16,0">
-                    <TextBlock Text="🔇 后台智能静音配置" FontSize="16" FontWeight="Bold" Foreground="#FF1E293B"/>
-                    <TextBlock Text="在应用失去前台焦点后自动降低或静音，切回前台时平滑恢复声音，避免背景声音干扰。" FontSize="12" Foreground="#FF64748B" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                    <TextBlock Text="{loc:Loc AutoMute.HeaderTitle, Default='🔇 后台智能静音配置'}" FontSize="16" FontWeight="Bold" Foreground="#FF1E293B"/>
+                    <TextBlock Text="{loc:Loc AutoMute.HeaderDesc, Default='在应用失去前台焦点后自动降低或静音，切回前台时平滑恢复声音，避免背景声音干扰。'}" FontSize="12" Foreground="#FF64748B" Margin="0,4,0,0" TextWrapping="Wrap"/>
                 </StackPanel>
-                <CheckBox x:Name="ChkEnabled" Grid.Column="1" Content="启用此功能" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center" Checked="OnStatusChanged" Unchecked="OnStatusChanged"/>
+                <CheckBox x:Name="ChkEnabled" Grid.Column="1" Content="{loc:Loc AutoMute.EnableLabel, Default='启用此功能'}" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center" Checked="OnStatusChanged" Unchecked="OnStatusChanged"/>
             </Grid>
         </Border>
 
@@ -133,7 +134,7 @@
                 <!-- 卡片 1: 快捷键与延时参数 -->
                 <Border Style="{StaticResource CardBorderStyle}">
                     <StackPanel>
-                        <TextBlock Text="基础参数与热键" FontSize="14" FontWeight="SemiBold" Foreground="#FF334155" Margin="0,0,0,12"/>
+                        <TextBlock Text="{loc:Loc AutoMute.BasicParams, Default='基础参数与热键'}" FontSize="14" FontWeight="SemiBold" Foreground="#FF334155" Margin="0,0,0,12"/>
 
                         <!-- 全局快捷键 -->
                         <Grid Margin="0,0,0,12">
@@ -141,7 +142,7 @@
                                 <ColumnDefinition Width="140"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="全局开关热键:" VerticalAlignment="Center" Foreground="#FF475569" FontSize="13"/>
+                            <TextBlock Text="{loc:Loc AutoMute.HotkeyLabel, Default='全局开关热键:'}" VerticalAlignment="Center" Foreground="#FF475569" FontSize="13"/>
                             <TextBox x:Name="TxtHotkey" Grid.Column="1" Height="30" Padding="8,4" FontSize="13" VerticalContentAlignment="Center" BorderBrush="#CBD5E1"/>
                         </Grid>
 
@@ -152,7 +153,7 @@
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="70"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="切出后台静音延迟:" VerticalAlignment="Center" Foreground="#FF475569" FontSize="13"/>
+                            <TextBlock Text="{loc:Loc AutoMute.MuteDelayLabel, Default='切出后台静音延迟:'}" VerticalAlignment="Center" Foreground="#FF475569" FontSize="13"/>
                             <Slider x:Name="SldMuteDelay" Grid.Column="1" Minimum="100" Maximum="5000" SmallChange="100" LargeChange="500" Value="1000" VerticalAlignment="Center" ValueChanged="OnMuteDelayChanged"/>
                             <TextBlock x:Name="TxtMuteDelayVal" Grid.Column="2" Text="1000 ms" VerticalAlignment="Center" HorizontalAlignment="Right" Foreground="#FF2563EB" FontWeight="SemiBold"/>
                         </Grid>
@@ -164,7 +165,7 @@
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="70"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="切回前台恢复延迟:" VerticalAlignment="Center" Foreground="#FF475569" FontSize="13"/>
+                            <TextBlock Text="{loc:Loc AutoMute.UnmuteDelayLabel, Default='切回前台恢复延迟:'}" VerticalAlignment="Center" Foreground="#FF475569" FontSize="13"/>
                             <Slider x:Name="SldUnmuteDelay" Grid.Column="1" Minimum="50" Maximum="3000" SmallChange="50" LargeChange="250" Value="500" VerticalAlignment="Center" ValueChanged="OnUnmuteDelayChanged"/>
                             <TextBlock x:Name="TxtUnmuteDelayVal" Grid.Column="2" Text="500 ms" VerticalAlignment="Center" HorizontalAlignment="Right" Foreground="#FF2563EB" FontWeight="SemiBold"/>
                         </Grid>
@@ -179,28 +180,28 @@
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="静音规则模式" FontSize="14" FontWeight="SemiBold" Foreground="#FF334155" VerticalAlignment="Center"/>
+                            <TextBlock Text="{loc:Loc AutoMute.RuleMode, Default='静音规则模式'}" FontSize="14" FontWeight="SemiBold" Foreground="#FF334155" VerticalAlignment="Center"/>
                             <StackPanel Grid.Column="1" Orientation="Horizontal">
-                                <RadioButton x:Name="RadBlacklist" Content="黑名单模式 (仅静音列表中的程序)" IsChecked="True" Margin="0,0,16,0" FontSize="12" Foreground="#FF475569"/>
-                                <RadioButton x:Name="RadWhitelist" Content="白名单模式 (仅保留列表中发声)" FontSize="12" Foreground="#FF475569"/>
+                                <RadioButton x:Name="RadBlacklist" Content="{loc:Loc AutoMute.ModeBlacklist, Default='黑名单模式 (仅静音列表中的程序)'}" IsChecked="True" Margin="0,0,16,0" FontSize="12" Foreground="#FF475569"/>
+                                <RadioButton x:Name="RadWhitelist" Content="{loc:Loc AutoMute.ModeWhitelist, Default='白名单模式 (仅保留列表中发声)'}" FontSize="12" Foreground="#FF475569"/>
                             </StackPanel>
                         </Grid>
 
                         <Separator Background="#FFE2E8F0" Margin="0,0,0,12"/>
 
                         <!-- 快速添加当前发声进程 -->
-                        <TextBlock Text="从当前音频/运行程序快速添加:" FontSize="13" FontWeight="SemiBold" Foreground="#FF475569" Margin="0,0,0,6"/>
+                        <TextBlock Text="{loc:Loc AutoMute.QuickAddRunning, Default='从当前音频/运行程序快速添加:'}" FontSize="13" FontWeight="SemiBold" Foreground="#FF475569" Margin="0,0,0,6"/>
                         <Grid Margin="0,0,0,12">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <ComboBox x:Name="CboRunningApps" Height="30" FontSize="12" VerticalContentAlignment="Center"/>
-                            <Button Grid.Column="1" Content="+ 快速添加" Margin="8,0,0,0" Padding="12,4" Style="{StaticResource SecondaryButtonStyle}" Click="OnAddRunningAppClick"/>
+                            <Button Grid.Column="1" Content="{loc:Loc AutoMute.QuickAdd, Default='+ 快速添加'}" Margin="8,0,0,0" Padding="12,4" Style="{StaticResource SecondaryButtonStyle}" Click="OnAddRunningAppClick"/>
                         </Grid>
 
                         <!-- 手动输入添加 -->
-                        <TextBlock Text="手动输入进程名:" FontSize="13" FontWeight="SemiBold" Foreground="#FF475569" Margin="0,0,0,6"/>
+                        <TextBlock Text="{loc:Loc AutoMute.ManualAddLabel, Default='手动输入进程名:'}" FontSize="13" FontWeight="SemiBold" Foreground="#FF475569" Margin="0,0,0,6"/>
                         <Grid Margin="0,0,0,14">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
@@ -208,8 +209,8 @@
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <TextBox x:Name="TxtCustomApp" Height="30" Padding="8,4" FontSize="13" VerticalContentAlignment="Center" BorderBrush="#CBD5E1" KeyDown="OnCustomAppKeyDown"/>
-                            <Button Grid.Column="1" Content="📂 浏览 (.exe)..." Margin="8,0,0,0" Padding="12,4" Style="{StaticResource SecondaryButtonStyle}" Click="OnBrowseExeClick" ToolTip="在本地磁盘中选择可执行文件"/>
-                            <Button Grid.Column="2" Content="添加进程" Margin="8,0,0,0" Padding="14,4" Style="{StaticResource SecondaryButtonStyle}" Click="OnAddCustomAppClick"/>
+                            <Button Grid.Column="1" Content="{loc:Loc AutoMute.BrowseExe, Default='📂 浏览 (.exe)...'}" Margin="8,0,0,0" Padding="12,4" Style="{StaticResource SecondaryButtonStyle}" Click="OnBrowseExeClick" ToolTip="{loc:Loc AutoMute.BrowseExeTip, Default='在本地磁盘中选择可执行文件'}"/>
+                            <Button Grid.Column="2" Content="{loc:Loc AutoMute.AddProcess, Default='添加进程'}" Margin="8,0,0,0" Padding="14,4" Style="{StaticResource SecondaryButtonStyle}" Click="OnAddCustomAppClick"/>
                         </Grid>
 
                         <!-- 已配置目标程序列表 -->
@@ -218,10 +219,12 @@
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="当前受控程序列表:" FontSize="13" FontWeight="SemiBold" Foreground="#FF475569" VerticalAlignment="Center"/>
-                            <Button Grid.Column="1" Content="清空列表" Background="Transparent" Foreground="#FFDC2626" BorderThickness="0" Cursor="Hand" Padding="6,2" FontSize="12" Click="OnClearAppsClick" ToolTip="清空列表中的所有受控应用"/>
+                            <TextBlock Text="{loc:Loc AutoMute.CurrentTargets, Default='当前受控程序列表:'}" FontSize="13" FontWeight="SemiBold" Foreground="#FF475569" VerticalAlignment="Center"/>
+                            <Button Grid.Column="1" Content="{loc:Loc AutoMute.ClearList, Default='清空列表'}" Background="Transparent" Foreground="#FFDC2626" BorderThickness="0" Cursor="Hand" Padding="6,2" FontSize="12" Click="OnClearAppsClick" ToolTip="{loc:Loc AutoMute.ClearListTip, Default='清空列表中的所有受控应用'}"/>
                         </Grid>
-                        <ListBox x:Name="LstTargetApps" Height="140" BorderBrush="#E2E8F0" BorderThickness="1" Background="#FFF8FAFC" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                        <!-- 受控列表：用 Grid 包裹以便在无数据时显示空态提示 -->
+                        <Grid Height="140">
+                        <ListBox x:Name="LstTargetApps" BorderBrush="#E2E8F0" BorderThickness="1" Background="#FFF8FAFC" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
                                     <Grid Margin="4,2">
@@ -232,11 +235,15 @@
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Text="🔹" FontSize="12" Margin="0,0,8,0" VerticalAlignment="Center"/>
                                         <TextBlock Grid.Column="1" Text="{Binding}" FontSize="13" FontWeight="SemiBold" Foreground="#FF1E293B" VerticalAlignment="Center"/>
-                                        <Button Grid.Column="2" Content="移除" Background="Transparent" Foreground="#FFDC2626" BorderThickness="0" Cursor="Hand" Padding="8,2" FontSize="12" Tag="{Binding}" Click="OnRemoveAppClick"/>
+                                        <Button Grid.Column="2" Content="{loc:Loc AutoMute.Remove, Default='移除'}" Background="Transparent" Foreground="#FFDC2626" BorderThickness="0" Cursor="Hand" Padding="8,2" FontSize="12" Tag="{Binding}" Click="OnRemoveAppClick"/>
                                     </Grid>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
                         </ListBox>
+                        <TextBlock x:Name="TxtTargetAppsEmpty" Text="{loc:Loc AutoMute.NoTargets, Default='尚未添加受控程序，可用上方方式添加'}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Foreground="#FF94A3B8" FontSize="12" IsHitTestVisible="False" Visibility="Collapsed"/>
+                        </Grid>
                     </StackPanel>
                 </Border>
 
@@ -247,12 +254,12 @@
         <Border Grid.Row="2" Background="White" BorderBrush="#FFE2E8F0" BorderThickness="1" CornerRadius="8" Padding="14,10" Margin="0,10,0,0">
             <Grid>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
-                    <Button Content="🔊 恢复所有声音 (应急)" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,12,0" Padding="12,7" Click="OnUnmuteAllClick" ToolTip="立即解除所有受控及活跃程序的静音状态"/>
+                    <Button Content="{loc:Loc AutoMute.RestoreAllSounds, Default='🔊 恢复所有声音 (应急)'}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,12,0" Padding="12,7" Click="OnUnmuteAllClick" ToolTip="{loc:Loc AutoMute.RestoreAllSoundsTip, Default='立即解除所有受控及活跃程序的静音状态'}"/>
                     <TextBlock x:Name="TxtNotice" Text="" Foreground="#FF10B981" FontWeight="SemiBold" VerticalAlignment="Center"/>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                    <Button Content="保存并生效" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,10,0" Click="OnSaveClick"/>
-                    <Button Content="取消" Style="{StaticResource SecondaryButtonStyle}" Click="OnCancelClick"/>
+                    <Button Content="{loc:Loc Common.SaveAndApply, Default='保存并生效'}" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,10,0" Click="OnSaveClick"/>
+                    <Button Content="{loc:Loc Common.Cancel, Default='取消'}" Style="{StaticResource SecondaryButtonStyle}" IsCancel="True" Click="OnCancelClick"/>
                 </StackPanel>
             </Grid>
         </Border>

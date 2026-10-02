@@ -75,6 +75,12 @@ namespace CarroDesk.Modules.AppAutoMute
             {
                 EvaluateForeground(_foregroundTracker?.CurrentProcessName);
             }
+            else
+            {
+                // 与 OnStop / ToggleEnabled 保持一致：从设置窗口关闭开关后，
+                // 必须解除此前施加的静音，否则目标进程会一直静音到自身退出。
+                UnmuteAllTargets();
+            }
         }
 
         public override void OnLanguageChanged()

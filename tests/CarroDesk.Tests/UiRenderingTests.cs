@@ -161,7 +161,24 @@ namespace CarroDesk.Tests
         [TestMethod]
         public void XamlLayout_AllGrids_HaveSufficientRowAndColumnDefinitions()
         {
-            string projectRoot = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\..\..\..\.."));
+            // 自基线目录逐级上溯，直到找到同时含 src/ 与 tests/ 的项目根。
+            // 固定上溯层数不可靠：输出路径深度会随平台目录（bin\Any CPU\Debug\net48）
+            // 与配置变化，多退或少退一级都会让 Directory.GetFiles 抛 DirectoryNotFoundException。
+            string projectRoot = null;
+            var dir = new DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory);
+            while (dir != null)
+            {
+                if (Directory.Exists(Path.Combine(dir.FullName, "src"))
+                    && Directory.Exists(Path.Combine(dir.FullName, "tests")))
+                {
+                    projectRoot = dir.FullName;
+                    break;
+                }
+                dir = dir.Parent;
+            }
+
+            Assert.IsNotNull(projectRoot, "未能从基线目录定位到项目根（应包含 src/ 与 tests/）");
+
             string srcDir = Path.Combine(projectRoot, "src");
             var xamlFiles = Directory.GetFiles(srcDir, "*.xaml", SearchOption.AllDirectories);
 

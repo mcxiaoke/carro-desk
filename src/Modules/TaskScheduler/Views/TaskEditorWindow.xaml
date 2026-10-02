@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:loc="clr-namespace:CarroDesk.Services.Localization"
-        Title="{loc:Loc Tasks.Title, Default='任务编辑器 - CarroDesk'}" Height="640" Width="920"
+        Title="{loc:Loc Tasks.Title, Default='任务编辑器 - CarroDesk'}" Height="640" Width="920" MinWidth="780" MinHeight="520"
         WindowStartupLocation="CenterScreen" ResizeMode="CanResize"
         Background="#FFF6F7F9">
     <Window.Resources>
@@ -117,11 +117,11 @@
         </Style>
         <!-- 任务列表项右键菜单 -->
         <ContextMenu x:Key="TaskItemContextMenu">
-            <MenuItem x:Name="MenuTestRunItem" Header="测试运行 (Test Run)" FontWeight="SemiBold" Click="OnMenuTestRunClick"/>
-            <MenuItem Header="查看该任务日志" Click="OnMenuViewLogClick"/>
+            <MenuItem x:Name="MenuTestRunItem" Header="{loc:Loc Tasks.TestRunTab, Default='测试运行 (Test Run)'}" FontWeight="SemiBold" Click="OnMenuTestRunClick"/>
+            <MenuItem Header="{loc:Loc Tasks.ViewTaskLogTab, Default='查看该任务日志'}" Click="OnMenuViewLogClick"/>
             <Separator/>
-            <MenuItem Header="复制任务" Click="OnDuplicateClick"/>
-            <MenuItem Header="删除任务" Click="OnDeleteClick"/>
+            <MenuItem Header="{loc:Loc Tasks.DuplicateTab, Default='复制任务'}" Click="OnDuplicateClick"/>
+            <MenuItem Header="{loc:Loc Tasks.DeleteTab, Default='删除任务'}" Click="OnDeleteClick"/>
         </ContextMenu>
     </Window.Resources>
 
@@ -162,7 +162,7 @@
                                         <Border DockPanel.Dock="Right" Background="{Binding TriggerBadgeBg}" CornerRadius="3" Padding="5,1" Margin="6,0,0,0" VerticalAlignment="Center">
                                             <TextBlock Text="{Binding TriggerBadgeText}" Foreground="{Binding TriggerBadgeFg}" FontSize="10" FontWeight="SemiBold"/>
                                         </Border>
-                                        <CheckBox IsChecked="{Binding Enabled, Mode=TwoWay}" Click="OnItemEnabledToggleClick" VerticalAlignment="Center" Margin="0,0,6,0" ToolTip="一键启用 / 禁用该任务"/>
+                                        <CheckBox IsChecked="{Binding Enabled, Mode=TwoWay}" Click="OnItemEnabledToggleClick" VerticalAlignment="Center" Margin="0,0,6,0" ToolTip="{loc:Loc Tasks.EnableToggleTip, Default='一键启用 / 禁用该任务'}"/>
                                         <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                                     </DockPanel>
                                 </DataTemplate>
@@ -230,21 +230,21 @@
                         </StackPanel>
                         <StackPanel x:Name="PanelInterval" Margin="0,4,0,0" Visibility="Collapsed">
                             <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="85"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                <TextBlock Text="{loc:Loc Tasks.Interval, Default='执行间隔'}" VerticalAlignment="Center" Foreground="#FF555555"/><TextBox x:Name="EveryBox" Grid.Column="1" Height="24" Margin="0,3" Padding="4,1" ToolTip="支持 3600 或 1h30m / 30s"/>
+                                <TextBlock Text="{loc:Loc Tasks.Interval, Default='执行间隔'}" VerticalAlignment="Center" Foreground="#FF555555"/><TextBox x:Name="EveryBox" Grid.Column="1" Height="24" Margin="0,3" Padding="4,1" ToolTip="{loc:Loc Tasks.IntervalFormatTip, Default='支持 3600 或 1h30m / 30s'}"/>
                             </Grid>
                             <TextBlock Text="{loc:Loc Tasks.IntervalDesc, Default='支持秒数或时间格式，如 60、3600、1h30m、45s'}" Foreground="#FF888888" FontSize="11" Margin="85,1,0,0"/>
                         </StackPanel>
                         <StackPanel x:Name="PanelDaily" Margin="0,4,0,0" Visibility="Collapsed">
                             <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="85"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                <TextBlock Text="{loc:Loc Tasks.DailyTime, Default='每天时间'}" VerticalAlignment="Center" Foreground="#FF555555"/><TextBox x:Name="AtBox" Grid.Column="1" Height="24" Margin="0,3" Padding="4,1" ToolTip="如 02:30 或 14:00:00"/>
+                                <TextBlock Text="{loc:Loc Tasks.DailyTime, Default='每天时间'}" VerticalAlignment="Center" Foreground="#FF555555"/><TextBox x:Name="AtBox" Grid.Column="1" Height="24" Margin="0,3" Padding="4,1" ToolTip="{loc:Loc Tasks.DailyFormatTip, Default='如 02:30 或 14:00:00'}"/>
                             </Grid>
                             <TextBlock Text="{loc:Loc Tasks.DailyDesc, Default='格式为 HH:mm 或 HH:mm:ss，如 09:30 或 22:00:00'}" Foreground="#FF888888" FontSize="11" Margin="85,1,0,0"/>
                         </StackPanel>
                         <StackPanel x:Name="PanelCron" Margin="0,4,0,0" Visibility="Collapsed">
                             <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="85"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                <TextBlock Text="{loc:Loc Tasks.CronFormat, Default='Cron 格式'}" VerticalAlignment="Center" Foreground="#FF555555"/><TextBox x:Name="CronBox" Grid.Column="1" Height="24" Margin="0,3" Padding="4,1" ToolTip="5段式：分 时 日 月 周，如 0 9 * * 1" TextChanged="CronBox_TextChanged"/>
+                                <TextBlock Text="{loc:Loc Tasks.CronFormat, Default='Cron 格式'}" VerticalAlignment="Center" Foreground="#FF555555"/><TextBox x:Name="CronBox" Grid.Column="1" Height="24" Margin="0,3" Padding="4,1" ToolTip="{loc:Loc Tasks.CronFormatTip, Default='5段式：分 时 日 月 周，如 0 9 * * 1'}" TextChanged="CronBox_TextChanged"/>
                             </Grid>
-                            <TextBlock x:Name="CronHintText" Text="提示：0 9 * * 1 = 每周一 09:00" Foreground="#FF1A73E8" FontSize="11" Margin="85,3,0,0"/>
+                            <TextBlock x:Name="CronHintText" Text="{loc:Loc Tasks.CronExample, Default='提示：0 9 * * 1 = 每周一 09:00'}" Foreground="#FF1A73E8" FontSize="11" Margin="85,3,0,0"/>
                         </StackPanel>
                         <StackPanel x:Name="PanelIdle" Margin="0,4,0,0" Visibility="Collapsed">
                             <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="85"/><ColumnDefinition Width="100"/><ColumnDefinition Width="40"/></Grid.ColumnDefinitions>
@@ -253,7 +253,7 @@
                         </StackPanel>
                         <StackPanel x:Name="PanelHotkey" Margin="0,4,0,0" Visibility="Collapsed">
                             <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="85"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                <TextBlock Text="{loc:Loc Tasks.GlobalHotkey, Default='全局热键'}" VerticalAlignment="Center" Foreground="#FF555555"/><TextBox x:Name="HotkeyBox" Grid.Column="1" Height="24" Margin="0,3" Padding="4,1" ToolTip="如 Ctrl+Alt+Q"/>
+                                <TextBlock Text="{loc:Loc Tasks.GlobalHotkey, Default='全局热键'}" VerticalAlignment="Center" Foreground="#FF555555"/><TextBox x:Name="HotkeyBox" Grid.Column="1" Height="24" Margin="0,3" Padding="4,1" ToolTip="{loc:Loc Tasks.HotkeyFormatTip, Default='如 Ctrl+Alt+Q'}"/>
                             </Grid>
                             <TextBlock Text="{loc:Loc Tasks.HotkeyDesc, Default='格式如 Ctrl+Alt+Shift+Win+Q，单字母需带修饰键，支持 F1-F24'}" Foreground="#FF888888" FontSize="11" Margin="85,1,0,0"/>
                         </StackPanel>
@@ -304,7 +304,7 @@
                             <ComboBox x:Name="ScriptQuickBox" Grid.Column="3" Height="26" Margin="4,3,0,3" ToolTip="{loc:Loc Tasks.ScriptQuickTooltip, Default='快速选择 scripts/ 目录中的脚本'}" SelectionChanged="ScriptQuickBox_SelectionChanged">
                                 <ComboBoxItem Content="{loc:Loc Tasks.ActionScriptQuick, Default='scripts/ 快速选择'}" IsEnabled="False"/>
                             </ComboBox>
-                            <Button Grid.Column="4" Content="📂 脚本目录" Height="26" Margin="4,3,0,3" Padding="8,1" Click="OnOpenScriptsDirClick" ToolTip="在系统文件管理器中打开 scripts 脚本存放目录"/>
+                            <Button Grid.Column="4" Content="{loc:Loc Tasks.ScriptsDir, Default='📂 脚本目录'}" Height="26" Margin="4,3,0,3" Padding="8,1" Click="OnOpenScriptsDirClick" ToolTip="{loc:Loc Tasks.ScriptsDirTip, Default='在系统文件管理器中打开 scripts 脚本存放目录'}"/>
 
                             <!-- 参数 -->
                             <TextBlock Text="{loc:Loc Tasks.ArgsLabel, Default='启动参数'}" Grid.Row="1" VerticalAlignment="Center" Foreground="#FF444444"/>
@@ -407,14 +407,14 @@
                     </Grid>
                     <Button x:Name="StopTaskButton" Content="{loc:Loc Tasks.StopTaskBtn, Default='停止任务'}" Height="30" Padding="10,0" Margin="0,0,6,0" Click="OnStopTaskClick" Visibility="Collapsed" ToolTip="{loc:Loc Tasks.StopTaskTip, Default='终止该任务当前运行中的实例（整棵进程树）'}"/>
                     <TextBlock x:Name="RunStatusText" Text="" VerticalAlignment="Center" Margin="6,0,8,0" Foreground="#FF6B7280" FontSize="11"/>
-                    <Button Content="📄 查看当前日志" Height="30" Padding="10,0" Margin="0,0,6,0" Click="OnViewCurrentLogClick" ToolTip="打开当前选定任务的日志文件"/>
-                    <Button Content="📂 日志目录" Height="30" Padding="8,0" Click="OnOpenLogDirClick" ToolTip="在系统文件管理器中打开 logs 目录"/>
+                    <Button Content="{loc:Loc Tasks.ViewCurrentLog, Default='📄 查看当前日志'}" Height="30" Padding="10,0" Margin="0,0,6,0" Click="OnViewCurrentLogClick" ToolTip="{loc:Loc Tasks.ViewCurrentLogTip, Default='打开当前选定任务的日志文件'}"/>
+                    <Button Content="{loc:Loc Tasks.LogsDir, Default='📂 日志目录'}" Height="30" Padding="8,0" Click="OnOpenLogDirClick" ToolTip="{loc:Loc Tasks.LogsDirTip, Default='在系统文件管理器中打开 logs 目录'}"/>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
                     <Button Content="{loc:Loc Tasks.Validate, Default='校验'}" Height="30" MinWidth="68" Padding="12,0" Margin="0,0,8,0" Click="OnValidateClick"/>
                     <Button Content="{loc:Loc Tasks.SaveAndReload, Default='保存并生效'}" Style="{StaticResource PrimaryBtn}" Height="30" Padding="16,0" Margin="0,0,8,0" Click="OnSaveReloadClick"/>
                     <Button Content="{loc:Loc Tasks.SaveOnly, Default='仅保存'}" Height="30" MinWidth="68" Padding="12,0" Margin="0,0,8,0" Click="OnSaveClick"/>
-                    <Button Content="{loc:Loc Common.Close, Default='关闭'}" Height="30" MinWidth="68" Padding="12,0" Click="OnCloseClick"/>
+                    <Button Content="{loc:Loc Common.Close, Default='关闭'}" Height="30" MinWidth="68" Padding="12,0" IsCancel="True" Click="OnCloseClick"/>
                 </StackPanel>
             </DockPanel>
         </Border>

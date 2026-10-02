@@ -176,32 +176,52 @@ namespace CarroDesk.Modules.MonitorProfile.Services
                     int totalApplied = 0;
                     int finalBrightness = brightness;
                     int finalContrast = contrast;
-                    while (true)
+                    // 复位必须放在 finally：SetBrightnessAndContrastSync 一旦抛出
+                    // （dxva2 / WMI 瞬时异常），若无条件复位 _isApplying，
+                    // 此后每次调用都会直接返回那个已 faulted 的 Task，
+                    // 亮度调节将永久失效到进程重启为止。
+                    try
                     {
-                        int b, c;
-                        lock (_syncLock)
+                        while (true)
                         {
-                            b = _pendingBrightness;
-                            c = _pendingContrast;
-                            _pendingBrightness = -1;
-                            _pendingContrast = -1;
-                        }
-
-                        if (b >= 0 && c >= 0)
-                        {
-                            totalApplied = SetBrightnessAndContrastSync(b, c);
-                            finalBrightness = b;
-                            finalContrast = c;
-                        }
-
-                        lock (_syncLock)
-                        {
-                            if (_pendingBrightness < 0 && _pendingContrast < 0)
+                            int b, c;
+                            lock (_syncLock)
                             {
-                                _isApplying = false;
-                                _applyTask = null;
-                                break;
+                                b = _pendingBrightness;
+                                c = _pendingContrast;
+                                _pendingBrightness = -1;
+                                _pendingContrast = -1;
                             }
+
+                            if (b >= 0 && c >= 0)
+                            {
+                                try
+                                {
+                                    totalApplied += SetBrightnessAndContrastSync(b, c);
+                                }
+                                catch (Exception ex)
+                                {
+                                    // 单轮硬件写入失败不应终止整条应用链：
+                                    // 断开一次后设备可能已不在，后续轮次仍有机会成功。
+                                    _logger?.LogError("MonitorDdc", "写入亮度/对比度失败", ex);
+                                }
+                                finalBrightness = b;
+                                finalContrast = c;
+                            }
+
+                            lock (_syncLock)
+                            {
+                                if (_pendingBrightness < 0 && _pendingContrast < 0)
+                                    break;
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        lock (_syncLock)
+                        {
+                            _isApplying = false;
+                            _applyTask = null;
                         }
                     }
                     return new DdcApplyResult

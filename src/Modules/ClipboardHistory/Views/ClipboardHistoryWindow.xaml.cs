@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Media;
 using CarroDesk.Modules.ClipboardHistory.Models;
 using CarroDesk.Modules.ClipboardHistory.Services;
 using CarroDesk.Services.Localization;
@@ -252,6 +253,33 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
             }
         }
 
+        /// <summary>
+        /// 右键打开菜单前，把选中项同步到被右键的那一行。
+        ///
+        /// 背景：ContextMenu 是挂在 ListBoxItem 样式上的共享资源（StaticResource），
+        /// WPF 默认不会因右键而改变 ListBox 的 SelectedItem。若不同步，
+        /// 用户右键 B 行却对之前选中的 A 行执行「删除单条」，
+        /// 会静默删错条目且无任何提示（ApplyFilter 每次还会把选中重置为第 0 项，
+        /// 使误删目标几乎必然是列表首行）。
+        /// </summary>
+        private void HistoryList_ContextMenuOpening(object sender, ContextMenuEventArgs e)
+        {
+            var item = e.OriginalSource as DependencyObject;
+            while (item != null && !(item is ListBoxItem))
+            {
+                item = VisualTreeHelper.GetParent(item);
+            }
+
+            var container = item as ListBoxItem;
+            if (container == null) return;
+
+            var target = container.DataContext as ClipboardItem;
+            if (target != null && !ReferenceEquals(HistoryList.SelectedItem, target))
+            {
+                HistoryList.SelectedItem = target;
+            }
+        }
+
         private void DeleteSelectedItem()
         {
             if (HistoryList.SelectedItem is ClipboardItem item)
@@ -282,6 +310,21 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
 
         private void MenuDelete_Click(object sender, RoutedEventArgs e)
         {
+            // 右键菜单删除加二次确认：物理 Delete 键是明确的单条删除意图，
+            // 而菜单点击更易误触，且删除后历史条目无法恢复。
+            if (HistoryList.SelectedItem is ClipboardItem item)
+            {
+                var preview = item.PreviewText ?? item.FullText;
+                if (string.IsNullOrEmpty(preview)) preview = Loc.T("Clipboard.PreviewEmpty", "(empty)");
+                if (preview.Length > 60) preview = preview.Substring(0, 60) + "...";
+
+                var answer = MessageBox.Show(
+                    Loc.T("Clipboard.DeleteConfirmBody", "Delete this clipboard entry?\n\n{0}", preview),
+                    Loc.T("Clipboard.DeleteConfirmTitle", "Delete Entry"),
+                    MessageBoxButton.OKCancel,
+                    MessageBoxImage.Warning);
+                if (answer != MessageBoxResult.OK) return;
+            }
             DeleteSelectedItem();
         }
 

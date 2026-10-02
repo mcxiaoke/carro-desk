@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:loc="clr-namespace:CarroDesk.Services.Localization"
-        Title="保持唤醒 (Awake) 设置" Height="760" Width="600" MinHeight="680" MinWidth="580"
+        Title="{loc:Loc Awake.SettingsTitle, Default='保持唤醒 (Awake) 设置'}" Height="760" Width="600" MinHeight="680" MinWidth="580"
         WindowStartupLocation="CenterScreen" ResizeMode="CanResize"
         Background="#FFF6F7F9"
         FontFamily="Segoe UI, Microsoft YaHei UI">
@@ -120,11 +120,11 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel VerticalAlignment="Center">
-                    <TextBlock Text="☕ 保持唤醒 (Awake)" FontSize="15" FontWeight="Bold" Foreground="#FF1E293B"/>
-                    <TextBlock Text="阻止计算机进入休眠或息屏，让编译、下载、压制等挂机任务平稳进行" FontSize="12" Foreground="#FF64748B" Margin="0,3,0,0"/>
+                    <TextBlock Text="{loc:Loc Awake.HeaderTitle, Default='☕ 保持唤醒 (Awake)'}" FontSize="15" FontWeight="Bold" Foreground="#FF1E293B"/>
+                    <TextBlock Text="{loc:Loc Awake.HeaderDesc, Default='阻止计算机进入休眠或息屏，让编译、下载、压制等挂机任务平稳进行'}" FontSize="12" Foreground="#FF64748B" Margin="0,3,0,0"/>
                 </StackPanel>
                 <Border Grid.Column="1" x:Name="StatusBadge" Background="#FFF1F5F9" CornerRadius="12" Padding="10,4" VerticalAlignment="Center">
-                    <TextBlock x:Name="StatusBadgeText" Text="已关闭" FontSize="12" FontWeight="SemiBold" Foreground="#FF475569"/>
+                    <TextBlock x:Name="StatusBadgeText" Text="{loc:Loc Awake.StatusClosed, Default='已关闭'}" FontSize="12" FontWeight="SemiBold" Foreground="#FF475569"/>
                 </Border>
             </Grid>
         </Border>
@@ -135,10 +135,10 @@
                 <!-- 1. 工作模式选择卡片 -->
                 <Border Style="{StaticResource CardBorderStyle}">
                     <StackPanel>
-                        <TextBlock Text="工作模式" FontSize="13" FontWeight="Bold" Foreground="#FF334155" Margin="0,0,0,6"/>
+                        <TextBlock Text="{loc:Loc Awake.WorkMode, Default='工作模式'}" FontSize="13" FontWeight="Bold" Foreground="#FF334155" Margin="0,0,0,6"/>
                         
-                        <RadioButton x:Name="RadioPassive" Content="遵循系统默认电源策略（关闭保持唤醒）" Margin="0,2,0,2" GroupName="AwakeModeGroup"/>
-                        <RadioButton x:Name="RadioIndefinite" Content="无限期保持唤醒（直到手动关闭）" Margin="0,2,0,2" GroupName="AwakeModeGroup"/>
+                        <RadioButton x:Name="RadioPassive" Content="{loc:Loc Awake.ModePassive, Default='遵循系统默认电源策略（关闭保持唤醒）'}" Margin="0,2,0,2" GroupName="AwakeModeGroup"/>
+                        <RadioButton x:Name="RadioIndefinite" Content="{loc:Loc Awake.ModeIndefinite, Default='无限期保持唤醒（直到手动关闭）'}" Margin="0,2,0,2" GroupName="AwakeModeGroup"/>
                         
                         <Grid Margin="0,2,0,2">
                             <Grid.ColumnDefinitions>
@@ -146,9 +146,9 @@
                                 <ColumnDefinition Width="80"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <RadioButton x:Name="RadioTimed" Content="定时保持唤醒：" VerticalAlignment="Center" GroupName="AwakeModeGroup"/>
+                            <RadioButton x:Name="RadioTimed" Content="{loc:Loc Awake.ModeTimed, Default='定时保持唤醒：'}" VerticalAlignment="Center" GroupName="AwakeModeGroup"/>
                             <TextBox x:Name="TimedMinutesBox" Grid.Column="1" Height="26" Margin="6,0,4,0" VerticalAlignment="Center" TextAlignment="Center" Text="30"/>
-                            <TextBlock Grid.Column="2" Text="分钟" VerticalAlignment="Center" Foreground="#FF64748B" FontSize="12"/>
+                            <TextBlock Grid.Column="2" Text="{loc:Loc Awake.MinutesUnit, Default='分钟'}" VerticalAlignment="Center" Foreground="#FF64748B" FontSize="12"/>
                         </Grid>
 
                         <Grid Margin="0,2,0,2">
@@ -157,9 +157,9 @@
                                 <ColumnDefinition Width="80"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <RadioButton x:Name="RadioUntilTime" Content="保持唤醒至：" VerticalAlignment="Center" GroupName="AwakeModeGroup"/>
+                            <RadioButton x:Name="RadioUntilTime" Content="{loc:Loc Awake.ModeUntilTime, Default='保持唤醒至：'}" VerticalAlignment="Center" GroupName="AwakeModeGroup"/>
                             <TextBox x:Name="UntilTimeBox" Grid.Column="1" Height="26" Margin="6,0,4,0" VerticalAlignment="Center" TextAlignment="Center" Text="18:00"/>
-                            <TextBlock Grid.Column="2" Text="(格式 HH:mm，如 18:00)" VerticalAlignment="Center" Foreground="#FF64748B" FontSize="12"/>
+                            <TextBlock Grid.Column="2" Text="{loc:Loc Awake.TimeFormatHint, Default='(格式 HH:mm，如 18:00)'}" VerticalAlignment="Center" Foreground="#FF64748B" FontSize="12"/>
                         </Grid>
                     </StackPanel>
                 </Border>
@@ -167,13 +167,13 @@
                 <!-- 2. 选项与策略卡片 -->
                 <Border Style="{StaticResource CardBorderStyle}">
                     <StackPanel>
-                        <TextBlock Text="选项与电源策略" FontSize="13" FontWeight="Bold" Foreground="#FF334155" Margin="0,0,0,6"/>
+                        <TextBlock Text="{loc:Loc Awake.OptionsSection, Default='选项与电源策略'}" FontSize="13" FontWeight="Bold" Foreground="#FF334155" Margin="0,0,0,6"/>
 
-                        <CheckBox x:Name="KeepDisplayOnBox" Content="保持显示器常亮" Margin="0,2,0,2" IsChecked="True"/>
-                        <TextBlock Text="未勾选时仅防止系统睡眠，允许显示器按 Windows 电源计划息屏（省电且防 OLED 烧屏）" FontSize="11" Foreground="#FF94A3B8" Margin="22,0,0,4" TextWrapping="Wrap"/>
+                        <CheckBox x:Name="KeepDisplayOnBox" Content="{loc:Loc Awake.KeepDisplayOn, Default='保持显示器常亮'}" Margin="0,2,0,2" IsChecked="True"/>
+                        <TextBlock Text="{loc:Loc Awake.KeepDisplayOnDesc, Default='未勾选时仅防止系统睡眠，允许显示器按 Windows 电源计划息屏（省电且防 OLED 烧屏）'}" FontSize="11" Foreground="#FF94A3B8" Margin="22,0,0,4" TextWrapping="Wrap"/>
 
-                        <CheckBox x:Name="DisableOnBatteryBox" Content="使用笔记本电池供电时自动挂起保持唤醒" Margin="0,2,0,2" IsChecked="True"/>
-                        <TextBlock Text="断开交流电源时自动挂起，防止放进背包发热或意外耗尽电量" FontSize="11" Foreground="#FF94A3B8" Margin="22,0,0,4" TextWrapping="Wrap"/>
+                        <CheckBox x:Name="DisableOnBatteryBox" Content="{loc:Loc Awake.DisableOnBattery, Default='使用笔记本电池供电时自动挂起保持唤醒'}" Margin="0,2,0,2" IsChecked="True"/>
+                        <TextBlock Text="{loc:Loc Awake.DisableOnBatteryDesc, Default='断开交流电源时自动挂起，防止放进背包发热或意外耗尽电量'}" FontSize="11" Foreground="#FF94A3B8" Margin="22,0,0,4" TextWrapping="Wrap"/>
 
                         <Grid Margin="22,2,0,4">
                             <Grid.ColumnDefinitions>
@@ -181,9 +181,9 @@
                                 <ColumnDefinition Width="60"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="低电量保护阈值：" VerticalAlignment="Center" FontSize="12" Foreground="#FF475569"/>
+                            <TextBlock Text="{loc:Loc Awake.LowBatteryThreshold, Default='低电量保护阈值：'}" VerticalAlignment="Center" FontSize="12" Foreground="#FF475569"/>
                             <TextBox x:Name="BatteryThresholdBox" Grid.Column="1" Height="24" Margin="6,0,4,0" TextAlignment="Center" Text="20"/>
-                            <TextBlock Grid.Column="2" Text="% (低于此值强制退出保持唤醒)" VerticalAlignment="Center" Foreground="#FF64748B" FontSize="11"/>
+                            <TextBlock Grid.Column="2" Text="{loc:Loc Awake.LowBatteryThresholdDesc, Default='% (低于此值强制退出保持唤醒)'}" VerticalAlignment="Center" Foreground="#FF64748B" FontSize="11"/>
                         </Grid>
 
                         <Grid Margin="0,4,0,2">
@@ -192,9 +192,9 @@
                                 <ColumnDefinition Width="160"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="全局快速切换热键：" VerticalAlignment="Center" FontSize="12" Foreground="#FF475569"/>
+                            <TextBlock Text="{loc:Loc Awake.ToggleHotkeyLabel, Default='全局快速切换热键：'}" VerticalAlignment="Center" FontSize="12" Foreground="#FF475569"/>
                             <TextBox x:Name="HotkeyBox" Grid.Column="1" Height="26" Margin="8,0,0,0" Text="Win+Shift+W" VerticalAlignment="Center" Padding="4,2"/>
-                            <TextBlock Grid.Column="2" Text="(一键在开启与关闭之间切换)" VerticalAlignment="Center" Foreground="#FF94A3B8" FontSize="11" Margin="8,0,0,0"/>
+                            <TextBlock Grid.Column="2" Text="{loc:Loc Awake.ToggleHotkeyDesc, Default='(一键在开启与关闭之间切换)'}" VerticalAlignment="Center" Foreground="#FF94A3B8" FontSize="11" Margin="8,0,0,0"/>
                         </Grid>
                     </StackPanel>
                 </Border>
@@ -207,10 +207,10 @@
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="智能进程联动（检测到运行时自动保持唤醒）" FontSize="13" FontWeight="Bold" Foreground="#FF334155" VerticalAlignment="Center" TextWrapping="Wrap"/>
-                            <CheckBox x:Name="ProcessLinkEnabledBox" Grid.Column="1" Content="启用" FontWeight="SemiBold" VerticalAlignment="Center" Margin="10,0,0,0" IsChecked="True" Checked="OnProcessLinkEnabledChanged" Unchecked="OnProcessLinkEnabledChanged" ToolTip="总开关：关闭后不再检测目标进程，名单与缓冲设置保留"/>
+                            <TextBlock Text="{loc:Loc Awake.ProcessLinkSection, Default='智能进程联动（检测到运行时自动保持唤醒）'}" FontSize="13" FontWeight="Bold" Foreground="#FF334155" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                            <CheckBox x:Name="ProcessLinkEnabledBox" Grid.Column="1" Content="{loc:Loc Awake.EnableLabel, Default='启用'}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="10,0,0,0" IsChecked="True" Checked="OnProcessLinkEnabledChanged" Unchecked="OnProcessLinkEnabledChanged" ToolTip="{loc:Loc Awake.EnableTip, Default='总开关：关闭后不再检测目标进程，名单与缓冲设置保留'}"/>
                         </Grid>
-                        <TextBlock Text="当名单中的程序在运行时自动进入保持唤醒；全部退出后自动恢复" FontSize="11" Foreground="#FF94A3B8" Margin="0,0,0,6" TextWrapping="Wrap"/>
+                        <TextBlock Text="{loc:Loc Awake.ProcessLinkDesc, Default='当名单中的程序在运行时自动进入保持唤醒；全部退出后自动恢复'}" FontSize="11" Foreground="#FF94A3B8" Margin="0,0,0,6" TextWrapping="Wrap"/>
 
                         <StackPanel x:Name="ProcessLinkPanel">
                             <Grid Margin="0,0,0,6">
@@ -221,18 +221,18 @@
                                     <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBox x:Name="ProcessInputBox" Height="26" Padding="6,2" ToolTip="输入进程名，如 devenv, blender, ffmpeg"/>
-                                <Button Content="📂 浏览 (.exe)..." Grid.Column="1" Height="26" Margin="4,0,0,0" Padding="8,0" Click="OnBrowseExeProcessClick" ToolTip="在本地磁盘中选择可执行文件"/>
-                                <Button Content="从运行进程中选取..." Grid.Column="2" Height="26" Margin="4,0,0,0" Padding="8,0" Click="OnPickRunningProcessClick"/>
-                                <Button Content="添加" Grid.Column="3" Height="26" Margin="4,0,0,0" Padding="12,0" Click="OnAddProcessClick"/>
-                                <Button Content="删除" Grid.Column="4" Height="26" Margin="4,0,0,0" Padding="12,0" Click="OnDeleteProcessClick"/>
+                                <TextBox x:Name="ProcessInputBox" Height="26" Padding="6,2" ToolTip="{loc:Loc Awake.ProcessInputTip, Default='输入进程名，如 devenv, blender, ffmpeg'}"/>
+                                <Button Content="{loc:Loc Awake.BrowseExe, Default='📂 浏览 (.exe)...'}" Grid.Column="1" Height="26" Margin="4,0,0,0" Padding="8,0" Click="OnBrowseExeProcessClick" ToolTip="{loc:Loc Awake.BrowseExeTip, Default='在本地磁盘中选择可执行文件'}"/>
+                                <Button Content="{loc:Loc Awake.PickRunning, Default='从运行进程中选取...'}" Grid.Column="2" Height="26" Margin="4,0,0,0" Padding="8,0" Click="OnPickRunningProcessClick"/>
+                                <Button Content="{loc:Loc Common.Add, Default='添加'}" Grid.Column="3" Height="26" Margin="4,0,0,0" Padding="12,0" Click="OnAddProcessClick"/>
+                                <Button Content="{loc:Loc Common.Delete, Default='删除'}" Grid.Column="4" Height="26" Margin="4,0,0,0" Padding="12,0" Click="OnDeleteProcessClick"/>
                             </Grid>
 
                             <ListBox x:Name="ProcessListBox" Height="65" SelectionMode="Single">
                                 <ListBox.ContextMenu>
                                     <ContextMenu>
-                                        <MenuItem Header="删除所选" Click="OnDeleteProcessClick"/>
-                                        <MenuItem Header="清空列表" Click="OnClearProcessesClick"/>
+                                        <MenuItem Header="{loc:Loc Awake.DeleteSelected, Default='删除所选'}" Click="OnDeleteProcessClick"/>
+                                        <MenuItem Header="{loc:Loc Awake.ClearList, Default='清空列表'}" Click="OnClearProcessesClick"/>
                                     </ContextMenu>
                                 </ListBox.ContextMenu>
                             </ListBox>
@@ -243,13 +243,13 @@
                                     <ColumnDefinition Width="60"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="退出缓冲时间：" VerticalAlignment="Center" FontSize="12" Foreground="#FF475569"/>
+                                <TextBlock Text="{loc:Loc Awake.ExitBuffer, Default='退出缓冲时间：'}" VerticalAlignment="Center" FontSize="12" Foreground="#FF475569"/>
                                 <TextBox x:Name="ExitDelayBox" Grid.Column="1" Height="24" Margin="6,0,4,0" TextAlignment="Center" Text="120"/>
-                                <TextBlock Grid.Column="2" Text="秒 (进程退出后延迟恢复的缓冲时间，设为 0 则立即恢复)" VerticalAlignment="Center" Foreground="#FF64748B" FontSize="11" TextWrapping="Wrap"/>
+                                <TextBlock Grid.Column="2" Text="{loc:Loc Awake.ExitBufferDesc, Default='秒 (进程退出后延迟恢复的缓冲时间，设为 0 则立即恢复)'}" VerticalAlignment="Center" Foreground="#FF64748B" FontSize="11" TextWrapping="Wrap"/>
                             </Grid>
                         </StackPanel>
 
-                        <TextBlock x:Name="ProcessLinkDisabledHint" Text="智能进程联动已停用，名单与缓冲设置仍然保留；勾选上方“启用”即可恢复。" FontSize="11" Foreground="#FFB45309" Margin="0,8,0,0" TextWrapping="Wrap" Visibility="Collapsed"/>
+                        <TextBlock x:Name="ProcessLinkDisabledHint" Text="{loc:Loc Awake.ProcessLinkDisabledHint, Default='智能进程联动已停用，名单与缓冲设置仍然保留；勾选上方“启用”即可恢复。'}" FontSize="11" Foreground="#FFB45309" Margin="0,8,0,0" TextWrapping="Wrap" Visibility="Collapsed"/>
                     </StackPanel>
                 </Border>
             </StackPanel>
@@ -258,10 +258,10 @@
         <!-- 底部操作按钮 -->
         <Border Grid.Row="2" Background="#FFFFFFFF" BorderBrush="#FFE2E8F0" BorderThickness="0,1,0,0" Padding="0,10,0,0" Margin="0,8,0,0">
             <DockPanel LastChildFill="False">
-                <Button Content="恢复默认" Style="{StaticResource SecondaryButtonStyle}" DockPanel.Dock="Left" Click="OnResetDefaultsClick"/>
+                <Button Content="{loc:Loc Common.ResetDefaults, Default='恢复默认'}" Style="{StaticResource SecondaryButtonStyle}" DockPanel.Dock="Left" Click="OnResetDefaultsClick"/>
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
-                    <Button Content="保存并应用" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,8,0" Click="OnSaveApplyClick"/>
-                    <Button Content="关闭" Style="{StaticResource SecondaryButtonStyle}" Click="OnCloseClick"/>
+                    <Button Content="{loc:Loc Common.SaveAndApply, Default='保存并应用'}" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,8,0" Click="OnSaveApplyClick"/>
+                    <Button Content="{loc:Loc Common.Close, Default='关闭'}" Style="{StaticResource SecondaryButtonStyle}" IsCancel="True" Click="OnCloseClick"/>
                 </StackPanel>
             </DockPanel>
         </Border>
