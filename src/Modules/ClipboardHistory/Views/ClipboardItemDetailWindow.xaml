@@ -1,0 +1,157 @@
+<Window x:Class="CarroDesk.Modules.ClipboardHistory.Views.ClipboardItemDetailWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="clr-namespace:CarroDesk.Services.Localization"
+        Title="{loc:Loc Clipboard.DetailWindowTitle, Default='剪贴板详情'}"
+        Width="720" Height="560" MinWidth="420" MinHeight="280"
+        MaxWidth="1600" MaxHeight="1200"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="CanResizeWithGrip"
+        Background="#FFFFFFFF"
+        FontFamily="Segoe UI, Microsoft YaHei UI" FontSize="12"
+        Foreground="#FF24292F" UseLayoutRounding="True">
+
+    <Window.Resources>
+        <!-- 扁平按钮：与剪贴板历史浮窗的浅色调保持一致 -->
+        <Style x:Key="FlatButtonStyle" TargetType="{x:Type Button}">
+            <Setter Property="Height" Value="28"/>
+            <Setter Property="MinWidth" Value="84"/>
+            <Setter Property="Padding" Value="12,0"/>
+            <Setter Property="Margin" Value="0,0,8,0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="#FF1E293B"/>
+            <Setter Property="Background" Value="#FFF1F5F9"/>
+            <Setter Property="BorderBrush" Value="#FFE2E8F0"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Button}">
+                        <Border x:Name="bd" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="5" SnapsToDevicePixels="True">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              Margin="{TemplateBinding Padding}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#FFE2E8F0"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#FFCBD5E1"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="bd" Property="Background" Value="#FFF8FAFC"/>
+                                <Setter Property="Foreground" Value="#FF94A3B8"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 只读全文文本框：可选中、可 Ctrl+C / Ctrl+A，禁用 IME 自动拼写干扰 -->
+        <Style x:Key="FullTextBoxStyle" TargetType="{x:Type TextBox}">
+            <Setter Property="Background" Value="#FFF8FAFC"/>
+            <Setter Property="BorderBrush" Value="#FFE2E8F0"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="10"/>
+            <Setter Property="FontFamily" Value="Consolas, Microsoft YaHei UI"/>
+            <Setter Property="FontSize" Value="12.5"/>
+            <Setter Property="Foreground" Value="#FF1E293B"/>
+            <Setter Property="IsReadOnly" Value="True"/>
+            <Setter Property="AcceptsReturn" Value="True"/>
+            <Setter Property="IsReadOnlyCaretVisible" Value="True"/>
+            <Setter Property="VerticalScrollBarVisibility" Value="Auto"/>
+            <Setter Property="HorizontalScrollBarVisibility" Value="Auto"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type TextBox}">
+                        <Border x:Name="bd" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="6">
+                            <ScrollViewer x:Name="PART_ContentHost" Focusable="False"
+                                          Padding="{TemplateBinding Padding}"
+                                          VerticalScrollBarVisibility="{TemplateBinding VerticalScrollBarVisibility}"
+                                          HorizontalScrollBarVisibility="{TemplateBinding HorizontalScrollBarVisibility}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="BorderBrush" Value="#FFCBD5E1"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                <Setter TargetName="bd" Property="BorderBrush" Value="#FF0969DA"/>
+                                <Setter TargetName="bd" Property="Background" Value="#FFFFFFFF"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Border Margin="10" Background="#FFFFFFFF" CornerRadius="10" BorderBrush="#FFE2E8F0" BorderThickness="1">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="16" ShadowDepth="4" Opacity="0.18" Color="#FF000000"/>
+        </Border.Effect>
+
+        <Grid Margin="14">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/> <!-- 元信息 -->
+                <RowDefinition Height="*"/>    <!-- 全文文本框 -->
+                <RowDefinition Height="Auto"/> <!-- 状态提示 -->
+                <RowDefinition Height="Auto"/> <!-- 底部按钮 -->
+            </Grid.RowDefinitions>
+
+            <!-- 1. 元信息条 -->
+            <StackPanel Grid.Row="0" Margin="0,0,0,10">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock x:Name="TxtPinned" Text="📌" FontSize="11" Margin="0,1,4,0" Foreground="#FF0969DA"
+                               VerticalAlignment="Center" Visibility="Collapsed"
+                               ToolTip="{loc:Loc Clipboard.Pinned, Default='已固定置顶'}"/>
+                    <TextBlock x:Name="TxtMeta" FontSize="12" Foreground="#FF0F172A" FontWeight="SemiBold"
+                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                </StackPanel>
+                <TextBlock x:Name="TxtCopiedAt" FontSize="11" Foreground="#FF94A3B8" Margin="0,3,0,0"/>
+                <TextBlock x:Name="TxtTruncated" FontSize="11" Foreground="#FFB45309" Margin="0,3,0,0"
+                           TextWrapping="Wrap" Visibility="Collapsed"/>
+            </StackPanel>
+
+            <!-- 2. 全文内容（可选中、可复制） -->
+            <TextBox x:Name="TxtFullText" Grid.Row="1" Style="{StaticResource FullTextBoxStyle}"
+                     TextWrapping="Wrap"/>
+
+            <!-- 3. 状态提示 -->
+            <TextBlock x:Name="TxtStatus" Grid.Row="2" FontSize="11" Foreground="#FF64748B"
+                       Margin="0,8,0,0" TextTrimming="CharacterEllipsis"/>
+
+            <!-- 4. 底部操作按钮 -->
+            <Grid Grid.Row="3" Margin="0,10,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <CheckBox x:Name="ChkWrap" Grid.Column="0" VerticalAlignment="Center" Cursor="Hand"
+                          Content="{loc:Loc Clipboard.DetailWrapToggle, Default='自动换行'}"
+                          Checked="ChkWrap_Changed" Unchecked="ChkWrap_Changed" IsChecked="True"/>
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <Button x:Name="BtnSelectAll" Content="{loc:Loc Clipboard.DetailSelectAll, Default='全选'}"
+                            Style="{StaticResource FlatButtonStyle}" Click="BtnSelectAll_Click"/>
+                    <Button x:Name="BtnCopy" Content="{loc:Loc Clipboard.DetailBtnCopy, Default='复制全文'}"
+                            Style="{StaticResource FlatButtonStyle}" Click="BtnCopy_Click"/>
+                    <Button x:Name="BtnCopyAndPaste"
+                            Content="{loc:Loc Clipboard.DetailBtnCopyPaste, Default='复制并粘贴'}"
+                            Style="{StaticResource FlatButtonStyle}" Margin="0,0,8,0"
+                            Click="BtnCopyAndPaste_Click"/>
+                    <Button x:Name="BtnClose" Content="{loc:Loc Clipboard.DetailBtnClose, Default='关闭'}"
+                            Style="{StaticResource FlatButtonStyle}" MinWidth="64" Margin="0"
+                            IsCancel="True" Click="BtnClose_Click"/>
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

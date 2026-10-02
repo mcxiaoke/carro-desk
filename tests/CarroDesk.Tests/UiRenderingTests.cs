@@ -113,6 +113,52 @@ namespace CarroDesk.Tests
         }
 
         [TestMethod]
+        public void Render_ClipboardItemDetailWindow_ShowsFullText_And_SavesSnapshot()
+        {
+            RunInSta(() =>
+            {
+                var storage = new MemoryClipboardStorage();
+                var service = new ClipboardHistoryService(storage);
+                service.Start(ClipboardHistoryConfig.CreateDefault());
+                service.RecordText("第一行：完整内容窗口应显示全部文本，而不是截断的预览。\r\n第二行：可选中、Ctrl+A 全选、Ctrl+C 复制。\r\n第三行：支持滚动与自动换行切换。");
+
+                var item = service.GetItems()[0];
+                var detail = new ClipboardItemDetailWindow(service);
+                detail.LoadItem(item);
+                SaveWindowSnapshot(detail, 720, 560, "ClipboardItemDetailWindow.png");
+            });
+        }
+
+        [TestMethod]
+        public void ClipboardItemDetailWindow_LoadItem_KeepsFullText_And_MetaInfo()
+        {
+            RunInSta(() =>
+            {
+                var storage = new MemoryClipboardStorage();
+                var service = new ClipboardHistoryService(storage);
+                service.Start(ClipboardHistoryConfig.CreateDefault());
+
+                const string raw = "line1\nline2\nline3";
+                service.RecordText(raw);
+
+                var item = service.GetItems()[0];
+                var detail = new ClipboardItemDetailWindow(service);
+                detail.LoadItem(item);
+
+                // 预览被截断，但详情窗口必须持有完整原文
+                Assert.AreEqual(raw, item.FullText);
+                Assert.IsTrue(detail.FullText.Length >= detail.DisplayText.Length,
+                    "详情窗口渲染文本不应超过原文长度");
+                Assert.AreEqual(raw, detail.FullText, "详情窗口必须保留完整原文");
+                Assert.IsTrue(detail.MetaInfo.Contains("3"), "元信息应包含字符数: " + detail.MetaInfo);
+                Assert.IsTrue(detail.MetaInfo.Contains("3"), "元信息应包含行数: " + detail.MetaInfo);
+                Assert.IsFalse(detail.IsTruncated, "普通长度文本不应显示截断提示");
+
+                detail.Close();
+            });
+        }
+
+        [TestMethod]
         public void XamlLayout_AllGrids_HaveSufficientRowAndColumnDefinitions()
         {
             string projectRoot = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\..\..\..\.."));

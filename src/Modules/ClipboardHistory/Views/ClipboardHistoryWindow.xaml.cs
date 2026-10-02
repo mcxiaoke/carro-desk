@@ -23,6 +23,7 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
         private double _normalLeft;
         private double _normalTop;
         private IntPtr _pasteTargetWindow;
+        private ClipboardItemDetailWindow _detailWindow;
 
         [DllImport("user32.dll")]
         private static extern IntPtr GetForegroundWindow();
@@ -62,13 +63,28 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
 
         public void ShowAndActivate()
         {
+            ShowAndActivate(capturePasteTarget: true);
+        }
+
+        /// <summary>
+        /// 唤出并激活浮窗。
+        /// </summary>
+        /// <param name="capturePasteTarget">
+        /// 是否把当前前台窗口记为粘贴目标。从全文详情窗口返回时必须传 false，
+        /// 否则会把详情窗口误记为粘贴目标，导致"复制并粘贴"发错窗口。
+        /// </param>
+        public void ShowAndActivate(bool capturePasteTarget)
+        {
             RefreshList();
             ApplyPosition();
 
             if (!IsVisible)
             {
                 // 在历史浮窗抢前台前记录原目标，提交时只允许粘贴回该 HWND。
-                _pasteTargetWindow = GetForegroundWindow();
+                if (capturePasteTarget)
+                {
+                    _pasteTargetWindow = GetForegroundWindow();
+                }
                 Show();
             }
 
@@ -186,6 +202,14 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
                 DeleteSelectedItem();
                 e.Handled = true;
             }
+            else if (e.Key == Key.V)
+            {
+                if (HistoryList.SelectedItem is ClipboardItem item)
+                {
+                    ShowDetailWindow(item);
+                }
+                e.Handled = true;
+            }
             else if (e.Key == Key.Escape)
             {
                 Hide();
@@ -265,10 +289,87 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
         {
             if (HistoryList.SelectedItem is ClipboardItem item)
             {
-                string title = Loc.T("Clipboard.DetailsTitle", "剪贴板详情") + $" ({item.TextLength} " + Loc.T("Clipboard.CharsFormat", "{0} 字符", "").Trim() + ")";
-                MessageBox.Show(item.FullText, title, MessageBoxButton.OK, MessageBoxImage.Information);
+                ShowDetailWindow(item);
             }
         }
+
+        private void BtnItemDetails_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button btn && btn.Tag is ClipboardItem item)
+            {
+                ShowDetailWindow(item);
+                e.Handled = true;
+            }
+        }
+
+        /// <summary>
+        /// 打开（或复用）全文详情窗口显示条目内容。
+        ///
+        /// 复用策略：全局只保留一个详情窗口实例，重复打开时仅换内容并前置，
+        /// 避免连点行内按钮刷出多个窗口。
+        /// </summary>
+        private void ShowDetailWindow(ClipboardItem item)
+        {
+            if (item == null || string.IsNullOrEmpty(item.FullText))
+            {
+                return;
+            }
+
+            try
+            {
+                if (_detailWindow == null)
+                {
+                    _detailWindow = new ClipboardItemDetailWindow(_service, _pasteTargetWindow);
+                    _detailWindow.Closed += DetailWindow_Closed;
+                }
+                else
+                {
+                    // 复用前同步最新的粘贴目标，避免窗口长时间开着后目标已失效
+                    _detailWindow.SetPasteTarget(_pasteTargetWindow);
+                }
+
+                _detailWindow.LoadItem(item);
+
+                // 浮窗是"失焦即隐"的一次性面板，详情窗口是常驻阅读窗口：
+                // 这里主动隐藏浮窗，避免详情窗口被浮窗遮挡。
+                if (IsVisible)
+                {
+                    Hide();
+                }
+
+                if (!_detailWindow.IsVisible)
+                {
+                    _detailWindow.Show();
+                }
+                _detailWindow.Activate();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this,
+                    Loc.T("Clipboard.DetailOpenFailed", "无法打开内容详情窗口：{0}", ex.Message),
+                    Loc.T("Common.Error", "错误"),
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
+        }
+
+        private void DetailWindow_Closed(object sender, EventArgs e)
+        {
+            if (_detailWindow != null)
+            {
+                _detailWindow.Closed -= DetailWindow_Closed;
+                _detailWindow = null;
+            }
+
+            // 详情窗口关闭后回到历史浮窗；不重新采集粘贴目标，
+            // 保持浮窗打开前记录的原目标 HWND 有效。
+            if (!IsVisible && !IsClosing)
+            {
+                ShowAndActivate(capturePasteTarget: false);
+            }
+        }
+
+        private bool IsClosing { get; set; }
 
         private void BtnItemPin_Click(object sender, RoutedEventArgs e)
         {
@@ -384,6 +485,22 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
         protected override void OnClosed(EventArgs e)
         {
             _service.HistoryChanged -= OnServiceHistoryChanged;
+
+            // 浮窗关闭时同步关掉详情窗口，避免模块停止后残留幽灵窗口
+            IsClosing = true;
+            if (_detailWindow != null)
+            {
+                try
+                {
+                    _detailWindow.Closed -= DetailWindow_Closed;
+                    _detailWindow.Close();
+                }
+                catch
+                {
+                }
+                _detailWindow = null;
+            }
+
             base.OnClosed(e);
         }
     }
