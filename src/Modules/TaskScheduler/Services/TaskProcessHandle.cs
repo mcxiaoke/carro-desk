@@ -49,6 +49,14 @@ namespace CarroDesk.Services.Tasks
         /// <summary>true = 进程挂在 kill-on-close 作业对象上（宿主生命周期绑定）。</summary>
         public bool KillWithHost { get { return _job != null; } }
 
+        /// <summary>
+        /// 用户配置期望的宿主绑定语义（来自 task.options.killWithHost，默认 true）。
+        /// 与 <see cref="KillWithHost"/> 的区别：后者反映"作业对象是否真的挂上"，
+        /// 当 ProcessJob.TryAssign 失败时会退化为 false；此属性始终反映用户意图，
+        /// 供宿主退出清理据其决定是否终止进程树，避免配置为 true 却被静默当作 false 留下孤儿进程。
+        /// </summary>
+        public bool KillWithHostRequested { get { return _task == null || _task.Options == null || _task.Options.KillWithHost; } }
+
         /// <summary>是否被主动停止过（用户停止 / 宿主退出清理）。用于区分"意外退出"。</summary>
         public bool WasStopped { get { return Volatile.Read(ref _stopped) != 0; } }
 

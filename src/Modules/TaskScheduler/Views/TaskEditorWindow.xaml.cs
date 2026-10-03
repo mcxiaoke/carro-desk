@@ -87,13 +87,13 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                 {
                     // 任意加载错误都必须在编辑器中可见。旧实现只在有效任务为 0 时提示，
                     // 随后保存会把非法/未来 schema 任务从 tasks.json 中永久删除。
-                    MessageBox.Show(Loc.T("Tasks.LoadErrors", string.Join("\n", _loadErrors)), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show(Loc.T("Tasks.LoadErrors", "加载 tasks.json 有错误:\n{0}", string.Join("\n", _loadErrors)), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
                 RefreshList();
             }
             catch (Exception ex)
             {
-                MessageBox.Show(Loc.T("Tasks.LoadFailed", ex.Message), Loc.T("Common.Error", "错误"), MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(Loc.T("Tasks.LoadFailed", "加载失败: {0}", ex.Message), Loc.T("Common.Error", "错误"), MessageBoxButton.OK, MessageBoxImage.Error);
                 _tasks = new List<TaskDefinition>();
                 RefreshList();
             }
@@ -397,7 +397,14 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                     AllowConcurrent = cur.Options.AllowConcurrent,
                     Retry = cur.Options.Retry,
                     NotifyOnFailure = cur.Options.NotifyOnFailure,
-                    WorkDir = cur.Options.WorkDir
+                    WorkDir = cur.Options.WorkDir,
+                    Mode = cur.Options.Mode,
+                    KillWithHost = cur.Options.KillWithHost,
+                    SingleInstance = cur.Options.SingleInstance,
+                    Restart = cur.Options.Restart,
+                    RestartDelaySec = cur.Options.RestartDelaySec,
+                    RestartLimit = cur.Options.RestartLimit,
+                    StableUptimeSec = cur.Options.StableUptimeSec
                 },
                 When = new TaskCondition
                 {
@@ -419,7 +426,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
         {
             var cur = TaskList.SelectedItem as TaskDefinition;
             if (cur == null) return;
-            if (MessageBox.Show(Loc.T("Tasks.DeleteConfirm", cur.Name), Loc.T("Common.Confirm", "确认"), MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+            if (MessageBox.Show(Loc.T("Tasks.DeleteConfirm", "删除任务 \"{0}\" ？", cur.Name), Loc.T("Common.Confirm", "确认"), MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
             _tasks.Remove(cur);
             RefreshList();
         }
@@ -481,7 +488,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             catch { }
         }
 
-        private TaskDefinition BuildCurrent()
+        private TaskDefinition BuildCurrent(TaskDefinition cur = null)
         {
             var t = new TaskDefinition();
             t.Name = NameBox.Text.Trim();
@@ -531,6 +538,14 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             t.When.NetworkAvailable = NetworkBox.IsChecked == true;
             t.When.FileExists = FileExistsBox.Text.Trim();
             t.When.FileNotExists = FileNotExistsBox.Text.Trim();
+
+            // UI 未暴露的选项字段（singleInstance / stableUptimeSec）在编辑既有任务时保留原值，
+            // 否则保存时会被 new TaskOptions() 的默认值静默覆盖，导致磁盘配置丢失。
+            if (cur != null && cur.Options != null)
+            {
+                t.Options.SingleInstance = cur.Options.SingleInstance;
+                t.Options.StableUptimeSec = cur.Options.StableUptimeSec;
+            }
             return t;
         }
 
@@ -572,7 +587,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             bool duplicate = _tasks.Any(t => t != cur && string.Equals(t.Name, built.Name, StringComparison.OrdinalIgnoreCase));
             if (duplicate)
             {
-                error = Loc.T("Tasks.ValNameDuplicate", built.Name);
+                error = Loc.T("Tasks.ValNameDuplicate", "任务名称 \"{0}\" 已存在，请更换名称", built.Name);
                 controlToFocus = NameBox;
                 return false;
             }
@@ -621,7 +636,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                 TimeSpan t;
                 if (!TaskDefinition.TryParseTime(built.Trigger.At, out t))
                 {
-                    error = Loc.T("Tasks.ValDailyInvalid", built.Trigger.At);
+                    error = Loc.T("Tasks.ValDailyInvalid", "每天定时时间格式无效: {0} (请使用 HH:mm，如 09:30)", built.Trigger.At);
                     controlToFocus = AtBox;
                     return false;
                 }
@@ -637,7 +652,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                 string cronErr;
                 if (!CronHelper.Validate(built.Trigger.Expr, out cronErr))
                 {
-                    error = Loc.T("Tasks.ValCronInvalid", cronErr);
+                    error = Loc.T("Tasks.ValCronInvalid", "Cron 表达式无效: {0}", cronErr);
                     controlToFocus = CronBox;
                     return false;
                 }
@@ -662,7 +677,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                 string hkErr;
                 if (!HotkeyHelper.Validate(built.Trigger.Hotkey, out hkErr))
                 {
-                    error = Loc.T("Tasks.ValHotkeyInvalid", hkErr);
+                    error = Loc.T("Tasks.ValHotkeyInvalid", "热键格式无效: {0}", hkErr);
                     controlToFocus = HotkeyBox;
                     return false;
                 }
@@ -773,7 +788,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
         private void OnValidateClick(object sender, RoutedEventArgs e)
         {
             var cur = TaskList.SelectedItem as TaskDefinition;
-            var built = BuildCurrent();
+            var built = BuildCurrent(cur);
             string err;
             Control focusCtrl;
             if (!ValidateForm(built, cur, out err, out focusCtrl))
@@ -793,12 +808,12 @@ namespace CarroDesk.Modules.TaskScheduler.Views
         {
             if (_loadErrors != null && _loadErrors.Count > 0)
             {
-                MessageBox.Show(Loc.T("Tasks.LoadErrors", string.Join("\n", _loadErrors)), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(Loc.T("Tasks.LoadErrors", "加载 tasks.json 有错误:\n{0}", string.Join("\n", _loadErrors)), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
             }
 
             var cur = TaskList.SelectedItem as TaskDefinition;
-            var built = BuildCurrent();
+            var built = BuildCurrent(cur);
 
             // 如果当前无任何任务且表单完全为空，无需保存
             if (cur == null && _tasks.Count == 0 && string.IsNullOrWhiteSpace(built.Name) && string.IsNullOrWhiteSpace(built.Action.File))
@@ -814,7 +829,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             {
                 ValidateText.Text = Loc.T("Tasks.ValFailPrefix", "校验失败: ") + err;
                 FocusInput(focusCtrl);
-                MessageBox.Show(Loc.T("Tasks.CurrentTaskError", err), Loc.T("Config.ValidationFailed", "校验失败"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(Loc.T("Tasks.CurrentTaskError", "当前任务表单存在错误，无法保存:\n{0}", err), Loc.T("Config.ValidationFailed", "校验失败"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
             }
 
@@ -831,7 +846,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             }
             if (errors.Count > 0)
             {
-                MessageBox.Show(Loc.T("Tasks.OtherTasksError", string.Join("\n", errors)), Loc.T("Config.ValidationFailed", "校验失败"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(Loc.T("Tasks.OtherTasksError", "其他任务存在错误，无法保存:\n{0}", string.Join("\n", errors)), Loc.T("Config.ValidationFailed", "校验失败"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
             }
 
@@ -864,7 +879,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             try
             {
                 TaskConfigService.Save(_tasks);
-                ValidateText.Text = "✓ " + Loc.T("Tasks.SavedAt", DateTime.Now.ToString("HH:mm:ss"));
+                ValidateText.Text = "✓ " + Loc.T("Tasks.SavedAt", "已保存 ({0})", DateTime.Now.ToString("HH:mm:ss"));
 
                 // 刷新左侧列表展示（徽标、状态圆点、名称）并保持当前选中项
                 _isUpdating = true;
@@ -888,7 +903,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                     targetTask.Options = previousOptions;
                     targetTask.When = previousWhen;
                 }
-                MessageBox.Show(Loc.T("Tasks.SaveFailed", ex.Message), Loc.T("Common.Error", "错误"), MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(Loc.T("Tasks.SaveFailed", "保存失败: {0}", ex.Message), Loc.T("Common.Error", "错误"), MessageBoxButton.OK, MessageBoxImage.Error);
                 return false;
             }
         }
@@ -897,7 +912,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
         {
             if (SaveTasksInternal())
             {
-                MessageBox.Show(Loc.T("Tasks.SaveSuccess", Services.ConfigService.TaskFilePath), Loc.T("Common.Success", "保存成功"), MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(Loc.T("Tasks.SaveSuccess", "已保存到 {0}", Services.ConfigService.TaskFilePath), Loc.T("Common.Success", "保存成功"), MessageBoxButton.OK, MessageBoxImage.Information);
             }
         }
 
@@ -917,7 +932,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             }
             catch (Exception ex)
             {
-                MessageBox.Show(Loc.T("Tasks.ReloadFailed", ex.Message), Loc.T("Common.Error", "错误"), MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(Loc.T("Tasks.ReloadFailed", "重载失败: {0}", ex.Message), Loc.T("Common.Error", "错误"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -957,7 +972,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             string err;
             if (!CronHelper.Validate(expr, out err))
             {
-                CronHintText.Text = Loc.T("Tasks.CronFormatError", err);
+                CronHintText.Text = Loc.T("Tasks.CronFormatError", "格式错误: {0}", err);
                 CronHintText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xD9, 0x30, 0x25));
             }
             else
@@ -1000,7 +1015,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             {
                 ValidateText.Text = Loc.T("Tasks.ValFailPrefix", "校验失败: ") + err;
                 FocusInput(focusCtrl);
-                MessageBox.Show(Loc.T("Tasks.TestError", err), Loc.T("Config.ValidationFailed", "校验失败"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(Loc.T("Tasks.TestError", "任务配置有误，无法测试运行:\n{0}", err), Loc.T("Config.ValidationFailed", "校验失败"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
@@ -1050,14 +1065,14 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                     status = Loc.T("Tasks.FailedExitCode", exitCode);
                     img = MessageBoxImage.Warning;
                 }
-                ValidateText.Text = Loc.T("Tasks.TestCompletedSummary", status, sw.Elapsed.TotalSeconds);
-                MessageBox.Show(Loc.T("Tasks.TestResult", status, sw.Elapsed.TotalSeconds, cur.Name), Loc.T("Tasks.TestResultTitle", "测试结果"), MessageBoxButton.OK, img);
+                ValidateText.Text = Loc.T("Tasks.TestCompletedSummary", "测试完成 [{0}] 耗时 {1:0.0}s", status, sw.Elapsed.TotalSeconds);
+                MessageBox.Show(Loc.T("Tasks.TestResult", "测试运行完成: {0}\n耗时: {1:0.0} 秒\n详细日志请查看:\nlogs/task-{2}.log", status, sw.Elapsed.TotalSeconds, cur.Name), Loc.T("Tasks.TestResultTitle", "测试结果"), MessageBoxButton.OK, img);
             }
             catch (Exception ex)
             {
                 if (_testRunAbandoned) return;
-                ValidateText.Text = Loc.T("Tasks.TestException", ex.Message);
-                MessageBox.Show(Loc.T("Tasks.TestException", ex.Message), Loc.T("Common.Error", "错误"), MessageBoxButton.OK, MessageBoxImage.Error);
+                ValidateText.Text = Loc.T("Tasks.TestException", "测试运行异常:\n{0}", ex.Message);
+                MessageBox.Show(Loc.T("Tasks.TestException", "测试运行异常:\n{0}", ex.Message), Loc.T("Common.Error", "错误"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
             finally
             {
@@ -1210,7 +1225,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
         {
             if (_loadErrors != null && _loadErrors.Count > 0)
             {
-                MessageBox.Show(Loc.T("Tasks.LoadErrors", string.Join("\n", _loadErrors)), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(Loc.T("Tasks.LoadErrors", "加载 tasks.json 有错误:\n{0}", string.Join("\n", _loadErrors)), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
             if (sender is CheckBox cb && cb.DataContext is TaskDefinition task)

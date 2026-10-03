@@ -269,6 +269,12 @@ namespace CarroDesk.Services.Tasks
                         job.Dispose();
                         job = null;
                     }
+                    if (job == null)
+                    {
+                        // 配置为 killWithHost=true 但作业对象不可用：退化为 taskkill 兜底，
+                        // 宿主退出清理会按用户意图（KillWithHostRequested）终止进程树。
+                        TaskLogger.Warn(task.Name, "killWithHost=true but job object unavailable; host exit will fall back to taskkill /T /F");
+                    }
                 }
 
                 handle = new TaskProcessHandle(task, proc, job);

@@ -90,6 +90,16 @@ namespace CarroDesk.Services.Tasks
 
         public bool SetGlobalEnabled(bool enabled)
         {
+            return SetGlobalEnabled(enabled, false);
+        }
+
+        /// <summary>
+        /// isRollback=true 表示本调用是"持久化失败后的运行时状态回滚"，
+        /// 此时只恢复内存开关与触发器，不再尝试持久化——否则持久化持续失败会
+        /// 形成"保存失败→回滚→保存失败→回滚"的相互递归直至栈溢出。
+        /// </summary>
+        private bool SetGlobalEnabled(bool enabled, bool isRollback)
+        {
             bool changed = false;
             lock (_lock) { if (_globalEnabled != enabled) { _globalEnabled = enabled; changed = true; } }
             if (!changed) return true;
@@ -106,6 +116,7 @@ namespace CarroDesk.Services.Tasks
                 StopTriggers();
                 TaskLogger.Info("system", "TaskScheduler global disabled");
             }
+            if (isRollback) return false;
             // persist to config.json if possible
             try
             {
@@ -118,7 +129,7 @@ namespace CarroDesk.Services.Tasks
                         if (!_configManager.SaveModuleConfig("TaskScheduler", cfg))
                         {
                             // 持久化失败时恢复运行时开关和触发器，避免本次进程与下次启动状态分叉。
-                            SetGlobalEnabled(!enabled);
+                            SetGlobalEnabled(!enabled, true);
                             TaskLogger.Error("system", "TaskScheduler global switch persistence failed; runtime state rolled back");
                             return false;
                         }
@@ -127,7 +138,7 @@ namespace CarroDesk.Services.Tasks
             }
             catch
             {
-                SetGlobalEnabled(!enabled);
+                SetGlobalEnabled(!enabled, true);
                 return false;
             }
             return true;
@@ -472,6 +483,12 @@ namespace CarroDesk.Services.Tasks
                         TaskLogger.Info(task.Name, "retry cancelled because task was disabled, removed, or scheduler stopped");
                         return;
                     }
+                    if (slot.StopRequested)
+                    {
+                        // 用户已请求停止：取消挂起的自动重启（systemctl stop 语义）
+                        TaskLogger.Info(task.Name, "stopped by user request; pending retry cancelled");
+                        return;
+                    }
                     attempt++;
                     int code = 0;
                     try
@@ -487,6 +504,15 @@ namespace CarroDesk.Services.Tasks
                         TaskLogger.Error(task.Name, "run exception: " + ex);
                         code = -1;
                     }
+
+                    // 用户主动停止（TryStop 已杀进程树）：不得判为失败，也不得触发重试/守护重启。
+                    if (slot.StopRequested)
+                    {
+                        TaskLogger.Info(task.Name, "stopped by user request (exit code " + code + "); not counted as failure");
+                        AddRecent(task.Name, "skipped");
+                        return; // finally 仍会移除运行槽
+                    }
+
                     lastCode = code;
                     if (code == 0 || attempt > retry) break;
                     TaskLogger.Info(task.Name, "retry " + attempt + "/" + retry + " after non-zero exit " + code);
@@ -827,7 +853,15 @@ namespace CarroDesk.Services.Tasks
             {
                 try
                 {
-                    if (h.KillWithHost) h.Stop();
+                    if (h.KillWithHostRequested)
+                    {
+                        if (!h.KillWithHost)
+                        {
+                            // 作业对象挂接失败（KillWithHost=false）但用户仍要求随宿主退出：走 taskkill 兜底
+                            TaskLogger.Warn(h.Definition.Name, "host exiting, killing process tree via taskkill (pid=" + h.Pid + ", job attach had failed)");
+                        }
+                        h.Stop();
+                    }
                     else TaskLogger.Info(h.Definition.Name, "host exiting, detached process left running (pid=" + h.Pid + ", killWithHost=false)");
                     h.Dispose();
                 }

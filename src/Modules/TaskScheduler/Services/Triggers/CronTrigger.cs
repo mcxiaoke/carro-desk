@@ -75,7 +75,9 @@ namespace CarroDesk.Services.Tasks.Triggers
 
             var now = DateTime.Now;
             var minute = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, 0);
-            bool missed = scheduled.HasValue && scheduled.Value < now;
+            // 仅当越过原定分钟（休眠/UI 阻塞导致定时器迟到）才算漏触发；
+            // scheduled.Value 为分钟对齐值，正常到点时 minute == scheduled，不应误判为 catch-up。
+            bool missed = scheduled.HasValue && minute > scheduled.Value;
             var firedMinute = missed ? scheduled.Value : minute;
 
             if (_lastFiredMinute != firedMinute)
