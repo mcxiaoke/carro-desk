@@ -6,32 +6,35 @@
 #   2. dotnet Release 构建 GUI（src/CarroDesk）与 CLI（cli/CarroDesk.Cli）；
 #   3. 把 CLI 单 exe 复制进 GUI 输出目录（两者同时发布，GUI 目录即完整分发包）；
 #   4. 打包 zip 到 release/<version>/CarroDesk-<version>-windows-x64.zip；
-#   5. 编译 NSIS 安装包到 release/<version>/CarroDesk-<version>-setup.exe（per-user，免 UAC）；
+#   5. 编译 Inno Setup 安装包到 release/<version>/CarroDesk-<version>-setup.exe（per-user，免 UAC）；
 #   6. 生成 SHA256SUMS.txt 校验清单。
 #
 
 USAGE = """用法：
   python scripts/release.py                     # 用 Directory.Build.props 里的版本号
   python scripts/release.py 1.2.0               # 指定版本号
-  python scripts/release.py --no-setup           # 跳过安装包（未装 NSIS 时可用）
+  python scripts/release.py --no-setup           # 跳过安装包（未装 Inno Setup 时可用）
   python scripts/release.py --setup-only        # 只出安装包，跳过 zip
   python scripts/release.py --help              # 显示本帮助
 
 产物（release/<version>/）：
   CarroDesk-<version>-windows-x64.zip          便携版压缩包
-  CarroDesk-<version>-setup.exe                NSIS 安装包（per-user，免 UAC）
+  CarroDesk-<version>-setup.exe                Inno Setup 安装包（per-user，免 UAC）
   SHA256SUMS.txt                               校验清单
 
 安装包特性：
-  * 默认安装到 %LOCALAPPDATA%\\Programs\\CarroDesk，无需管理员权限
-  * 安装/升级/卸载前自动结束 CarroDesk.exe 与 CarroDesk.Cli.exe（含子进程树）
+  * 默认安装到 %LOCALAPPDATA%\\Programs\\CarroDesk，无需管理员权限，全程免 UAC 弹窗
+  * 安装/升级/卸载前自动检测并提示结束 CarroDesk.exe 与 CarroDesk.Cli.exe（含子进程树）
+  * 自动继承已有安装路径（支持旧版 NSIS 与 Inno Setup 路径平滑升级）
   * 安装时可选数据模式：漫游（%AppData%\\CarroDesk）或便携（安装目录 app_data）
-  * 升级只覆盖程序文件，配置与任务数据保持不变
+  * 便携模式纯绿色零系统残留；切换模式时支持配置安全迁移
+  * 升级只覆盖程序文件，配置与任务数据保持不变；卸载时保留用户数据
 
-依赖：NSIS（scoop install nsis）。未安装时自动跳过安装包，zip 不受影响。
+依赖：Inno Setup 6+（scoop install inno-setup 或 iscc 在 PATH 中）。未安装时自动跳过安装包，zip 不受影响。
 """
 
 import hashlib
+import io
 import os
 import re
 import shutil
@@ -40,23 +43,28 @@ import sys
 import zipfile
 from pathlib import Path
 
+if sys.platform == "win32":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+
 ROOT = Path(__file__).resolve().parent.parent
 GUI_PROJECT = ROOT / "src" / "CarroDesk.csproj"
 CLI_PROJECT = ROOT / "cli" / "CarroDesk.Cli" / "CarroDesk.Cli.csproj"
 GUI_OUT = ROOT / "src" / "bin" / "Release" / "net48"
 CLI_OUT = ROOT / "cli" / "CarroDesk.Cli" / "bin" / "Release" / "net48"
-NSIS_SCRIPT = ROOT / "scripts" / "installer" / "CarroDesk.nsi"
+ISS_SCRIPT = ROOT / "scripts" / "installer" / "CarroDesk.iss"
 APP_ICON = ROOT / "src" / "Assets" / "Icon.ico"
 
 # 运行时生成、不应进入发布包的文件/目录（相对 GUI 输出目录）
 EXCLUDE = ("app_data/", "portable.ini")
 
-# NSIS 编译器候选位置：优先 PATH，其次 scoop 安装目录
-MAKENSIS_CANDIDATES = (
-    "makensis",
-    r"C:\Home\Develop\Scoop\apps\nsis\current\makensis.exe",
-    r"C:\Program Files (x86)\NSIS\makensis.exe",
-    r"C:\Program Files\NSIS\makensis.exe",
+# Inno Setup 编译器候选位置：优先 PATH，其次 scoop 与常见安装目录
+ISCC_CANDIDATES = (
+    "iscc",
+    r"C:\Home\Develop\Scoop\shims\iscc.exe",
+    r"C:\Home\Develop\Scoop\apps\inno-setup\current\iscc.exe",
+    r"C:\Program Files (x86)\Inno Setup 6\iscc.exe",
+    r"C:\Program Files\Inno Setup 6\iscc.exe",
 )
 
 
@@ -68,10 +76,10 @@ def run(cmd: str):
         raise SystemExit(f"命令执行失败（exit {ret}）：{cmd}")
 
 
-def get_version() -> str:
-    """优先取命令行参数，否则解析 Directory.Build.props 中的 Major/Minor/Patch。"""
-    if len(sys.argv) > 1:
-        v = sys.argv[1]
+def get_version(positional: list[str] | None = None) -> str:
+    """优先取位置参数中的版本号，否则解析 Directory.Build.props 中的 Major/Minor/Patch。"""
+    if positional:
+        v = positional[0]
         if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", v):
             raise SystemExit(f"版本号格式应为 x.y.z，收到：{v}")
         return v
@@ -134,56 +142,46 @@ def write_sha256(release_dir: Path):
         print("   （无产物可校验）")
 
 
-def ensure_utf8_bom(path: Path) -> None:
-    """
-    makensis 以系统 ANSI 代码页读取 .nsi 脚本，中文注释/字符串必须带 UTF-8 BOM，
-    否则报 "Bad text encoding"。这里做一次幂等修正，防止编辑器保存时丢 BOM。
-    """
-    raw = path.read_bytes()
-    if not raw.startswith(b"\xef\xbb\xbf"):
-        path.write_bytes(b"\xef\xbb\xbf" + raw)
-        print(f"-> 已为 {path.name} 补上 UTF-8 BOM")
-
-
-def find_makensis() -> str | None:
-    """定位 makensis.exe：优先 PATH，其次常见安装目录。找不到返回 None。"""
-    for cand in MAKENSIS_CANDIDATES:
+def find_iscc() -> str | None:
+    """定位 iscc.exe：优先 PATH，其次常见安装目录。找不到返回 None。"""
+    for cand in ISCC_CANDIDATES:
         if os.path.isfile(cand):
             return cand
-        if shutil.which(cand):
-            return cand
+        which = shutil.which(cand)
+        if which:
+            return which
     return None
 
 
 def build_setup(release_dir: Path, version: str) -> Path | None:
     """
-    编译 NSIS per-user 安装包（免 UAC）。
+    编译 Inno Setup per-user 安装包（免 UAC）。
 
-    安装包在覆盖程序文件前会 taskkill 掉 CarroDesk.exe 与 CarroDesk.Cli.exe，
-    因此升级时无需再手动结束进程。未安装 NSIS 时给出明确提示并跳过，
+    安装包在覆盖程序文件前会检测并提示关闭 CarroDesk.exe 与 CarroDesk.Cli.exe，
+    支持漫游与便携模式选择、平滑升级与数据保护。未安装 Inno Setup 时给出明确提示并跳过，
     不影响 zip 便携包产出。
     """
-    makensis = find_makensis()
-    if makensis is None:
-        print("!! 未找到 NSIS（makensis.exe），跳过安装包生成。")
-        print("   安装 NSIS 后重试：scoop install nsis")
+    iscc = find_iscc()
+    if iscc is None:
+        print("!! 未找到 Inno Setup（iscc.exe），跳过安装包生成。")
+        print("   安装 Inno Setup 后重试：scoop install inno-setup")
         print("   或显式跳过：python scripts/release.py --no-setup")
         return None
 
-    for required in (GUI_OUT / "CarroDesk.exe", GUI_OUT / "CarroDesk.Cli.exe", APP_ICON, NSIS_SCRIPT):
+    for required in (GUI_OUT / "CarroDesk.exe", GUI_OUT / "CarroDesk.Cli.exe", APP_ICON, ISS_SCRIPT):
         if not required.exists():
             raise SystemExit(f"构建安装包所需文件缺失：{required}")
 
-    ensure_utf8_bom(NSIS_SCRIPT)
-
-    dst = release_dir / f"CarroDesk-{version}-setup.exe"
+    base_name = f"CarroDesk-{version}-setup"
+    dst = release_dir / f"{base_name}.exe"
     cmd = (
-        f'"{makensis}" -V2 '
-        f'/DVERSION={version} '
-        f'"/DPAYLOAD_DIR={GUI_OUT}" '
-        f'"/DICON_FILE={APP_ICON}" '
-        f'"/DOUTPUT_FILE={dst}" '
-        f'"{NSIS_SCRIPT}"'
+        f'"{iscc}" /Qp '
+        f'/DAppVersion={version} '
+        f'"/DPayloadDir={GUI_OUT}" '
+        f'"/DIconFile={APP_ICON}" '
+        f'"/O{release_dir}" '
+        f'"/F{base_name}" '
+        f'"{ISS_SCRIPT}"'
     )
     run(cmd)
     if not dst.exists():
@@ -203,11 +201,7 @@ def make_release():
     want_zip = "--setup-only" not in args
     want_setup = "--no-setup" not in args
 
-    # get_version 读取 sys.argv[1]，此处按位置参数传入
-    if positional:
-        sys.argv = [sys.argv[0]] + positional + args
-
-    version = get_version()
+    version = get_version(positional)
     release_dir = (ROOT / "release" / version).resolve()
     release_dir.mkdir(parents=True, exist_ok=True)
 
