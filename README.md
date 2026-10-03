@@ -39,7 +39,9 @@ CarroDesk.Cli ctl services.start --name GameViewerService
 
 - Visual Studio 打开 `CarroDesk.slnx`，目标框架 .NET Framework 4.8（Win10/11 自带运行时），C# 7.3
 - 产物：`src` → `CarroDesk.exe`（WPF 宿主），`cli` → `CarroDesk.Cli.exe`（Costura 单文件），`tests` → 单元测试
-- 部署：exe + `portable.ini` 放任意目录即为便携模式（数据在同级 `app_data\`），否则使用 `%AppData%\CarroDesk\`
+- 打包发布：`python scripts/release.py`，产出便携 zip 与 NSIS 安装包（需先 `scoop install nsis`）
+- 安装包：per-user 安装到 `%LOCALAPPDATA%\Programs\CarroDesk`，免管理员权限；安装/升级/卸载会自动结束主进程与 CLI 进程，升级无需手动杀进程
+- 便携部署：exe + `portable.ini` 放任意目录即为便携模式（数据在同级 `app_data\`），否则使用 `%AppData%\CarroDesk\`
 
 ## 文档
 
