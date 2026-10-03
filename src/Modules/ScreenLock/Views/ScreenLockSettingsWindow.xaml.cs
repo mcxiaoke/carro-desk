@@ -43,7 +43,7 @@ namespace CarroDesk.Modules.ScreenLock.Views
             }
             catch (Exception ex)
             {
-                MessageBox.Show(Loc.T("Config.LoadFailed", ex.Message), Loc.T("Common.Error"), MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(Loc.T("Config.LoadFailed", "加载配置失败: {0}", ex.Message), Loc.T("Common.Error"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -118,7 +118,7 @@ namespace CarroDesk.Modules.ScreenLock.Views
             }
             catch (Exception ex)
             {
-                MessageBox.Show(Loc.T("Config.GetProcessesFailed", ex.Message), Loc.T("Common.Prompt"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(Loc.T("Config.GetProcessesFailed", "获取运行进程失败: {0}", ex.Message), Loc.T("Common.Prompt"), MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 
@@ -363,7 +363,7 @@ namespace CarroDesk.Modules.ScreenLock.Views
             }
             catch (Exception ex)
             {
-                MessageBox.Show(Loc.T("Config.SaveFailed", ex.Message), Loc.T("Common.Error"), MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(Loc.T("Config.SaveFailed", "保存配置失败") + ": " + ex.Message, Loc.T("Common.Error"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 

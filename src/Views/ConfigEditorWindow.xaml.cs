@@ -53,7 +53,7 @@ namespace CarroDesk.Views
             }
             catch (Exception ex)
             {
-                MessageBox.Show(Loc.T("Config.LoadFailed", ex.Message), Loc.T("Common.Error"), MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(Loc.T("Config.LoadFailed", "加载配置失败: {0}", ex.Message), Loc.T("Common.Error"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
             finally
             {
@@ -183,7 +183,7 @@ namespace CarroDesk.Views
             catch (Exception ex)
             {
                 if (target != null && previous != null) previous.CopyTo(target);
-                MessageBox.Show(Loc.T("Config.SaveFailed", ex.Message), Loc.T("Common.Error"), MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(Loc.T("Config.SaveFailed", "保存配置失败") + ": " + ex.Message, Loc.T("Common.Error"), MessageBoxButton.OK, MessageBoxImage.Error);
                 return false;
             }
         }

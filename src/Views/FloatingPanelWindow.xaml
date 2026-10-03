@@ -183,14 +183,17 @@
             </Border>
 
             <!-- ② 下方主菜单项容器（竖向排列并支持自适应弹出子菜单） -->
+            <!-- 用 ScrollViewer 限高：模块数量增长后菜单可能超出屏幕，没有滚动会让底部菜单（含退出）不可点。 -->
             <Border Grid.Row="1" Padding="4">
-                <Menu x:Name="ItemsHostMenu" Background="Transparent" Grid.IsSharedSizeScope="True">
-                    <Menu.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <StackPanel Orientation="Vertical" IsItemsHost="True"/>
-                        </ItemsPanelTemplate>
-                    </Menu.ItemsPanel>
-                </Menu>
+                <ScrollViewer x:Name="ItemsScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <Menu x:Name="ItemsHostMenu" Background="Transparent" Grid.IsSharedSizeScope="True">
+                        <Menu.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Vertical" IsItemsHost="True"/>
+                            </ItemsPanelTemplate>
+                        </Menu.ItemsPanel>
+                    </Menu>
+                </ScrollViewer>
             </Border>
         </Grid>
     </Border>

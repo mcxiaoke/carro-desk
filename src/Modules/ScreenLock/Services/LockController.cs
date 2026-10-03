@@ -127,12 +127,41 @@ namespace CarroDesk.Services
             }));
         }
 
+        /// <summary>
+        /// 同步版封送：离 UI 线程时用 Invoke 阻塞等待执行完成，供需要"确切结果"的调用方使用
+        /// （如 LockSafe 必须知道锁定到底成功与否）。仅限非 UI 线程、且不会与 UI 线程互等时使用。
+        /// </summary>
+        private static void RunOnUiThreadSync(Action action, Action<string, Exception> onError = null)
+        {
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher == null || dispatcher.CheckAccess())
+            {
+                action();
+                return;
+            }
+
+            dispatcher.Invoke(new Action(() =>
+            {
+                try { action(); }
+                catch (Exception ex) { onError?.Invoke("UI 线程执行锁定/解锁操作失败", ex); }
+            }));
+        }
+
         public void Lock()
         {
             var pinService = _pinServiceProvider?.Invoke();
             if (_locked || pinService == null || !pinService.IsConfigured) return;
 
             RunOnUiThread(() => LockCore(pinService), LogError);
+        }
+
+        /// <summary>同步版锁定：离 UI 线程调用时阻塞等待实际结果，供 <see cref="LockSafe"/> 判定成败。</summary>
+        private void LockSync()
+        {
+            var pinService = _pinServiceProvider?.Invoke();
+            if (_locked || pinService == null || !pinService.IsConfigured) return;
+
+            RunOnUiThreadSync(() => LockCore(pinService), LogError);
         }
 
         private void LockCore(IPinService pinService)
@@ -193,8 +222,10 @@ namespace CarroDesk.Services
                 var pinService = _pinServiceProvider?.Invoke();
                 if (_locked) return true;
                 if (pinService == null || !pinService.IsConfigured) return false;
-                Lock();
-                return !_locked || System.Windows.Application.Current?.Dispatcher?.CheckAccess() == true;
+                // 同步封送：锁定完成后 LockCore 已置 _locked，据此返回真实成败。
+                // 旧实现用异步 Lock() 后立刻读 _locked，非 UI 线程下必然还没置位而误报成功。
+                LockSync();
+                return _locked;
             }
             catch (Exception ex)
             {

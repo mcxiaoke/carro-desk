@@ -268,6 +268,14 @@ namespace CarroDesk.Views
             if (panelHeight < 100) panelHeight = 350; // 安全估算高度
 
             var workArea = SystemParameters.WorkArea;
+
+            // 菜单区限高：模块变多时菜单可能超出工作区，导致窗口顶出屏幕、底部菜单（含退出）不可点击。
+            // 预留约 160 DIP 给标题栏、任务栏与边距。
+            if (ItemsScroll != null)
+            {
+                ItemsScroll.MaxHeight = Math.Max(200, workArea.Height - 160);
+            }
+
             var mode = CurrentSettings?.FloatingPanelPosition ?? "Tray";
 
             double targetLeft;
