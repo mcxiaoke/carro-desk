@@ -28,6 +28,8 @@ namespace CarroDesk.Tests
         [TestCleanup]
         public void Cleanup()
         {
+            // 用例可能改动 I18nService 全局单例语言：断言失败时用例末尾的恢复不会执行，此处兜底。
+            try { Loc.SetLanguage("zh-CN"); } catch { }
             try
             {
                 if (Directory.Exists(_tempDir))

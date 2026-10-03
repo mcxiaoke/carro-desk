@@ -20,6 +20,14 @@ namespace CarroDesk.Tests
     [TestClass]
     public class CarroDeskContractTests
     {
+        /// <summary>用例可能改动 I18nService 全局单例语言：断言失败时末尾的恢复语句不会执行，
+        /// 统一在每个用例后兜底恢复 zh-CN，避免污染后续用例。</summary>
+        [TestCleanup]
+        public void RestoreDefaultLanguage()
+        {
+            try { Loc.SetLanguage("zh-CN"); } catch { }
+        }
+
         [TestMethod]
         public void ModuleStatus_Enum_HasRequiredStates()
         {
@@ -40,7 +48,7 @@ namespace CarroDesk.Tests
         }
 
         [TestMethod]
-        public void SafeInvoker_Timeout_ReturnsFalse_OnSlowAction()
+        public void SafeInvoker_RunTimeout_ReturnsTrue_OnQuickAction()
         {
             // 3s 超时内跑完的任务应返回 true
             bool quickOk = SafeInvoker.RunTimeout("t", TimeSpan.FromSeconds(3),

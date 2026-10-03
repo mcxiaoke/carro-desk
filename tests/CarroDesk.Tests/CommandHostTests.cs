@@ -104,6 +104,65 @@ namespace CarroDesk.Tests
         }
 
         [TestMethod]
+        public void Invoke_IntParam_AcceptsIntegralJsonNumber()
+        {
+            // JSON 5.0 会被解析为 double；int 参数应按整数语义收敛，而不是静默降级为字符串
+            object received = null;
+            var host = BuildHost(r => r.Register("test", SimpleCommand(parameters: new[]
+            {
+                new CommandParam { Name = "minutes", Type = "int", Required = true }
+            }, handler: call => { received = call.Params["minutes"]; return CommandResult.Success(); })));
+
+            var req = CommandRequest.Create("test.echo");
+            req.Params["minutes"] = 5.0d;
+            var result = host.Invoke(req);
+
+            Assert.IsTrue(result.Ok, result.Error != null ? result.Error.Message : "");
+            Assert.IsInstanceOfType(received, typeof(int));
+            Assert.AreEqual(5, received);
+        }
+
+        [TestMethod]
+        public void Invoke_IntParam_RejectsNonIntegralJsonNumber()
+        {
+            var host = BuildHost(r => r.Register("test", SimpleCommand(parameters: new[]
+            {
+                new CommandParam { Name = "minutes", Type = "int", Required = true }
+            })));
+
+            var req = CommandRequest.Create("test.echo");
+            req.Params["minutes"] = 5.5d;
+            var result = host.Invoke(req);
+
+            Assert.IsFalse(result.Ok);
+            Assert.AreEqual(CommandErrorCodes.InvalidParams, result.Error.Code);
+        }
+
+        [TestMethod]
+        public void CommandRegistry_Rebuild_OnDuplicate_ThrowsAndRetainsPreviousState()
+        {
+            var registry = new CommandRegistry();
+            registry.Register("boot", SimpleCommand(name: "boot.one"));
+
+            var collected = new List<KeyValuePair<string, CommandDescriptor>>
+            {
+                new KeyValuePair<string, CommandDescriptor>("a", SimpleCommand(name: "a.x")),
+                new KeyValuePair<string, CommandDescriptor>("b", SimpleCommand(name: "b.y")),
+                new KeyValuePair<string, CommandDescriptor>("c", SimpleCommand(name: "a.x")) // 与 a.x 重复
+            };
+
+            bool threw = false;
+            try { registry.Rebuild(collected); }
+            catch (InvalidOperationException) { threw = true; }
+
+            Assert.IsTrue(threw, "重复能力名应导致 Rebuild 抛出");
+            // 原子替换：失败时保留原有效能力表，绝不停留在"半注册"状态
+            Assert.AreEqual(1, registry.Count);
+            CommandDescriptor desc;
+            Assert.IsTrue(registry.TryGet("boot.one", out desc), "失败后应完整保留既有能力");
+        }
+
+        [TestMethod]
         public void Invoke_UnknownCapability_ReturnsCapabilityNotFound()
         {
             var host = BuildHost(null);

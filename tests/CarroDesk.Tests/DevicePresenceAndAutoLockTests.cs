@@ -57,8 +57,9 @@ namespace CarroDesk.Tests
             // 探测本地回环 127.0.0.1（本机一般可 ping 通）
             var loopbackTask = IpPresenceDetector.ProbeAsync("127.0.0.1");
             Assert.IsTrue(loopbackTask.Wait(3000), "探测 127.0.0.1 应及时完成");
-            // 本机 ping 成功返回 true，即便 ping 失败也不应抛异常
-            Assert.IsTrue(loopbackTask.Result || !loopbackTask.Result);
+            // 不做结果断言：某些环境禁用 ICMP 会返回 false，属正常；
+            // 关键是不抛异常且能在超时内返回（Wait + 访问 Result 已覆盖）。
+            bool _ = loopbackTask.Result;
         }
 
         [TestMethod]
