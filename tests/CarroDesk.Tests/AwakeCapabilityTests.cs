@@ -56,11 +56,13 @@ namespace CarroDesk.Tests
             var commands = module.GetCommands().ToList();
 
             CollectionAssert.AreEquivalent(
-                new[] { "awake.status", "awake.on", "awake.off" },
+                new[] { "awake.status", "awake.on", "awake.off", "awake.sleep", "awake.sleep.cancel", "awake.shutdown", "awake.shutdown.cancel" },
                 commands.Select(c => c.Name).ToList());
             Assert.AreEqual(CommandRisk.ReadOnly, commands.First(c => c.Name == "awake.status").Risk);
             Assert.AreEqual(CommandRisk.Low, commands.First(c => c.Name == "awake.on").Risk);
             Assert.AreEqual(CommandRisk.Low, commands.First(c => c.Name == "awake.off").Risk);
+            Assert.AreEqual(CommandRisk.Low, commands.First(c => c.Name == "awake.sleep").Risk);
+            Assert.AreEqual(CommandRisk.Privileged, commands.First(c => c.Name == "awake.shutdown").Risk);
             Assert.IsTrue(commands.All(c => !c.RequiresPin));
         }
 
@@ -148,6 +150,114 @@ namespace CarroDesk.Tests
             Assert.IsNotNull(status["mode"]);
             Assert.IsNotNull(status["isActive"]);
             Assert.IsNotNull(status["keepDisplayOn"]);
+        }
+
+        [TestMethod]
+        public void Invoke_Sleep_DefaultThirtySeconds_AndScheduledInStatus()
+        {
+            var module = CreateRunningModule();
+            var host = BuildHost(module);
+
+            var status = AsJObject(host.Invoke(CommandRequest.Create("awake.sleep")));
+
+            Assert.AreEqual("sleep", (string)status["pendingAction"]);
+            Assert.AreEqual(JTokenType.Integer, status["pendingSecondsRemaining"].Type);
+            int remaining = (int)status["pendingSecondsRemaining"];
+            Assert.IsTrue(remaining >= 25 && remaining <= 30, "default 30s, got " + remaining);
+            Assert.IsNotNull(status["pendingFireAt"]);
+        }
+
+        [TestMethod]
+        public void Invoke_Sleep_OutOfRangeSeconds_Rejected()
+        {
+            var module = CreateRunningModule();
+            var host = BuildHost(module);
+
+            foreach (var bad in new[] { -1, 86401 })
+            {
+                var request = CommandRequest.Create("awake.sleep");
+                request.Params["seconds"] = bad;
+                var result = host.Invoke(request);
+                Assert.IsFalse(result.Ok, "seconds=" + bad);
+                Assert.AreEqual(CommandErrorCodes.InvalidParams, result.Error.Code, "seconds=" + bad);
+            }
+        }
+
+        [TestMethod]
+        public void Invoke_Shutdown_DefaultThirtySeconds_AndScheduledInStatus()
+        {
+            var module = CreateRunningModule();
+            var host = BuildHost(module);
+
+            var status = AsJObject(host.Invoke(CommandRequest.Create("awake.shutdown")));
+
+            Assert.AreEqual("shutdown", (string)status["pendingAction"]);
+            int remaining = (int)status["pendingSecondsRemaining"];
+            Assert.IsTrue(remaining >= 25 && remaining <= 30, "default 30s, got " + remaining);
+        }
+
+        [TestMethod]
+        public void Invoke_SleepThenShutdown_NewScheduleReplacesOld()
+        {
+            var module = CreateRunningModule();
+            var host = BuildHost(module);
+
+            Assert.IsTrue(host.Invoke(CommandRequest.Create("awake.sleep")).Ok);
+            var request = CommandRequest.Create("awake.shutdown");
+            request.Params["seconds"] = 60;
+            var status = AsJObject(host.Invoke(request));
+
+            // 单一待执行槽位：新调度替换旧调度，避免睡醒后过期关机定时器立即触发
+            Assert.AreEqual("shutdown", (string)status["pendingAction"]);
+        }
+
+        [TestMethod]
+        public void Invoke_SleepCancel_ClearsPending()
+        {
+            var module = CreateRunningModule();
+            var host = BuildHost(module);
+
+            Assert.IsTrue(host.Invoke(CommandRequest.Create("awake.sleep")).Ok);
+            var status = AsJObject(host.Invoke(CommandRequest.Create("awake.sleep.cancel")));
+
+            Assert.AreEqual(JTokenType.Null, status["pendingAction"].Type);
+            Assert.AreEqual(JTokenType.Null, status["pendingSecondsRemaining"].Type);
+        }
+
+        [TestMethod]
+        public void Invoke_ShutdownCancel_ClearsPending()
+        {
+            var module = CreateRunningModule();
+            var host = BuildHost(module);
+
+            Assert.IsTrue(host.Invoke(CommandRequest.Create("awake.shutdown")).Ok);
+            var status = AsJObject(host.Invoke(CommandRequest.Create("awake.shutdown.cancel")));
+
+            Assert.AreEqual(JTokenType.Null, status["pendingAction"].Type);
+        }
+
+        [TestMethod]
+        public void Invoke_CancelWithoutPending_IsNoOpSuccess()
+        {
+            var module = CreateRunningModule();
+            var host = BuildHost(module);
+
+            var result = host.Invoke(CommandRequest.Create("awake.shutdown.cancel"));
+            Assert.IsTrue(result.Ok);
+            Assert.AreEqual(JTokenType.Null, ((JObject)JToken.FromObject(result.Data))["pendingAction"].Type);
+        }
+
+        [TestMethod]
+        public void Invoke_Off_DoesNotTouchPendingPowerAction()
+        {
+            var module = CreateRunningModule();
+            var host = BuildHost(module);
+
+            Assert.IsTrue(host.Invoke(CommandRequest.Create("awake.shutdown")).Ok);
+            var status = AsJObject(host.Invoke(CommandRequest.Create("awake.off")));
+
+            // awake.off 管保持唤醒，不牵连电源动作调度
+            Assert.AreEqual("shutdown", (string)status["pendingAction"]);
         }
     }
 }

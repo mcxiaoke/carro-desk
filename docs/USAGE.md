@@ -242,9 +242,13 @@ docs/remote-admin/grant-service-control.ps1 -Services TermService -DryRun   # �
 CarroDesk.Cli ctl host.status --json          :: 版本、运行时长、各模块状态
 CarroDesk.Cli ctl host.modules.list           :: 模块清单（capabilityCount=0 表示分批开放中）
 CarroDesk.Cli ctl host.capabilities.list      :: 完整能力表 + 参数 schema（权威清单）
-CarroDesk.Cli ctl awake.status                :: 保持唤醒状态
+CarroDesk.Cli ctl awake.status                :: 保持唤醒状态（含待执行电源动作）
 CarroDesk.Cli ctl awake.on --minutes 120      :: 保持唤醒 2 小时（缺省无限期）
 CarroDesk.Cli ctl awake.off                   :: 取消
+CarroDesk.Cli ctl awake.sleep                 :: 默认 30 秒后睡眠（--seconds 1800 = 30 分钟后）
+CarroDesk.Cli ctl awake.sleep.cancel          :: 取消延迟睡眠
+CarroDesk.Cli ctl awake.shutdown              :: 默认 30 秒后关机（--seconds 300 = 5 分钟后）
+CarroDesk.Cli ctl awake.shutdown.cancel       :: 取消延迟关机
 CarroDesk.Cli ctl services.status             :: 授权服务 + requiresPin + 实时状态
 CarroDesk.Cli ctl services.start --name GameViewerService
 CarroDesk.Cli ctl services.stop  --name TermService --pin 123456

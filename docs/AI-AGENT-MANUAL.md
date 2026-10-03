@@ -67,9 +67,13 @@
 | `services.status` | 只读 | — | 查询授权服务（含 desc 与各自的口令策略） |
 | `services.start` | 特权 | **按服务** | 启动已授权服务；`name` 参数描述里带 服务名=描述 映射 |
 | `services.stop` | 特权 | **按服务** | 停止已授权服务；同上 |
-| `awake.status` | 只读 | — | 保持唤醒状态：模式/剩余分钟/是否激活/电池暂停/进程联动 |
+| `awake.status` | 只读 | — | 保持唤醒状态：模式/剩余分钟/是否激活/电池暂停/进程联动/待执行电源动作 |
 | `awake.on` | 低 | — | 保持唤醒：缺省无限期；`minutes`（1-1440）=定时。运行时状态，重启后回到配置模式 |
 | `awake.off` | 低 | — | 取消保持唤醒（回到 passive，并抑制进程联动自动重开） |
+| `awake.sleep` | 低 | — | 延迟睡眠 (S3)：`seconds`（0-86400）缺省 30（给 agent 回复用户的时间）。返回预计睡眠时刻 |
+| `awake.sleep.cancel` | 低 | — | 取消已调度的延迟睡眠 |
+| `awake.shutdown` | 特权 | — | 延迟关机：`seconds`（0-86400）缺省 30。未保存文档的应用会弹系统提示，不强杀 |
+| `awake.shutdown.cancel` | 低 | — | 取消已调度的延迟关机 |
 
 ## 4.3 保持唤醒（awake.*）
 
@@ -78,10 +82,18 @@ awake.on                    → 无限期保持唤醒
 awake.on  {"minutes":120}   → 保持 2 小时（1-1440）
 awake.off                   → 取消（回到 passive）
 awake.status                → mode/isActive/remainingMinutes/expireAt/keepDisplayOn
+                               + pendingAction/pendingFireAt/pendingSecondsRemaining
+awake.sleep                 → 默认 30 秒后睡眠；awake.sleep {"seconds":1800} = 30 分钟后
+awake.sleep.cancel          → 取消延迟睡眠
+awake.shutdown              → 默认 30 秒后关机；awake.shutdown {"seconds":300} = 5 分钟后
+awake.shutdown.cancel       → 取消延迟关机
 ```
 
-- `awake.on`/`awake.off` **不需要口令**（低风险能力）
-- 运行时状态：不持久化，宿主重启后回到 config.json 中 Awake 模块配置的模式
+- `awake.on`/`awake.off`/`awake.sleep*` **不需要口令**（低风险能力）；`awake.shutdown` 为特权级
+- 运行时状态：不持久化，宿主重启后回到 config.json 中 Awake 模块配置的模式；未决的延迟睡眠/关机也会随之丢失
+- 延迟睡眠/关机共用一个待执行槽位：同一时刻只有一个，新调度替换旧调度
+- 调用 `awake.sleep`/`awake.shutdown` 后**必须先向用户回复**再等待执行（缺省 30 秒延迟即为此预留）；确认要取消时用对应的 cancel 能力
+- 到点睡眠前宿主会自动撤销保持唤醒状态；`awake.off` 不影响已调度的电源动作
 - 「机器睡眠远程就废了」的正解是让宿主的 Awake 模块保持唤醒（无限期，或进程联动盯住助手进程），而不是依赖单次调用
 
 ## 4.1 按服务口令策略（services.*）

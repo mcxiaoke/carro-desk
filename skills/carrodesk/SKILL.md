@@ -1,6 +1,6 @@
 ---
 name: carrodesk
-description: Control this Windows machine through CarroDesk.Cli.exe — query host/module status, keep the machine awake (indefinitely or for N minutes), and start/stop allowlisted Windows services (GameViewerService/UUYC, TermService/RDP) honoring each service's PIN policy. Use this skill whenever the user mentions CarroDesk, UUYC, GameViewer, RDP/remote desktop service, asks to start/stop/restart any Windows service, asks whether the machine is awake, or wants the machine status or module status — even if they never say "CarroDesk".
+description: Control this Windows machine through CarroDesk.Cli.exe — query host/module status, keep the machine awake (indefinitely or for N minutes), schedule sleep or shutdown (default 30 s delay, cancellable), and start/stop allowlisted Windows services (GameViewerService/UUYC, TermService/RDP) honoring each service's PIN policy. Use this skill whenever the user mentions CarroDesk, UUYC, GameViewer, RDP/remote desktop service, asks to start/stop/restart any Windows service, asks whether the machine is awake, wants the machine status or module status, or asks to put the computer to sleep or shut it down — even if they never say "CarroDesk".
 ---
 
 # CarroDesk Machine Control
@@ -26,7 +26,7 @@ CarroDesk.Cli ctl <capability> [--json] [--pin <pin>] [--<param> <value>]
 ## Keep the machine awake
 
 ```text
-CarroDesk.Cli ctl awake.status     :: mode (passive/indefinite/timed/untiltime), isActive, remainingMinutes
+CarroDesk.Cli ctl awake.status     :: mode (passive/indefinite/timed/untiltime), isActive, remainingMinutes, pendingAction
 CarroDesk.Cli ctl awake.on         :: keep awake indefinitely
 CarroDesk.Cli ctl awake.on --minutes 120   :: keep awake for 2 hours (1-1440 allowed)
 CarroDesk.Cli ctl awake.off        :: cancel (returns to passive; also suppresses process-link auto-re-enable)
@@ -34,6 +34,26 @@ CarroDesk.Cli ctl awake.off        :: cancel (returns to passive; also suppresse
 
 Notes: awake state is runtime-only — it resets to the configured mode after a host restart.
 `awake.on` / `awake.off` never require a PIN.
+
+## Sleep / shutdown (delayed power actions)
+
+```text
+CarroDesk.Cli ctl awake.sleep              :: sleep (S3) after default 30 s delay
+CarroDesk.Cli ctl awake.sleep --seconds 1800        :: sleep in 30 minutes (0-86400)
+CarroDesk.Cli ctl awake.sleep.cancel       :: cancel a scheduled sleep
+CarroDesk.Cli ctl awake.shutdown           :: shut down after default 30 s delay
+CarroDesk.Cli ctl awake.shutdown --seconds 300      :: shut down in 5 minutes (0-86400)
+CarroDesk.Cli ctl awake.shutdown.cancel    :: cancel a scheduled shutdown
+```
+
+Rules:
+- **Reply to the user first**, then let the delay run — the default 30 s exists so your
+  answer gets through before the machine goes down
+- Sleep and shutdown share one pending slot: a new schedule replaces the old one;
+  `awake.status` shows `pendingAction` / `pendingFireAt` / `pendingSecondsRemaining`
+- The host clears its keep-awake state automatically before the scheduled sleep;
+  `awake.off` does not touch a scheduled power action
+- `awake.shutdown` is a privileged-risk action — confirm with the user before calling it
 
 ## Service control (start/stop Windows services)
 

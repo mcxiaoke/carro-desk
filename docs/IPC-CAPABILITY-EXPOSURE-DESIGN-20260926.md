@@ -134,6 +134,8 @@ public interface ICommandProvider
 | `audio.output.list` | AudioSwitch | ReadOnly | 输出设备列表 + 当前项 |
 | `audio.output.set` | AudioSwitch | Low | 切换输出设备（参数：设备名/id，枚举白名单） |
 | `awake.on` / `awake.off` / `awake.status` | Awake | Low / ReadOnly | 唤醒模式开关与状态 |
+| `awake.sleep` / `awake.sleep.cancel` | Awake | Low | 延迟睡眠（S3，seconds 缺省 30）与取消 |
+| `awake.shutdown` / `awake.shutdown.cancel` | Awake | Privileged / Low | 延迟关机（seconds 缺省 30）与取消 |
 | `automute.toggle` | AppAutoMute | Low | 自动静音开关 |
 | `monitor.profile.list` / `monitor.profile.apply` | MonitorProfile | ReadOnly / Low | 显示器情景列表与应用 |
 | `clipboard.history.count` | ClipboardHistory | ReadOnly | **仅条数**，不返回内容（隐私边界） |

@@ -40,6 +40,21 @@ namespace CarroDesk.Modules.Awake.Services
         [DllImport("kernel32.dll", SetLastError = true)]
         public static extern bool GetSystemPowerStatus(out SYSTEM_POWER_STATUS lpSystemPowerStatus);
 
+        [DllImport("powrprof.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool SetSuspendState(bool hibernate, bool forceCritical, bool disableWakeEvent);
+
+        /// <summary>延迟执行的电源动作。单一待执行槽位：同一时刻只允许一个，新调度替换旧调度。</summary>
+        public enum PendingPowerAction
+        {
+            None = 0,
+            Sleep = 1,
+            Shutdown = 2
+        }
+
+        /// <summary>seconds 参数上限（24h）。</summary>
+        public const int MaxPowerDelaySeconds = 86400;
+
         private readonly Dispatcher _dispatcher;
         private readonly ILoggerService _logger;
         private readonly DispatcherTimer _timer;
@@ -53,6 +68,8 @@ namespace CarroDesk.Modules.Awake.Services
         private string _activeProcessTrigger = string.Empty;
         private int _processExitPendingSeconds = 0;
         private int _tickCount = 0;
+        private PendingPowerAction _pendingAction = PendingPowerAction.None;
+        private DateTime _pendingFireAt = DateTime.MinValue;
 
         /// <summary>
         /// 用户在守护进程运行期间手动关闭保持唤醒后置位：
@@ -69,6 +86,18 @@ namespace CarroDesk.Modules.Awake.Services
         public bool IsProcessExiting => _processExitPendingSeconds > 0;
         public int ProcessExitPendingSeconds => _processExitPendingSeconds;
         public string ActiveProcessTrigger => _activeProcessTrigger;
+
+        /// <summary>当前待执行的电源动作（延迟睡眠/关机），无则 None。</summary>
+        public PendingPowerAction PendingAction => _pendingAction;
+
+        /// <summary>待执行电源动作的预计触发时刻；无待执行动作时为 DateTime.MinValue。</summary>
+        public DateTime PendingFireAt => _pendingFireAt;
+
+        /// <summary>距电源动作触发的剩余秒数；无待执行动作时为 null。</summary>
+        public int? PendingSecondsRemaining =>
+            _pendingAction == PendingPowerAction.None
+                ? (int?)null
+                : Math.Max(0, (int)Math.Ceiling((_pendingFireAt - DateTime.Now).TotalSeconds));
 
         /// <summary>智能进程联动是否启用（总开关 + 名单非空）</summary>
         public bool IsProcessLinkEnabled => _config?.Enabled != false && (_config == null || _config.ProcessLinkEnabled);
@@ -298,6 +327,96 @@ namespace CarroDesk.Modules.Awake.Services
             StateChanged?.Invoke();
         }
 
+        /// <summary>
+        /// 调度延迟电源动作（睡眠/关机）。同一时刻只有一个待执行动作，新调度替换旧调度；
+        /// 默认 30 秒延迟由调用方传入，为 MCP agent 回复用户预留时间。
+        /// 依赖宿主进程存活，宿主重启后未决动作丢失（与保持唤醒运行时状态不持久化的语义一致）。
+        /// </summary>
+        public void SchedulePowerOff(PendingPowerAction action, int delaySeconds)
+        {
+            if (action == PendingPowerAction.None)
+            {
+                CancelPendingPowerAction();
+                return;
+            }
+
+            delaySeconds = Math.Max(0, Math.Min(MaxPowerDelaySeconds, delaySeconds));
+            _pendingAction = action;
+            _pendingFireAt = delaySeconds == 0
+                ? DateTime.Now.AddSeconds(1) // 0 秒也保留 1 个 tick，确保命令响应先送达再执行
+                : DateTime.Now.AddSeconds(delaySeconds);
+            _logger?.LogInfo("Awake", $"已调度电源动作 {action}，将于 {_pendingFireAt:yyyy-MM-dd HH:mm:ss} 执行 (延迟 {delaySeconds} 秒)");
+            StateChanged?.Invoke();
+        }
+
+        /// <summary>取消待执行的电源动作（无待执行动作时为无操作）。</summary>
+        public void CancelPendingPowerAction()
+        {
+            if (_pendingAction == PendingPowerAction.None) return;
+            PendingPowerAction old = _pendingAction;
+            _pendingAction = PendingPowerAction.None;
+            _pendingFireAt = DateTime.MinValue;
+            _logger?.LogInfo("Awake", $"已取消待执行的电源动作 {old}");
+            StateChanged?.Invoke();
+        }
+
+        private void FirePendingPowerAction()
+        {
+            PendingPowerAction action = _pendingAction;
+            _pendingAction = PendingPowerAction.None;
+            _pendingFireAt = DateTime.MinValue;
+            StateChanged?.Invoke();
+
+            if (action == PendingPowerAction.Sleep)
+            {
+                // 先清除 ES_SYSTEM_REQUIRED/ES_DISPLAY_REQUIRED 保持唤醒状态，
+                // 否则与 S3 睡眠冲突，且唤醒后机器会被继续保持。
+                _logger?.LogInfo("Awake", "延迟睡眠已到点，恢复默认电源状态并请求系统睡眠");
+                SetPassive();
+            }
+            else
+            {
+                _logger?.LogInfo("Awake", "延迟关机已到点，正在请求系统关机");
+            }
+
+            // SetSuspendState 会阻塞到系统唤醒，shutdown 也可能较慢，必须离开定时器线程。
+            System.Threading.Tasks.Task.Run(() => ExecutePowerAction(action));
+        }
+
+        private void ExecutePowerAction(PendingPowerAction action)
+        {
+            try
+            {
+                if (action == PendingPowerAction.Sleep)
+                {
+                    if (!SetSuspendState(false, false, false))
+                    {
+                        _logger?.LogError("Awake", $"SetSuspendState 调用失败 (Win32Error={Marshal.GetLastWin32Error()})");
+                    }
+                }
+                else if (action == PendingPowerAction.Shutdown)
+                {
+                    // 借用系统 shutdown 工具省去 SeShutdownPrivilege 令牌提权代码；
+                    // 不加 /f，对有未保存文档的应用会弹系统标准提示而非强杀。
+                    using (var proc = Process.Start(new ProcessStartInfo("shutdown.exe", "/s /t 0")
+                    {
+                        CreateNoWindow = true,
+                        UseShellExecute = false
+                    }))
+                    {
+                        if (proc == null)
+                        {
+                            _logger?.LogError("Awake", "启动 shutdown.exe 失败");
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError("Awake", $"执行电源动作 {action} 异常", ex);
+            }
+        }
+
         public void ToggleKeepDisplayOn()
         {
             SetKeepDisplayOn(!_keepDisplayOn);
@@ -351,6 +470,13 @@ namespace CarroDesk.Modules.Awake.Services
         private void OnTimerTick(object sender, EventArgs e)
         {
             _tickCount++;
+
+            // 0. 延迟睡眠/关机检查：到点后终止 tick（睡眠会 SetPassive，后续分支不再适用）
+            if (_pendingAction != PendingPowerAction.None && DateTime.Now >= _pendingFireAt)
+            {
+                FirePendingPowerAction();
+                return;
+            }
 
             // 1. 倒计时检查
             if (_mode == AwakeMode.Timed || _mode == AwakeMode.UntilTime)

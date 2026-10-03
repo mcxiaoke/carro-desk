@@ -99,7 +99,8 @@ namespace CarroDesk.Modules.Awake
             yield return new CommandDescriptor
             {
                 Name = "awake.status",
-                Summary = "查询保持唤醒状态：模式（passive/indefinite/timed/untiltime）、剩余分钟、是否激活、电池暂停、进程联动",
+                Summary = "查询保持唤醒状态：模式（passive/indefinite/timed/untiltime）、剩余分钟、是否激活、电池暂停、进程联动、" +
+                          "待执行电源动作（pendingAction/pendingFireAt/pendingSecondsRemaining，延迟睡眠/关机）",
                 Risk = CommandRisk.ReadOnly,
                 Handler = _ => StatusResult()
             };
@@ -125,6 +126,52 @@ namespace CarroDesk.Modules.Awake
                 Summary = "取消保持唤醒（回到 passive，恢复系统电源计划；并抑制进程联动自动重新开启）",
                 Risk = CommandRisk.Low,
                 Handler = _ => OffHandler()
+            };
+            yield return new CommandDescriptor
+            {
+                Name = "awake.sleep",
+                Summary = "延迟睡眠：让计算机在指定延迟后进入睡眠 (S3)。默认 30 秒延迟，给 agent 回复用户的时间；" +
+                          "seconds=0 也会保留约 1 秒让本响应先送达。返回预计睡眠时刻，可用 awake.sleep.cancel 取消",
+                Risk = CommandRisk.Low,
+                Params = new[]
+                {
+                    new CommandParam
+                    {
+                        Name = "seconds", Type = "int", Required = false,
+                        Description = "延迟秒数（0-86400），缺省 30；先回复用户再让机器入睡"
+                    }
+                },
+                Handler = r => PowerActionHandler(r, AwakeService.PendingPowerAction.Sleep)
+            };
+            yield return new CommandDescriptor
+            {
+                Name = "awake.sleep.cancel",
+                Summary = "取消已调度的延迟睡眠（对立即睡眠可能已来不及取消）",
+                Risk = CommandRisk.Low,
+                Handler = _ => PowerCancelHandler(AwakeService.PendingPowerAction.Sleep)
+            };
+            yield return new CommandDescriptor
+            {
+                Name = "awake.shutdown",
+                Summary = "延迟关机：让计算机在指定延迟后关机。默认 30 秒延迟，给 agent 回复用户的时间；" +
+                          "seconds=0 也会保留约 1 秒让本响应先送达。未保存文档的应用会弹系统提示，不会强杀。可用 awake.shutdown.cancel 取消",
+                Risk = CommandRisk.Privileged,
+                Params = new[]
+                {
+                    new CommandParam
+                    {
+                        Name = "seconds", Type = "int", Required = false,
+                        Description = "延迟秒数（0-86400），缺省 30；先回复用户再关机"
+                    }
+                },
+                Handler = r => PowerActionHandler(r, AwakeService.PendingPowerAction.Shutdown)
+            };
+            yield return new CommandDescriptor
+            {
+                Name = "awake.shutdown.cancel",
+                Summary = "取消已调度的延迟关机",
+                Risk = CommandRisk.Low,
+                Handler = _ => PowerCancelHandler(AwakeService.PendingPowerAction.Shutdown)
             };
         }
 
@@ -158,6 +205,36 @@ namespace CarroDesk.Modules.Awake
             return StatusResult();
         }
 
+        private CommandResult PowerActionHandler(CommandRequest request, AwakeService.PendingPowerAction action)
+        {
+            if (Service == null)
+                return CommandResult.Fail(CommandErrorCodes.Internal, "awake service not initialized");
+
+            // 缺省 30 秒：给 MCP agent 回复用户的时间，避免机器在对话途中突然睡眠/关机
+            int seconds = 30;
+            if (request.Params != null && request.Params.TryGetValue("seconds", out var value) && value != null)
+            {
+                seconds = Convert.ToInt32(value);
+                if (seconds < 0 || seconds > AwakeService.MaxPowerDelaySeconds)
+                    return CommandResult.Fail(CommandErrorCodes.InvalidParams,
+                        "seconds must be 0-" + AwakeService.MaxPowerDelaySeconds + ", got: " + seconds);
+            }
+
+            Service.SchedulePowerOff(action, seconds);
+            return StatusResult();
+        }
+
+        private CommandResult PowerCancelHandler(AwakeService.PendingPowerAction action)
+        {
+            if (Service == null)
+                return CommandResult.Fail(CommandErrorCodes.Internal, "awake service not initialized");
+            if (Service.PendingAction == action)
+            {
+                Service.CancelPendingPowerAction();
+            }
+            return StatusResult();
+        }
+
         private CommandResult StatusResult()
         {
             if (Service == null)
@@ -172,7 +249,14 @@ namespace CarroDesk.Modules.Awake
                 expireAt = timed ? Service.ExpireTime.ToString("yyyy-MM-dd HH:mm:ss") : null,
                 keepDisplayOn = Service.KeepDisplayOn,
                 batteryPaused = Service.IsBatteryPaused,
-                processTriggered = Service.IsProcessTriggered ? Service.ActiveProcessTrigger : null
+                processTriggered = Service.IsProcessTriggered ? Service.ActiveProcessTrigger : null,
+                pendingAction = Service.PendingAction == AwakeService.PendingPowerAction.None
+                    ? null
+                    : Service.PendingAction.ToString().ToLowerInvariant(),
+                pendingFireAt = Service.PendingAction == AwakeService.PendingPowerAction.None
+                    ? null
+                    : Service.PendingFireAt.ToString("yyyy-MM-dd HH:mm:ss"),
+                pendingSecondsRemaining = Service.PendingSecondsRemaining
             });
         }
 
