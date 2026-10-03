@@ -17,11 +17,15 @@ namespace CarroDesk.Cli
         {
             try
             {
+                // 固定 stdout 为 UTF-8：ctl 结果（含中文/JSON）常被重定向到管道或文件
+                // 交给 jq / AI 助手解析，若沿用系统代码页（GBK 等）会乱码。
+                // 重定向场景可能不支持，失败不致命。
+                try { Console.OutputEncoding = System.Text.Encoding.UTF8; } catch { /* ignore */ }
+
                 if (args != null && args.Length > 0
                     && string.Equals(args[0], "--mcp", StringComparison.OrdinalIgnoreCase))
                 {
                     // S4：MCP stdio 瘦进程——stdout 只输出协议 JSON，日志走 stderr
-                    try { Console.OutputEncoding = System.Text.Encoding.UTF8; } catch { /* 重定向场景可能不支持 */ }
                     return McpStdioServer.Run(Console.In, Console.Out, Console.Error, () => new PipeRpcClient());
                 }
 

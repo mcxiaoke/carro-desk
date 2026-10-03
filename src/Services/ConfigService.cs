@@ -105,6 +105,13 @@ namespace CarroDesk.Services
         public string LastLoadError { get; private set; }
 
         /// <summary>
+        /// 上次读取因"内容损坏"（JSON 语法错误 / 格式非法，非 I/O 故障）而失败：
+        /// 已备份为 config.corrupt-*.json 并回退默认配置。调用方应据此向用户告警，
+        /// 否则会表现为"配置莫名丢失 / PIN 丢失触发首次运行向导"而无任何提示。
+        /// </summary>
+        public bool LastLoadContentCorrupted { get; private set; }
+
+        /// <summary>
         /// 串行化配置的内存态（Current / _moduleConfigs）与磁盘读写。
         /// 本类是被宿主与多个模块跨线程共享的可变单例：
         /// UI 线程（设置界面保存）、Dispatcher 线程（模块 OnConfigReloaded）、
@@ -145,6 +152,7 @@ namespace CarroDesk.Services
                     _lastReadSucceeded = true;
                     LastLoadIoFailure = false;
                     LastLoadError = null;
+                    LastLoadContentCorrupted = false;
                     EnsureSampleCopied();
                     return;
                 }
@@ -193,6 +201,7 @@ namespace CarroDesk.Services
         {
             LastLoadIoFailure = false;
             LastLoadError = null;
+            LastLoadContentCorrupted = false;
             // 解析采用“候选快照 → 完整成功后提交”的事务模型。失败时必须保留
             // 上一次有效 Current/_moduleConfigs，绝不能形成宿主默认值 + 旧模块配置的混合态。
             var previousCurrent = Current;
@@ -275,7 +284,9 @@ namespace CarroDesk.Services
                     ex is System.Security.SecurityException;
 
                 // 只对确定的内容损坏做备份；短暂 I/O/共享冲突不应制造“损坏”副本。
-                if (ex is JsonException || ex is InvalidDataException || ex is FormatException)
+                bool contentCorrupt = ex is JsonException || ex is InvalidDataException || ex is FormatException;
+                LastLoadContentCorrupted = contentCorrupt;
+                if (contentCorrupt)
                 {
                     try
                     {

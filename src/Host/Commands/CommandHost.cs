@@ -221,6 +221,19 @@ namespace CarroDesk.Host.Commands
                     converted = (int)l;
                     return true;
                 }
+                if (value is double || value is float || value is decimal)
+                {
+                    // JSON 数字若无小数部分也可能被解析为 double（如 5.0）；此处按整数语义收敛，
+                    // 非整数则明确报错，绝不能静默降级为字符串（否则 int 参数会拿到 "5"）。
+                    var d = Convert.ToDouble(value, CultureInfo.InvariantCulture);
+                    if (d == Math.Floor(d) && d >= int.MinValue && d <= int.MaxValue)
+                    {
+                        converted = (int)d;
+                        return true;
+                    }
+                    error = "expected int, got non-integral number";
+                    return false;
+                }
                 var s = value as string;
                 int parsed;
                 if (s != null && int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out parsed))

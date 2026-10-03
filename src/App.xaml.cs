@@ -93,6 +93,14 @@ namespace CarroDesk
                 return;
             }
 
+            if (rawConfig.LastLoadContentCorrupted)
+            {
+                // 内容损坏已备份并回退默认配置：必须提示，否则会表现为"配置/PIN 莫名丢失、回到首次运行向导"。
+                MessageBox.Show(
+                    Loc.T("Config.CorruptWarn", "配置文件已损坏，已备份为 config.corrupt-*.json 并回退默认配置。\n原因: {0}", rawConfig.LastLoadError),
+                    Loc.T("Common.Warning", "警告"), MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+
             _configManager = new ConfigManager(rawConfig, logger);
             Services.AddSingleton<ConfigManager>(_configManager);
             Services.AddSingleton<IConfigManager>(_configManager);
@@ -191,7 +199,7 @@ namespace CarroDesk
             }
             catch (Exception ex)
             {
-                logger.LogError("Commands", "命令能力注册失败，能力通道降级为空", ex);
+                logger.LogError("Commands", "命令能力注册失败，保留上一次有效能力表（原子替换，不留半注册状态）", ex);
             }
             Services.AddSingleton(commandRegistry);
 

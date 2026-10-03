@@ -205,6 +205,7 @@
     "PenaltyWait": "Too many failed attempts. Wait {0}s before retrying"
   },
   "Config": {
+    "CorruptWarn": "Config file is corrupted; a backup was saved as config.corrupt-*.json and defaults were restored.\nReason: {0}",
     "Title": "Settings - CarroDesk",
     "SaveFailed": "Failed to save configuration",
     "ReloadFailed": "Configuration reload failed; the last valid configuration was kept",

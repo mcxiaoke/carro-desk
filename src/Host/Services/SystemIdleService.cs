@@ -54,6 +54,9 @@ namespace CarroDesk.Host.Services
         // 避免 32 位进程上出现撕裂读。
         private long _rawIdleTicks;
 
+        /// <summary>判定"用户活跃"的空闲上限：物理空闲 ≤ 1.5s 视为刚有输入。</summary>
+        private const long ActiveIdleThresholdTicks = TimeSpan.TicksPerMillisecond * 1500;
+
         // bool 可以标记 volatile
         private volatile bool _isSystemBusy;
         private volatile bool _disposed;
@@ -123,9 +126,11 @@ namespace CarroDesk.Host.Services
             if (_disposed) return;
 
             TimeSpan raw = GetRawIdle();
-            bool wasActive = Interlocked.Read(ref _rawIdleTicks) <= 0;
-
-            Interlocked.Exchange(ref _rawIdleTicks, raw.Ticks);
+            // 边沿触发：与"上一拍的物理空闲"比较，仅当由"空闲"变为"活跃"时才广播一次。
+            // 旧实现用 `_rawIdleTicks <= 0` 判断上一拍，几乎只在首拍成立，导致用户活跃期间每秒误触发。
+            long prevIdleTicks = Interlocked.Exchange(ref _rawIdleTicks, raw.Ticks);
+            bool wasActive = prevIdleTicks <= ActiveIdleThresholdTicks;
+            bool isActive = raw.Ticks <= ActiveIdleThresholdTicks;
 
             // 在锁内取快照、在锁外调用：既保证读到完整委托链，又不持锁执行外部代码
             Action<TimeSpan> idleHandlers;
@@ -138,7 +143,7 @@ namespace CarroDesk.Host.Services
                 }
             }
 
-            if (raw <= TimeSpan.FromMilliseconds(1500) && !wasActive)
+            if (isActive && !wasActive)
             {
                 Action activeHandlers;
                 lock (_handlerLock) { activeHandlers = _userActiveHandlers; }

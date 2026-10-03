@@ -24,10 +24,17 @@ namespace CarroDesk.Host.Commands
             if (collected == null) return;
             lock (_lock)
             {
-                _commands.Clear();
+                // 先在临时字典中构建，全部成功后再整体替换：避免中途抛异常留下"半注册"状态，
+                // 使调用方捕获异常后的降级语义（能力集合确定为空）名副其实。
+                var staged = new Dictionary<string, CommandDescriptor>(StringComparer.OrdinalIgnoreCase);
                 foreach (var pair in collected)
                 {
-                    RegisterCore(pair.Key, pair.Value);
+                    RegisterCore(staged, pair.Key, pair.Value);
+                }
+                _commands.Clear();
+                foreach (var kvp in staged)
+                {
+                    _commands[kvp.Key] = kvp.Value;
                 }
             }
         }
@@ -38,11 +45,11 @@ namespace CarroDesk.Host.Commands
             if (descriptor == null) throw new ArgumentNullException(nameof(descriptor));
             lock (_lock)
             {
-                RegisterCore(moduleId, descriptor);
+                RegisterCore(_commands, moduleId, descriptor);
             }
         }
 
-        private void RegisterCore(string moduleId, CommandDescriptor descriptor)
+        private static void RegisterCore(Dictionary<string, CommandDescriptor> target, string moduleId, CommandDescriptor descriptor)
         {
             if (string.IsNullOrWhiteSpace(descriptor.Name))
                 throw new ArgumentException("能力名不能为空", nameof(descriptor));
@@ -51,11 +58,11 @@ namespace CarroDesk.Host.Commands
 
             descriptor.ModuleId = moduleId ?? descriptor.ModuleId ?? string.Empty;
             var key = descriptor.Name.Trim();
-            if (_commands.ContainsKey(key))
+            if (target.ContainsKey(key))
                 throw new InvalidOperationException("能力名 '" + key + "' 重复注册（模块 '" + descriptor.ModuleId + "'）");
 
             descriptor.Name = key;
-            _commands[key] = descriptor;
+            target[key] = descriptor;
         }
 
         public bool TryGet(string name, out CommandDescriptor descriptor)

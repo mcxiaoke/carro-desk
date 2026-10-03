@@ -12,6 +12,14 @@ namespace CarroDesk.Services
         private readonly ConfigService _config;
         private readonly PinService _inner = new PinService();
 
+        /// <summary>
+        /// 串行化 Verify：PinGuard.Try 有意在锁外执行 PBKDF2，而 _pinProvider 返回的是同一个
+        /// HostPinService，其 Verify 会改写共享的 _inner 状态（Salt/Hash/JustUpgraded）与 _pending*。
+        /// 命名管道每连接一个 Task 可并发调用，若不加锁会出现读写撕裂，导致正确 PIN 被拒或错误 PIN 通过。
+        /// PBKDF2 约数十毫秒，串行化在低并发的控制通道上可接受。
+        /// </summary>
+        private readonly object _verifyLock = new object();
+
         private string _pendingSalt;
         private string _pendingHash;
 
@@ -29,6 +37,14 @@ namespace CarroDesk.Services
         public string Hash { get { return _pendingHash ?? Current().PinHash; } }
 
         public bool Verify(string pin)
+        {
+            lock (_verifyLock)
+            {
+                return VerifyCore(pin);
+            }
+        }
+
+        private bool VerifyCore(string pin)
         {
             // 与 Salt/Hash/IsConfigured 保持同一优先级：有未落盘的 pending 就以 pending 为准。
             //

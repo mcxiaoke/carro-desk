@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace CarroDesk
 {
@@ -21,8 +22,10 @@ namespace CarroDesk
             try
             {
                 if (!AttachConsole(ATTACH_PARENT_PROCESS)) return;
-                Console.SetOut(new StreamWriter(Console.OpenStandardOutput(), Console.OutputEncoding) { AutoFlush = true });
-                Console.SetError(new StreamWriter(Console.OpenStandardError(), Console.OutputEncoding) { AutoFlush = true });
+                // 显式使用 UTF-8（无 BOM），避免继承的系统代码页把中文/JSON 输出成乱码
+                var utf8 = new UTF8Encoding(false);
+                Console.SetOut(new StreamWriter(Console.OpenStandardOutput(), utf8) { AutoFlush = true });
+                Console.SetError(new StreamWriter(Console.OpenStandardError(), utf8) { AutoFlush = true });
             }
             catch
             {

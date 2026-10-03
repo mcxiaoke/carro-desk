@@ -205,6 +205,7 @@
     "PenaltyWait": "输错过多，请等待 {0} 秒后重试"
   },
   "Config": {
+    "CorruptWarn": "配置文件已损坏，已备份为 config.corrupt-*.json 并回退默认配置。\n原因: {0}",
     "Title": "配置编辑器 - CarroDesk",
     "SaveFailed": "保存配置失败",
     "ReloadFailed": "配置重载失败，已保留上次有效配置",
