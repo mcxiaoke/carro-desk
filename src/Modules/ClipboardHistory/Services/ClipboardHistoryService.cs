@@ -76,6 +76,12 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
             if (string.IsNullOrWhiteSpace(rawText)) return;
             if (_config != null && (!_config.Enabled || !_config.AutoRecord)) return;
 
+            // 超大文本先截断再入库，避免几十 MB 内容常驻内存并反复全量落盘（0 = 不限制）
+            if (_config != null && _config.MaxTextLength > 0 && rawText.Length > _config.MaxTextLength)
+            {
+                rawText = rawText.Substring(0, _config.MaxTextLength);
+            }
+
             string hash = ComputeHash(rawText);
 
             lock (_lock)

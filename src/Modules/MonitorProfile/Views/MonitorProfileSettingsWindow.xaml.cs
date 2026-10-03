@@ -9,6 +9,7 @@ using System.Windows.Controls;
 using CarroDesk.Modules.MonitorProfile;
 using CarroDesk.Modules.MonitorProfile.Models;
 using CarroDesk.Services.Localization;
+using CarroDesk.Services.Tasks;
 
 namespace CarroDesk.Modules.MonitorProfile.Views
 {
@@ -494,6 +495,7 @@ namespace CarroDesk.Modules.MonitorProfile.Views
 
         private void BtnTestApply_Click(object sender, RoutedEventArgs e)
         {
+            if (!ValidateHotkeys()) return;
             var cfg = BuildCurrentConfigFromUi();
             if (!_module.SaveAndApplyConfig(cfg))
             {
@@ -506,6 +508,7 @@ namespace CarroDesk.Modules.MonitorProfile.Views
 
         private void BtnSave_Click(object sender, RoutedEventArgs e)
         {
+            if (!ValidateHotkeys()) return;
             var cfg = BuildCurrentConfigFromUi();
             if (!_module.SaveAndApplyConfig(cfg))
             {
@@ -513,6 +516,24 @@ namespace CarroDesk.Modules.MonitorProfile.Views
                 return;
             }
             Close();
+        }
+
+        /// <summary>校验 6 个热键框（留空表示不注册）；非法则提示并中止保存。</summary>
+        private bool ValidateHotkeys()
+        {
+            var boxes = new[] { TxtHkDaily, TxtHkGame, TxtHkNight, TxtHkUp, TxtHkDown, TxtHkRefresh };
+            foreach (var box in boxes)
+            {
+                if (box == null) continue;
+                string hk = box.Text.Trim();
+                if (string.IsNullOrWhiteSpace(hk)) continue;
+                if (!HotkeyHelper.Validate(hk, out string err))
+                {
+                    MessageBox.Show(this, Loc.T("Msg.HotkeyInvalid", "快捷键格式不正确: {0}\n支持格式例如: {1}", err, "Ctrl+`, Alt+F11, Win+Ctrl+A"), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return false;
+                }
+            }
+            return true;
         }
 
         private MonitorProfileConfig BuildCurrentConfigFromUi()

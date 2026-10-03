@@ -10,8 +10,17 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
         private const int MaxRetries = 3;
         private const int RetryDelayMs = 50;
 
+        // Windows 剪贴板"排除"约定格式（系统自带 Win+V 亦遵守）：
+        //   ExcludeClipboardContentFromMonitorProcessing：DWORD 非 0 = 任何监听者都不得处理；
+        //   CanIncludeInClipboardHistory：DWORD 0 = 不要纳入剪贴板历史（密码管理器常用）；
+        //   CanUploadToCloudClipboard：DWORD 0 = 不要上传到云端剪贴板。
+        private const string ExcludeMonitorFormat = "ExcludeClipboardContentFromMonitorProcessing";
+        private const string CanIncludeInHistoryFormat = "CanIncludeInClipboardHistory";
+        private const string CanUploadToCloudFormat = "CanUploadToCloudClipboard";
+
         /// <summary>
-        /// 安全获取系统剪贴板文本（带 STA 保护与 3 次重试以防并发独占锁）
+        /// 安全获取系统剪贴板文本（带 STA 保护与 3 次重试以防并发独占锁）。
+        /// 会先检查剪贴板排除格式：命中即返回 false，避免把密码等敏感内容纳入历史。
         /// </summary>
         public static bool TryGetText(out string text, int retryDelayMs = RetryDelayMs)
         {
@@ -21,12 +30,19 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
             {
                 try
                 {
-                    if (Clipboard.ContainsText())
+                    var data = Clipboard.GetDataObject();
+                    if (data == null) return false;
+                    if (IsExcludedFromHistory(data)) return false;
+
+                    if (data.GetDataPresent(DataFormats.UnicodeText))
                     {
-                        text = Clipboard.GetText();
-                        return true;
+                        text = data.GetData(DataFormats.UnicodeText) as string;
                     }
-                    return false;
+                    else if (data.GetDataPresent(DataFormats.Text))
+                    {
+                        text = data.GetData(DataFormats.Text) as string;
+                    }
+                    return !string.IsNullOrEmpty(text);
                 }
                 catch (ExternalException)
                 {
@@ -41,6 +57,49 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
             }
 
             return false;
+        }
+
+        /// <summary>检查剪贴板数据对象是否声明了"不要记录/上传"（DWORD 语义，非 0 为真）。</summary>
+        private static bool IsExcludedFromHistory(IDataObject data)
+        {
+            try
+            {
+                if (data.GetDataPresent(ExcludeMonitorFormat) && ToDwordTrue(data.GetData(ExcludeMonitorFormat)))
+                    return true;
+                if (data.GetDataPresent(CanIncludeInHistoryFormat) && !ToDwordTrue(data.GetData(CanIncludeInHistoryFormat)))
+                    return true;
+                if (data.GetDataPresent(CanUploadToCloudFormat) && !ToDwordTrue(data.GetData(CanUploadToCloudFormat)))
+                    return true;
+            }
+            catch
+            {
+                // 读取排除格式失败时按"不排除"处理，保持原有行为
+            }
+            return false;
+        }
+
+        private static bool ToDwordTrue(object value)
+        {
+            if (value == null) return false;
+            try
+            {
+                if (value is int i) return i != 0;
+                if (value is uint u) return u != 0;
+                if (value is long l) return l != 0;
+                if (value is short s) return s != 0;
+                if (value is bool b) return b;
+                var str = value as string;
+                if (str != null)
+                {
+                    int parsed;
+                    return int.TryParse(str, out parsed) && parsed != 0;
+                }
+                return Convert.ToInt64(value, System.Globalization.CultureInfo.InvariantCulture) != 0;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         /// <summary>

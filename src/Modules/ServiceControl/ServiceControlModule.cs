@@ -197,7 +197,7 @@ namespace CarroDesk.Modules.ServiceControl
                     name = entry.Name,
                     desc = entry.Desc,
                     requiresPin = entry.RequiresPin,
-                    status = DescribeStatus(_adapter.GetStatus(entry.Name))
+                    status = SafeDescribeStatus(entry.Name)
                 });
             }
 
@@ -206,7 +206,7 @@ namespace CarroDesk.Modules.ServiceControl
                 name = e.Name,
                 desc = e.Desc,
                 requiresPin = e.RequiresPin,
-                status = DescribeStatus(_adapter.GetStatus(e.Name))
+                status = SafeDescribeStatus(e.Name)
             }).ToList();
             return Success(new { allowlist = allowed.Select(e => e.Name).ToList(), services = items });
         }
@@ -274,6 +274,19 @@ namespace CarroDesk.Modules.ServiceControl
             return allowed.Count == 0
                 ? "services allowlist is empty; configure Services.AllowedServices in config.json first"
                 : "service '" + name + "' is not in the allowlist: " + string.Join(", ", allowed.Select(e => e.Name));
+        }
+
+        /// <summary>逐服务隔离查询：单个服务异常（无权限/过渡态）只影响该项，不拖垮整个 services.status。</summary>
+        private string SafeDescribeStatus(string name)
+        {
+            try
+            {
+                return DescribeStatus(_adapter.GetStatus(name));
+            }
+            catch (Exception)
+            {
+                return "Unknown";
+            }
         }
 
         private static string DescribeStatus(ServiceControllerStatus? status)

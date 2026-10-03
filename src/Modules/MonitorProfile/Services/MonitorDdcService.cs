@@ -678,9 +678,18 @@ namespace CarroDesk.Modules.MonitorProfile.Services
 
         private bool _wmiSupported = true;
 
+        /// <summary>WMI 回退的冷却截止时刻：ManagementException 多为瞬时故障（WMI 服务忙/超时），
+        /// 不应永久禁用，冷却 30 秒后允许重试；仅在明确"不支持"时才真正停用。</summary>
+        private DateTime _wmiRetryAfter = DateTime.MinValue;
+
+        private bool IsWmiAvailable()
+        {
+            return _wmiSupported && DateTime.Now >= _wmiRetryAfter;
+        }
+
         private bool SetBrightnessViaWmi(int brightness)
         {
-            if (!_wmiSupported)
+            if (!IsWmiAvailable())
             {
                 return false;
             }
@@ -713,8 +722,8 @@ namespace CarroDesk.Modules.MonitorProfile.Services
             }
             catch (ManagementException mex)
             {
-                _wmiSupported = false;
-                Log($"WMI 亮度设置接口不受当前系统或外接显示器支持: {mex.Message}，已禁用后续 WMI 回退尝试");
+                _wmiRetryAfter = DateTime.Now.AddSeconds(30);
+                Log($"WMI 亮度设置接口暂不可用: {mex.Message}，30 秒内跳过 WMI 回退");
                 return false;
             }
             catch (Exception ex)
@@ -727,7 +736,7 @@ namespace CarroDesk.Modules.MonitorProfile.Services
         private bool GetBrightnessViaWmi(out int brightness)
         {
             brightness = 0;
-            if (!_wmiSupported)
+            if (!IsWmiAvailable())
             {
                 return false;
             }
@@ -750,8 +759,8 @@ namespace CarroDesk.Modules.MonitorProfile.Services
             }
             catch (ManagementException mex)
             {
-                _wmiSupported = false;
-                Log($"WMI 亮度读取接口不受当前系统或外接显示器支持: {mex.Message}，已禁用后续 WMI 读取尝试");
+                _wmiRetryAfter = DateTime.Now.AddSeconds(30);
+                Log($"WMI 亮度读取接口暂不可用: {mex.Message}，30 秒内跳过 WMI 读取");
                 return false;
             }
             catch (Exception ex)

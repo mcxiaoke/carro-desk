@@ -1,4 +1,5 @@
 using System;
+using System.ComponentModel;
 using System.ServiceProcess;
 
 namespace CarroDesk.Modules.ServiceControl
@@ -24,6 +25,11 @@ namespace CarroDesk.Modules.ServiceControl
                 {
                     return null; // 服务不存在
                 }
+                catch (Win32Exception)
+                {
+                    // 无权限访问 SCM（错误码 5）或服务已被删除：返回未知，避免单个服务拖垮整个列表
+                    return null;
+                }
             }
         }
 
@@ -32,10 +38,18 @@ namespace CarroDesk.Modules.ServiceControl
             using (var controller = new ServiceController(serviceName))
             {
                 controller.Refresh();
-                if (controller.Status != ServiceControllerStatus.Running
-                    && controller.Status != ServiceControllerStatus.StartPending)
+                switch (controller.Status)
                 {
-                    controller.Start();
+                    case ServiceControllerStatus.Running:
+                    case ServiceControllerStatus.StartPending:
+                        break; // 已运行 / 正在启动：无需再调 Start
+                    case ServiceControllerStatus.StopPending:
+                        // 过渡态：对正在停止的服务调 Start 会抛 InvalidOperationException，
+                        // 这里给出可理解的原因，避免被上层泛化为"服务不可用"。
+                        throw new InvalidOperationException("服务正在停止中，请稍后重试 (service is stopping)");
+                    default:
+                        controller.Start();
+                        break;
                 }
                 controller.WaitForStatus(ServiceControllerStatus.Running, timeout <= TimeSpan.Zero ? DefaultWait : timeout);
                 return controller.Status;
@@ -47,10 +61,14 @@ namespace CarroDesk.Modules.ServiceControl
             using (var controller = new ServiceController(serviceName))
             {
                 controller.Refresh();
-                if (controller.Status != ServiceControllerStatus.Stopped
-                    && controller.Status != ServiceControllerStatus.StopPending)
+                switch (controller.Status)
                 {
-                    controller.Stop();
+                    case ServiceControllerStatus.Stopped:
+                    case ServiceControllerStatus.StopPending:
+                        break; // 已停止 / 正在停止：无需再调 Stop
+                    default:
+                        controller.Stop();
+                        break;
                 }
                 controller.WaitForStatus(ServiceControllerStatus.Stopped, timeout <= TimeSpan.Zero ? DefaultWait : timeout);
                 return controller.Status;

@@ -16,6 +16,12 @@ namespace CarroDesk.Modules.ClipboardHistory.Models
         /// <summary>预览文本最大字符数（超过该字数自动截断）</summary>
         public int MaxPreviewChars { get; set; } = 100;
 
+        /// <summary>
+        /// 单条记录的最大存储字符数（默认 100 万）：超长文本先截断再入库，
+        /// 避免几十 MB 的日志/JSON 常驻内存并反复全量落盘。0 表示不限制。
+        /// </summary>
+        public int MaxTextLength { get; set; } = 1000000;
+
         /// <summary>最大保留历史条数</summary>
         public int MaxItems { get; set; } = 1000;
 

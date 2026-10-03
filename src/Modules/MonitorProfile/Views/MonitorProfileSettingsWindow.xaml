@@ -194,15 +194,16 @@
                  DataGrid 保持结构不变，仅通过 Visibility 由 code-behind 切换。 -->
                             <Grid Height="160">
                                 <DataGrid x:Name="GridTimeSettings" AutoGenerateColumns="False" CanUserAddRows="False"
+                                      IsReadOnly="True"
                                       HeadersVisibility="Column" GridLinesVisibility="Horizontal"
                                       BorderThickness="1" BorderBrush="#FFE5E7EB" Background="White"
                                       RowHeight="28" SelectionMode="Single"
                                       SelectionChanged="GridTimeSettings_SelectionChanged"
                                       MouseDoubleClick="GridTimeSettings_MouseDoubleClick">
                                 <DataGrid.Columns>
-                                    <DataGridTextColumn Header="{loc:Loc Monitor.ColTime, Default='时间点'}" Binding="{Binding Time, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Width="85"/>
-                                    <DataGridTextColumn Header="{loc:Loc Monitor.ColBrightness, Default='亮度 (0-100)'}" Binding="{Binding Brightness, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Width="105"/>
-                                    <DataGridTextColumn Header="{loc:Loc Monitor.ColContrast, Default='对比度 (0-100)'}" Binding="{Binding Contrast, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Width="105"/>
+                                    <DataGridTextColumn Header="{loc:Loc Monitor.ColTime, Default='时间点'}" Binding="{Binding Time, Mode=OneWay}" Width="85"/>
+                                    <DataGridTextColumn Header="{loc:Loc Monitor.ColBrightness, Default='亮度 (0-100)'}" Binding="{Binding Brightness, Mode=OneWay}" Width="105"/>
+                                    <DataGridTextColumn Header="{loc:Loc Monitor.ColContrast, Default='对比度 (0-100)'}" Binding="{Binding Contrast, Mode=OneWay}" Width="105"/>
                                     <DataGridTemplateColumn Header="{loc:Loc Monitor.ColActions, Default='操作'}" Width="*" MinWidth="75">
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>

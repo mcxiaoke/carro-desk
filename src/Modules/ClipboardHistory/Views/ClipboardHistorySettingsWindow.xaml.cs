@@ -3,6 +3,7 @@ using System.Windows;
 using CarroDesk.Core;
 using CarroDesk.Modules.ClipboardHistory.Models;
 using CarroDesk.Services.Localization;
+using CarroDesk.Services.Tasks;
 
 namespace CarroDesk.Modules.ClipboardHistory.Views
 {
@@ -68,7 +69,13 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
             config.MaxItems = maxItems;
             config.RetentionDays = retentionDays;
             config.MaxPreviewChars = maxPreview;
-            config.Hotkey = TxtHotkey.Text.Trim();
+            string hotkey = TxtHotkey.Text.Trim();
+            if (!string.IsNullOrWhiteSpace(hotkey) && !HotkeyHelper.Validate(hotkey, out string hkErr))
+            {
+                MessageBox.Show(Loc.T("Msg.HotkeyInvalid", "快捷键格式不正确: {0}\n支持格式例如: {1}", hkErr, "Ctrl+`, Alt+F11, Win+Ctrl+A"), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            config.Hotkey = hotkey;
 
             if (configMgr == null || !configMgr.SaveModuleConfig("ClipboardHistory", config))
             {

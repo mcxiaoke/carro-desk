@@ -154,6 +154,8 @@ namespace CarroDesk.Modules.Awake.Services
 
         public void UpdateConfig(AwakeConfig config)
         {
+            // 记录联动开关变更前的状态：用于区分"用户刚刚打开联动"与"普通配置重载"。
+            bool wasProcessLinkEnabled = IsProcessLinkEnabled;
             _config = config ?? AwakeConfig.CreateDefault();
             _keepDisplayOn = _config.KeepDisplayOn;
             _mode = _config.Enabled ? _config.Mode : AwakeMode.Passive;
@@ -197,9 +199,11 @@ namespace CarroDesk.Modules.Awake.Services
                 _logger?.LogInfo("Awake", $"智能进程联动已关闭或名单已清空，撤销进程 '{oldProc}' 触发的保持唤醒");
                 ProcessTriggered?.Invoke(false, oldProc);
             }
-            else if (IsProcessLinkEnabled)
+            else if (IsProcessLinkEnabled && !wasProcessLinkEnabled)
             {
-                // 重新启用联动时清除用户抑制，允许立即检测
+                // 仅当进程联动由"关"变"开"时才清除用户抑制。
+                // 旧实现在任何一次 UpdateConfig 都会清零，导致用户在托盘点"关闭"后，
+                // 只要发生一次配置重载（托盘"重载配置"等）联动就被重新拉起，表现为"关了又开"。
                 _userSuppressedProcessLink = false;
             }
 
