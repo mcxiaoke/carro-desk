@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using CarroDesk.Common;
 using CarroDesk.Core;
 using CarroDesk.Core.Commands;
 using CarroDesk.Host.Services;
@@ -145,7 +146,16 @@ namespace CarroDesk
 
             Services.AddSingleton<IHotkeyService>(HotkeyService.Instance);
             Services.AddSingleton<INotificationService>(new DelegatedNotificationService((msg, title) => ShowBalloon(msg)));
-            Services.AddSingleton<IIdleService>(new SystemIdleService());
+            var idleService = new SystemIdleService();
+            idleService.IdleTick += (rawIdle) =>
+            {
+                // 空闲超过 5 分钟且物理工作集偏高时平滑修剪
+                if (rawIdle.TotalMinutes >= 5)
+                {
+                    MemoryOptimizer.TrimIfWorkingSetExceeds(50 * 1024 * 1024);
+                }
+            };
+            Services.AddSingleton<IIdleService>(idleService);
 
             Modules = new ModuleManager
             {
@@ -212,6 +222,9 @@ namespace CarroDesk
             Exit += OnAppExit;
             UpdateTrayText();
             RegisterFloatingPanelHotkey();
+
+            // 冷启动后物理内存修剪：延迟 8 秒在后台执行，将初始化期间触碰的冷页还给系统
+            MemoryOptimizer.ScheduleTrim(8000, force: true);
         }
 
         /// <summary>二实例 `ctl` 转发（IPC 设计 §5.3）：挂接父控制台 → 管道调用 → 回显 → 按结果退出。</summary>

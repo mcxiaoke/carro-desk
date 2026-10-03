@@ -47,6 +47,7 @@
     <Compile Include="HostCommandsTests.cs" />
     <Compile Include="AwakeCapabilityTests.cs" />
     <Compile Include="DevicePresenceAndAutoLockTests.cs" />
+    <Compile Include="MemoryOptimizerTests.cs" />
   </ItemGroup>
 
   <ItemGroup>

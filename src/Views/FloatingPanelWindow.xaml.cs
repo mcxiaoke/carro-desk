@@ -177,6 +177,7 @@ namespace CarroDesk.Views
         public void HidePanel()
         {
             Hide();
+            MemoryOptimizer.ScheduleTrim(2000);
         }
 
         private void OnWindowDeactivated(object sender, EventArgs e)
