@@ -42,6 +42,27 @@ namespace CarroDesk.Modules.ClipboardHistory.Models
             }
         }
 
+        /// <summary>
+        /// 列表项 ToolTip 用的截断全文。
+        ///
+        /// 直接绑定 <see cref="FullText"/> 会让"鼠标悬停一行"这一动作把整条原文加载进 WPF
+        /// 排版管线；而 MaxTextLength 默认允许 100 万字符，代价与风险都不可接受。
+        /// 完整内容仍可在"查看完整内容"详情窗口里看。
+        /// </summary>
+        public string ToolTipText
+        {
+            get { return TruncateForToolTip(FullText); }
+        }
+
+        public const int ToolTipMaxChars = 1000;
+
+        public static string TruncateForToolTip(string fullText)
+        {
+            if (string.IsNullOrEmpty(fullText)) return string.Empty;
+            if (fullText.Length <= ToolTipMaxChars) return fullText;
+            return fullText.Substring(0, ToolTipMaxChars) + "\n…";
+        }
+
         public static string BuildPreviewText(string rawText, int maxChars = 300)
         {
             if (string.IsNullOrEmpty(rawText)) return string.Empty;

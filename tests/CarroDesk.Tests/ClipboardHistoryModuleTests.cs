@@ -309,6 +309,27 @@ namespace CarroDesk.Tests
             Assert.AreEqual(60, reloaded.RetentionDays);
         }
 
+        /// <summary>
+        /// 列表项 ToolTip 必须使用截断后的文本。
+        ///
+        /// MaxTextLength 默认允许 100 万字符；若 ToolTip 直接绑定 FullText，
+        /// "鼠标悬停任意一行"就会把整条原文交给 WPF 排版，代价与卡顿都不可接受。
+        /// 完整内容仍可在详情窗口查看。
+        /// </summary>
+        [TestMethod]
+        public void ClipboardItem_ToolTipText_IsTruncated()
+        {
+            var shortItem = new ClipboardItem { FullText = "short text" };
+            Assert.AreEqual("short text", shortItem.ToolTipText, "未超限的内容必须原样返回");
+
+            var longText = new string('x', ClipboardItem.ToolTipMaxChars + 5000);
+            var longItem = new ClipboardItem { FullText = longText };
+            Assert.IsTrue(longItem.ToolTipText.Length <= ClipboardItem.ToolTipMaxChars + 2,
+                "ToolTip 文本必须被截断（当前长度 " + longItem.ToolTipText.Length + "）");
+            StringAssert.StartsWith(longItem.ToolTipText, longText.Substring(0, 32));
+            Assert.IsTrue(longText.Length > longItem.ToolTipText.Length, "截断后的文本应短于原文");
+        }
+
         [TestMethod]
         public void ClipboardHistoryWindow_CanBeInstantiatedAndShown()
         {

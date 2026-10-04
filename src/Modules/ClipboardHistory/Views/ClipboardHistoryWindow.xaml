@@ -154,7 +154,7 @@
                                 <TextBlock Grid.Column="1" Text="{Binding PreviewText}" FontWeight="Normal"
                                            FontSize="13" Foreground="#FF1E293B"
                                            TextWrapping="Wrap" MaxHeight="60" TextTrimming="CharacterEllipsis"
-                                           ToolTip="{Binding FullText}" VerticalAlignment="Top"/>
+                                           ToolTip="{Binding ToolTipText}" VerticalAlignment="Top"/>
                             </Grid>
 
                             <!-- 行内快捷操作按钮（展开全文、固定、删除） -->
