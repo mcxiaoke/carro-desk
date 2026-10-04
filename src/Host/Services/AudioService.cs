@@ -4,15 +4,53 @@ using System.Diagnostics;
 using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using System.Security;
+using System.Windows.Interop;
+using System.Windows.Threading;
 using CarroDesk.Core;
 using CarroDesk.Core.Audio;
 using CarroDesk.Core.Models;
 
 namespace CarroDesk.Host.Services
 {
-    public class AudioService : IAudioService
+    public class AudioService : IAudioService, IDisposable
     {
+        private static readonly IntPtr HWND_MESSAGE = new IntPtr(-3);
+        private const int WM_DEVICECHANGE = 0x0219;
+        private const int DBT_DEVNODES_CHANGED = 0x0007;
+        private const uint DEVICE_NOTIFY_WINDOW_HANDLE = 0x00000000;
+        private const uint DEVICE_NOTIFY_ALL_CLASSES = 0x00000000;
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct DEV_BROADCAST_DEVICEINTERFACE_W
+        {
+            public int dbcc_size;
+            public int dbcc_devicetype;
+            public int dbcc_reserved;
+        }
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern IntPtr RegisterDeviceNotification(IntPtr hRecipient, IntPtr filter, uint flags);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern bool UnregisterDeviceNotification(IntPtr hFilter);
+
         private IMMDeviceEnumerator _deviceEnumerator;
+
+        /// <summary>
+        /// 默认端点变化去抖：WM_DEVICECHANGE / DBT_DEVNODES_CHANGED 往往连续到达多次
+        /// （一次插拔会广播一串事件），逐次触发会让托盘菜单连续重建。
+        /// </summary>
+        private static readonly TimeSpan DeviceChangeDebounce = TimeSpan.FromMilliseconds(400);
+
+        private readonly object _deviceWatchLock = new object();
+        private Dispatcher _dispatcher;
+        private HwndSource _deviceNotifyWindow;
+        private IntPtr _deviceNotifyHandle;
+        private bool _deviceNotifyStarted;
+        private DispatcherTimer _deviceChangeDebounceTimer;
+        private string _lastDefaultDeviceId;
+        private bool _hasLastDefaultSample;
+        private bool _deviceWatchStopped;
 
         public event Action DevicesChanged;
 
@@ -29,8 +67,197 @@ namespace CarroDesk.Host.Services
             }
         }
 
+        /// <summary>
+        /// 启用默认端点变化监听。
+        ///
+        /// 背景：<see cref="RaiseDevicesChanged"/> 此前全仓只有定义、零调用点，
+        /// 订阅方（AudioSwitchModule）的订阅/退订全是死代码 —— 插拔耳机后托盘仍显示旧设备名，
+        /// 必须重启进程才更新。接口注释承诺的 WM_DEVICECHANGE 桥接一直没实现。
+        ///
+        /// 实现方式与既有 DisplayPowerListener / Win32ClipboardListener 一致：
+        /// 消息专用窗口（HWND_MESSAGE）+ RegisterDeviceNotification，零轮询。
+        /// 必须由 UI 线程调用（HwndSource 有线程亲和）。
+        /// </summary>
+        public void StartDeviceNotifications(Dispatcher dispatcher = null)
+        {
+            var d = dispatcher ?? System.Windows.Application.Current?.Dispatcher;
+            if (d == null) return;
+
+            // Dispatcher 已关闭时不能 Invoke：消息窗口本就需要活着的消息泵去投递
+            // WM_DEVICECHANGE，此时创建窗口毫无意义，只会在别的线程上永久阻塞。
+            // （Application.Current 属于某个已结束的线程时就会命中这里。）
+            if (d.HasShutdownStarted || d.HasShutdownFinished)
+            {
+                Debug.WriteLine("[AudioService] StartDeviceNotifications skipped: dispatcher has shut down");
+                return;
+            }
+            _dispatcher = d;
+
+            void StartCore()
+            {
+                lock (_deviceWatchLock)
+                {
+                    if (_deviceWatchStopped || _deviceNotifyWindow != null) return;
+                    try
+                    {
+                        if (_deviceNotifyWindow == null)
+                        {
+                            var parameters = new HwndSourceParameters("CarroDesk_AudioDeviceWatcher")
+                            {
+                                Width = 0,
+                                Height = 0,
+                                WindowStyle = 0,
+                                ParentWindow = HWND_MESSAGE
+                            };
+                            _deviceNotifyWindow = new HwndSource(parameters);
+                            _deviceNotifyWindow.AddHook(DeviceWndProc);
+                        }
+
+                        IntPtr hwnd = _deviceNotifyWindow.Handle;
+                        if (hwnd != IntPtr.Zero)
+                        {
+                            _deviceNotifyHandle = RegisterDeviceNotification(
+                                hwnd,
+                                IntPtr.Zero,
+                                DEVICE_NOTIFY_WINDOW_HANDLE | DEVICE_NOTIFY_ALL_CLASSES);
+                            _lastDefaultDeviceId = GetDefaultPlaybackDevice()?.Id;
+                            _hasLastDefaultSample = true;
+                            _deviceNotifyStarted = true;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        /* intentionally ignored: device notification is a convenience, audio must keep working without it */
+                        Debug.WriteLine("[AudioService] StartDeviceNotifications failed: " + ex.Message);
+                        _deviceNotifyStarted = false;
+                        CleanupWindowLocked();
+                    }
+                }
+            }
+
+            if (d.CheckAccess()) StartCore();
+            else
+            {
+                try { d.Invoke(StartCore); } catch { }
+            }
+        }
+
+        /// <summary>监听是否已成功启动（供自检与测试断言）。</summary>
+        public bool IsDeviceNotificationActive
+        {
+            get { lock (_deviceWatchLock) return _deviceNotifyStarted && _deviceNotifyWindow != null; }
+        }
+
+        /// <summary>停止监听（宿主退出 / 服务释放）。</summary>
+        public void StopDeviceNotifications()
+        {
+            Dispatcher d;
+            lock (_deviceWatchLock)
+            {
+                _deviceWatchStopped = true;
+                d = _dispatcher;
+            }
+
+            void StopCore()
+            {
+                lock (_deviceWatchLock)
+                {
+                    CleanupWindowLocked();
+                }
+            }
+
+            if (d == null || d.HasShutdownStarted || d.HasShutdownFinished || d.CheckAccess()) StopCore();
+            else
+            {
+                try { d.Invoke(StopCore); } catch { StopCore(); }
+            }
+        }
+
+        private void CleanupWindowLocked()
+        {
+            try
+            {
+                if (_deviceNotifyHandle != IntPtr.Zero)
+                {
+                    try { UnregisterDeviceNotification(_deviceNotifyHandle); } catch { }
+                    _deviceNotifyHandle = IntPtr.Zero;
+                }
+                if (_deviceChangeDebounceTimer != null)
+                {
+                    _deviceChangeDebounceTimer.Stop();
+                    _deviceChangeDebounceTimer = null;
+                }
+                if (_deviceNotifyWindow != null)
+                {
+                    _deviceNotifyWindow.RemoveHook(DeviceWndProc);
+                    _deviceNotifyWindow.Dispose();
+                    _deviceNotifyWindow = null;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("[AudioService] CleanupWindow failed: " + ex.Message);
+            }
+        }
+
+        private IntPtr DeviceWndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+        {
+            if (msg != WM_DEVICECHANGE || wParam.ToInt32() != DBT_DEVNODES_CHANGED)
+            {
+                return IntPtr.Zero;
+            }
+
+            try
+            {
+                // 一次插拔会广播一串事件，先合并再通知，避免托盘菜单连续重建
+                lock (_deviceWatchLock)
+                {
+                    if (_deviceChangeDebounceTimer != null) _deviceChangeDebounceTimer.Stop();
+                    if (_deviceChangeDebounceTimer == null)
+                    {
+                        _deviceChangeDebounceTimer = new DispatcherTimer { Interval = DeviceChangeDebounce };
+                        _deviceChangeDebounceTimer.Tick += (s, e) =>
+                        {
+                            ((DispatcherTimer)s).Stop();
+                            RaiseDevicesChanged();
+                        };
+                    }
+                    _deviceChangeDebounceTimer.Start();
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("[AudioService] device change handling failed: " + ex.Message);
+            }
+
+            return IntPtr.Zero;
+        }
+
+        /// <summary>
+        /// 广播"设备列表/默认端点已变化"。默认端点实际未变时不广播：
+        /// DBT_DEVNODES_CHANGED 对所有设备类��生效（键鼠、显示器也会触发），
+        /// 无条件广播会让托盘在拔一个 U 盘时也重建一次。
+        /// </summary>
         public void RaiseDevicesChanged()
         {
+            string currentId = null;
+            try { currentId = GetDefaultPlaybackDevice()?.Id; }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("[AudioService] RaiseDevicesChanged probe failed: " + ex.Message);
+            }
+
+            lock (_deviceWatchLock)
+            {
+                if (_hasLastDefaultSample &&
+                    string.Equals(currentId, _lastDefaultDeviceId, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+                _lastDefaultDeviceId = currentId;
+                _hasLastDefaultSample = true;
+            }
+
             DevicesChanged?.Invoke();
         }
 
@@ -414,6 +641,8 @@ namespace CarroDesk.Host.Services
 
         public void Dispose()
         {
+            StopDeviceNotifications();
+
             if (_deviceEnumerator != null)
             {
                 try

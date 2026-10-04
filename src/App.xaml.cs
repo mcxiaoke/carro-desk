@@ -149,6 +149,8 @@ namespace CarroDesk
             var audioService = new AudioService();
             Services.AddSingleton(audioService);
             Services.AddSingleton<IAudioService>(audioService);
+            // 设备变化桥接：此前 DevicesChanged 是死代码，插拔耳机后托盘要重启进程才更新
+            audioService.StartDeviceNotifications();
 
             var foregroundTracker = new ForegroundTracker(logger);
             Services.AddSingleton(foregroundTracker);
