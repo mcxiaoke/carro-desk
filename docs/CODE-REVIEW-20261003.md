@@ -1,11 +1,12 @@
 # CarroDesk 代码审查报告
 
 > 审查日期：2026-10-03（GMT+8）；**2026-10-04 第二轮独立复核并修订**
+> **修复状态：2026-10-04 第二轮修复已落地 12 批，见第十四节；测试基线 336 通过 / 0 失败 / 0 跳过**
 > 审查范围：整个仓库（`src/` 149 个源文件，约 3.5 万行；`cli/`、`tests/`、`scripts/`、工程配置）
 > 审查方式：第一轮按宿主核心 / IPC / 各功能模块 / UI / 基础设施 / 测试 分线逐行阅读；第二轮**独立重审全量源码后再与本报告交叉核对**，所有结论均对照实际代码
 > 目标框架：.NET Framework 4.8 + WPF，C# 7.3
 > 结论性质：**只报告在代码中确实存在的问题**，不做推测性夸大；对无法确认严重性的事项标注了"待确认"
-> 验证状态：**已实际执行 `dotnet build`（0 警告 0 错误）与 `dotnet test`（315 通过 / 0 失败 / 0 跳过）**
+> 验证状态：**已实际执行 `dotnet build`（0 警告 0 错误）与 `dotnet test`（336 通过 / 0 失败 / 0 跳过）**
 
 ---
 
@@ -19,34 +20,36 @@
 
 **第二轮（2026-10-04）结论**：先独立重审全量源码、再与本报告交叉核对。新增 14 项（见第三节），其中 **3 项锁屏安全绕过（R1/R2/R3）应排在已修完的 S1/S2/S3 之前** —— 后者是数据与隐私问题，前者是可直接绕过认证的活路径。第一轮标注 ✅ 的 20 项修复经逐条 grep 复核**全部属实**；第一轮"未能编译/未跑测试"的局限已关闭（实际构建 0 警告 0 错误、315 项测试全通过）。
 
+**第三轮（2026-10-04 下午）结论**：第二轮的 14 项新增已按"改动小、收益大、风险低"分 **12 批**落地（R1/R2/R3/R4/R5/R6/R7/R9/R10/R11/R12/R13/R14/R15/M15 已修，R8 部分修复），新增 21 个回归用例，其中 5 个经实证确认能捕获对应缺陷；测试基线推进到 **336 通过 / 0 失败**。修复过程中另发现并修掉两个真实缺陷（`AudioService` 在已关闭 Dispatcher 上 `Invoke` 永久阻塞、`ProcessJob` 缺终结器导致句柄真泄漏）。仍未处理的主要是需要真机/多屏环境验证的项（H1/M6/M14/M16/M19/M24）与需产品确认的行为变更（M7/M9），逐条见第十四节。
+
 ---
 
 ## 二、问题汇总
 
 | 编号     | 严重度 | 一句话描述                                                                                             | 位置                                                                 |
 | ------ | --- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| **R1**   | **严重** | **锁屏期间托盘菜单未被禁用，可经托盘打开锁屏设置并关闭"启用"解除锁定，全程无需 PIN** | `ScreenLockModule.cs:546`                                  |
-| **R2**   | **严重** | **`UnlockOnResume` 默认 `true`：任何导致 Windows 会话解锁的事件都会免 PIN 解除锁屏** | `ScreenLockConfig.cs:22`、`ScreenLockModule.cs:300`                |
-| **R3**   | **严重** | **PIN 失败计数与封锁窗口仅存内存，重启宿主即清零，限流可被绕过**                       | `PinService.cs:106-131`                                          |
+| **R1**   | **严重** | **锁屏期间托盘菜单未被禁用，可经托盘打开锁屏设置并关闭"启用"解除锁定，全程无需 PIN** ✅已修 | `ScreenLockModule.cs:546`                                  |
+| **R2**   | **严重** | **`UnlockOnResume` 默认 `true`：任何导致 Windows 会话解锁的事件都会免 PIN 解除锁屏** ✅已修 | `ScreenLockConfig.cs:22`、`ScreenLockModule.cs:300`                |
+| **R3**   | **严重** | **PIN 失败计数与封锁窗口仅存内存，重启宿主即清零，限流可被绕过** ✅已修 | `PinService.cs:106-131`                                          |
 | S1     | 严重  | `Loc.T(key, string)` 命中错误重载，含占位符文案永久显示字面量 `{0}`，错误详情被静默丢弃（10+ 处） ✅已修 | `Services/Localization/Loc.cs:13` 及多处调用点                      |
 | S2     | 严重  | 任务编辑器保存会静默清空 `singleInstance` / `stableUptimeSec`；"复制任务"还会丢失 detach/restart 全部配置 ✅已修 | `TaskEditorWindow.xaml.cs:546,403`                     |
 | S3     | 严重  | 剪贴板历史不检查 Windows 排除格式，无差别采集含密码在内的内容并以明文 JSON 落盘 ✅已修（排除格式 + 长度上限；**存储仍为明文**） | `ClipboardHelper.cs:14-19`、`ClipboardHistoryService.cs:80` |
-| **R4**   | 高   | **`IsTaskStillEnabled` 用引用相等判定任务存活，配置重载摧毁运行中常驻任务的守护/重试链** | `TaskSchedulerService.cs:872-878`                                   |
-| **R5**   | 高   | **`GetRecent()` 返回内部列表活视图，并发写入致托盘 Tasks 菜单整块消失**                   | `TaskSchedulerService.cs:898-900`                                   |
-| **R6**   | 高   | **`TryStart` 异常路径产生无人可停止的僵尸进程，并永久泄漏 Job 句柄**                     | `TaskRunner.cs:281-286`、`ProcessJob.cs:148`                        |
-| **R7**   | 高   | **`KillTree` 无条件 `taskkill /PID`，pid 回收后可能误杀无关进程树**                        | `TaskProcessHandle.cs:229-238`                                     |
-| **R8**   | 高   | **任务日志在全局锁内做同步文件 IO 且逐行写入，回调不及时会顶满子进程 stdout 管道**        | `TaskLogger.cs:49-86`                                              |
+| **R4**   | 高   | **`IsTaskStillEnabled` 用引用相等判定任务存活，配置重载摧毁运行中常驻任务的守护/重试链** ✅已修 | `TaskSchedulerService.cs:872-878`                                   |
+| **R5**   | 高   | **`GetRecent()` 返回内部列表活视图，并发写入致托盘 Tasks 菜单整块消失** ✅已修 | `TaskSchedulerService.cs:898-900`                                   |
+| **R6**   | 高   | **`TryStart` 异常路径产生无人可停止的僵尸进程，并永久泄漏 Job 句柄** ✅已修 | `TaskRunner.cs:281-286`、`ProcessJob.cs:148`                        |
+| **R7**   | 高   | **`KillTree` 无条件 `taskkill /PID`，pid 回收后可能误杀无关进程树** ✅已修 | `TaskProcessHandle.cs:229-238`                                     |
+| **R8**   | 高   | **任务日志在全局锁内做同步文件 IO 且逐行写入，回调不及时会顶满子进程 stdout 管道** ◑部分修复 | `TaskLogger.cs:49-86`                                              |
 | H1     | 高   | 锁屏键盘钩子无条件放行数字/Enter/Backspace/Shift，而自动锁屏难以稳定夺回前台 → PIN 可能经键盘泄漏到下层窗口 ⚠️部分修复 | `KeyboardBlocker.cs:112`                     |
 | H2     | 高   | wait 模式"停止任务"被判为失败；`retry>0` 时"停止"会触发自动重启（停止形同虚设） ✅已修 | `TaskSchedulerService.cs:486,509`                        |
 | H3     | 高   | 悬浮面板菜单区无滚动/限高，模块较多时窗口超出屏幕，底部菜单（含退出）不可点击 ✅已修 | `FloatingPanelWindow.xaml:6,186`                               |
 | H4     | 高   | `PinGuard` 锁外并发调用共享的 `HostPinService.Verify`，其内部状态无同步 → 并发下可能误判 PIN ✅已修 | `HostPinService.cs:21,41`                     |
-| **R9**   | 中   | **`AudioService.RaiseDevicesChanged` 全仓无调用点，设备变化后托盘永不刷新（死代码）** | `AudioService.cs:32-35`、`IAudioService.cs:11`                      |
-| **R10**  | 中   | **宿主退出时 `killWithHost=false` 的常驻任务弹出虚假"失败"通知**                         | `TaskSchedulerService.cs:862-866`、`TaskProcessHandle.cs:153`      |
-| **R11**  | 中   | **任务加载错误使编辑器永久无法保存，用户只能手改 JSON**                                  | `TaskEditorWindow.xaml.cs:794-798`                                   |
-| **R12**  | 中   | **`TaskConfigService.Save`/`Load` 无串行化，与后台重载并发时可互相覆盖**                 | `TaskConfigService.cs:250-277`                                      |
-| **R13**  | 中   | **常驻任务各占一个线程池线程（约 10-20 个即饱和）**                                       | `TaskProcessHandle.cs:114`                                          |
-| **R14**  | 中   | **`WINDOWPOS.flags` 声明为 `uint`，清除的是 `SWP_FRAMECHANGED`(0x0020) 而注释写 `SWP_NOZORDER`(0x0004)** | `LockWindow.xaml.cs:139,157`                          |
-| **R15**  | 中   | **剪贴板历史 ToolTip 绑定未截断全文，悬停即加载超大文本**                                 | `ClipboardHistoryWindow.xaml:157`                                   |
+| **R9**   | 中   | **`AudioService.RaiseDevicesChanged` 全仓无调用点，设备变化后托盘永不刷新（死代码）** ✅已修 | `AudioService.cs:32-35`、`IAudioService.cs:11`                      |
+| **R10**  | 中   | **宿主退出时 `killWithHost=false` 的常驻任务弹出虚假"失败"通知** ✅已修 | `TaskSchedulerService.cs:862-866`、`TaskProcessHandle.cs:153`      |
+| **R11**  | 中   | **任务加载错误使编辑器永久无法保存，用户只能手改 JSON** ✅已修 | `TaskEditorWindow.xaml.cs:794-798`                                   |
+| **R12**  | 中   | **`TaskConfigService.Save`/`Load` 无串行化，与后台重载并发时可互相覆盖** ✅已修 | `TaskConfigService.cs:250-277`                                      |
+| **R13**  | 中   | **常驻任务各占一个线程池线程（约 10-20 个即饱和）** ✅已修 | `TaskProcessHandle.cs:114`                                          |
+| **R14**  | 中   | **`WINDOWPOS.flags` 声明为 `uint`，清除的是 `SWP_FRAMECHANGED`(0x0020) 而注释写 `SWP_NOZORDER`(0x0004)** ✅已修 | `LockWindow.xaml.cs:139,157`                          |
+| **R15**  | 中   | **剪贴板历史 ToolTip 绑定未截断全文，悬停即加载超大文本** ✅已修 | `ClipboardHistoryWindow.xaml:157`                                   |
 | M1     | 中   | 配置 JSON 语法损坏时静默回退默认配置启动，不提示不记日志（可能导致 PIN"丢失"触发首启向导） ✅已修 | `ConfigService.cs:266-292`                      |
 | M2     | 中   | `CommandHost` 超时后 handler 仍后台运行且不可取消；线程池被额外占用                                                      | `CommandHost.cs:119-129`                                           |
 | M3     | 中   | `int` 类型参数收到 JSON 小数（如 `5.0`）时静默降级为字符串 ✅已修         | `CommandHost.cs:199-268`                                           |
@@ -60,8 +63,8 @@
 | M11    | 中   | Job Object 挂接失败时 `killWithHost=true` 静默降级为"孤儿进程"，日志还错报为 false ✅已修 | `TaskRunner.cs:262-275`                    |
 | M12    | 中   | 任务/剪贴板/显示器设置窗口不校验热键（与 AudioSwitch/AppAutoMute 不一致），非法热键静默失效 ✅已修 | `ClipboardHistorySettingsWindow.xaml.cs:44-71` 等                   |
 | M13    | 中   | Awake 用户手动"关闭"会被任意一次配置重载撤销，表现为"关了又开" ✅已修     | `AwakeService.cs:200-204`                                          |
-| M14    | 中   | Awake 每 5 秒在 UI 线程 `Process.GetProcesses()` 全量枚举，周期性卡顿                                            | `AwakeService.cs:519-521`                                          |
-| M15    | 中   | Awake `SetSuspendState` 未启用 SE_SHUTDOWN_NAME 权限，受限账户静默失败                                          | `AwakeService.cs:392`                                              |
+| M14    | 中   | Awake 每 5 秒在 UI 线程 `Process.GetProcesses()` 全量枚举，周期性卡顿 ⏸待真机验证 | `AwakeService.cs:519-521`                                          |
+| M15    | 中   | Awake `SetSuspendState` 未启用 SE_SHUTDOWN_NAME 权限，受限账户静默失败 ✅已修 | `AwakeService.cs:392`                                              |
 | M16    | 中   | AppAutoMute 白名单模式只在"前台切换"时扫描一次，期间新起的发声进程漏静音                                                       | `AppAutoMuteModule.cs:163-247`                                     |
 | M17    | 中   | 显示器设置表单格可直接编辑，绕过 0–100 与时间格式校验；时间非法静默归零 ✅已修 | `MonitorTimeSetting.cs:30` |
 | M18    | 中   | DDC 一次 `ManagementException` 即永久禁用 WMI 回退（瞬时故障被当成"系统不支持"） ✅已修        | `MonitorDdcService.cs:679,714`                                     |
@@ -78,8 +81,9 @@
 | L1–L20 | 低   | 详见第四节（死代码、释放不完整、i18n 漏网、可访问性、测试隔离等）                                                               | —                                                                  |
 
 > 累计：严重 6 项 / 高 8 项 / 中 35 项 / 低 20 项，共 69 项（第一轮 55 项 + 第二轮新增 14 项）。
-> 状态标记：✅已修 = 已在代码中修复并经第二轮实证复核；⚠️部分 = 仅修 related 路径，根因未除；◑部分 = 部分子项已修。
+> 状态标记：✅已修 = 已在代码中修复并经实证复核；⚠️部分 = 仅修 related 路径，根因未除；◑部分 = 部分子项已修；⏸ = 需真机/多屏环境验证后再改。
 > **第二轮已逐项实证复核**：S1/S2/S3、H2/H4、M3/M4/M5/M8/M10/M11/M12/M13/M17/M18/M20/M21/M22/M23/M26 的修复均属实（修复时间 2026-10-03 22:53 之后）。
+> **第三轮修复（2026-10-04 下午，12 批）**：R1/R2/R3/R4/R5/R6/R7/R9/R10/R11/R12/R13/R14/R15/M15 已修；R8 部分修复（见第十四节）。仍未处理：H1（根因）、M2/M6/M7/M9/M14/M16/M19/M24/M25/M27/M28 及低危清单。详见第十四节与 `docs/CHANGES-20261004.md`。
 
 ---
 
@@ -546,27 +550,27 @@ bool ok = _inner.Verify(pin);                        // 读 _inner 的 Salt/Hash
 
 **P0（本迭代必修，涉及安全绕过 / 数据丢失 / 隐私）**
 
-1. **R1 锁屏托盘绕过** —— 锁屏期间禁用托盘菜单，或至少在 `IsLocked` 时拒绝打开设置窗口。
-2. **R2 `UnlockOnResume` 默认值** —— 改为 `false`，设置界面标注语义，解锁路径分来源审计。
-3. **R3 PIN 限流持久化** —— 失败计数落盘，重启不清零。
+1. ~~**R1 锁屏托盘绕过**~~ ✅已修 —— 锁定期间不输出任何托盘菜单项；设置窗口经注入的锁定态守卫拒绝保存。
+2. ~~**R2 `UnlockOnResume` 默认值**~~ ✅已修 —— 默认 `false`（含历史迁移兜底与示例配置），设置界面标注"不校验 PIN"，自动解除写审计日志。
+3. ~~**R3 PIN 限流持久化**~~ ✅已修 —— 失败计数/封锁窗口落盘 `pin-guard.json`，24h 衰减，重启不清零。
 4. ~~S2 任务编辑器字段丢失~~ ✅已修（建议补"字段往返"回归测试防复发）
 5. ~~S3 剪贴板隐私~~ ✅已修排除格式与长度上限（**存储仍明文**，见第十节）
 6. ~~S1 `Loc.T` 重载~~ ✅已修
-7. **H1 锁屏钩子与焦点解耦** —— 钩子仅在锁屏窗口确为前台时放行数字键（⚠️ 第一轮标注"部分修复"，根因未除）
+7. **H1 锁屏钩子与焦点解耦** —— 钩子仅在锁屏窗口确为前台时放行数字键（⚠️ 第一轮标注"部分修复"，根因未除；需多屏/前台切换实测）
 
 **P1（资源安全与稳定性，第二轮新增）**
 
-8. **R6 僵尸进程 + Job 句柄泄漏**、**R7 `KillTree` 误杀风险** —— 二者都是资源安全边界，建议同批修复。
-9. **R4 常驻任务守护链**、**R5 托盘菜单消失** —— 用户不可见但影响持久。
-10. **R8 任务日志管道阻塞**。
+8. ~~**R6 僵尸进程 + Job 句柄泄漏**~~、~~**R7 `KillTree` 误杀风险**~~ ✅已修 —— 二者已同批修复。
+9. ~~**R4 常驻任务守护链**~~、~~**R5 托盘菜单消失**~~ ✅已修。
+10. **R8 任务日志管道阻塞** —— ◑部分修复：已去掉全局锁并把单条代价从约 8 次文件系统操作降到 1 次开+写+关；根治（输出回调永不阻塞 + flush 屏障）需改调用链，见第十四节。
 11. ~~H2 wait 模式停止语义~~ ✅已修；~~H3 悬浮面板滚动~~ ✅已修；~~H4 PIN 并发~~ ✅已修（但见 R3）。
 12. **M2 命令内核超时不可取消**（需接口变更）；~~M3~~ ✅已修。
 
 **P2（质量与体验）**
 
-13. **R9 音频设备刷新死代码**（用户可见：插拔耳机后菜单不更新）、**R10 虚假失败通知**、**R11 编辑器保存死锁**、**R12 配置并发覆盖**、**R13 线程池占用**。
-14. M8/M9 Cron 语义；M26 CLI 编码；M27 安装脚本 i18n；M28 测试断言与隔离；M5 日志轮转；R14/R15 及其余低危项。
-15. 待实机验证项：M19/M24（多屏 DPI）、M15（受限账户睡眠）、M16（白名单轮询）、M6/M7（常驻任务治理）。
+13. ~~**R9 音频设备刷新死代码**~~、~~**R10 虚假失败通知**~~、~~**R11 编辑器保存死锁**~~、~~**R12 配置并发覆盖**~~、~~**R13 线程池占用**~~ ✅已修。
+14. ~~R14/R15~~ ✅已修；M8/M9 Cron 语义；M26 CLI 编码 ✅已修；M27 安装脚本 i18n；M28 测试断言与隔离；M5 日志轮转 ✅已修；~~M15~~ ✅已修。
+15. 待实机验证项：M19/M24（多屏 DPI）、M16（白名单轮询）、M14（后台进程快照）、M6/M7（常驻任务治理）、M25（编辑器脏检查）。
 
 ---
 
@@ -641,9 +645,82 @@ bool ok = _inner.Verify(pin);                        // 读 _inner 的 Salt/Hash
 
 按优先级：**R1/R2/R3**（锁屏绕过，会话解锁免 PIN，PIN 限流可绕）→ **R6/R7**（僵尸进程与误杀风险）→ **R4/R5/R8**（守护链、托盘消失、管道阻塞）→ **R9-R15**（音频刷新死代码、虚假通知、编辑器保存死锁、配置并发、线程池、DDC 注释不符、ToolTip 全文）。
 
+> **2026-10-04 下午更新**：上述 14 项中 R1/R2/R3/R4/R5/R6/R7/R9/R10/R11/R12/R13/R14/R15 已修，R8 部分修复。逐批明细见**第十四节**。
+
 ### 澄清与更正
 
 - **第一轮 M20 已修复**，相关"非 UI 线程误报成功"结论对当前代码已过期。
 - **`SendARP` 字节序经算术验证为正确**，切勿按"应改大端"的建议修改（详见第四节）。
 - **S3 的"明文落盘"部分未解决**：已加排除格式与长度上限，但 `history.json` 仍为明文 JSON（全仓 `Protect|Encrypt|Aes|CryptProtect` 零命中），敏感内容仍可被同用户进程直接读取。建议后续用 DPAPI 加密存储层。
 - **测试基线**：315 通过 / 0 失败 / 0 跳过（较第一轮记录的 312 增加 3 个回归用例）。
+
+---
+
+## 十四、第三轮修复进展（2026-10-04 下午）
+
+按"改动小、收益大、风险低"排序，**分 12 批独立提交**，每批只动互不重叠的文件集（批次之间刻意不复用同一文件），每批均编译（0 警告 0 错误）并跑全量单测。
+
+### 已修复
+
+| 批次 | 编号 | 主题 | 涉及文件 |
+|---|---|---|---|
+| 1 | R1 / R2 | 锁屏安全边界：托盘菜单在锁定态禁用、设置窗口锁定守卫、`UnlockOnResume` 默认改 `false`、自动解除写审计 | `ScreenLockModule.cs`、`ScreenLockSettingsWindow.*`、`ScreenLockConfig.cs`、`ConfigService.cs`、语言包 |
+| 2 | R3 | PIN 失败计数/封锁窗口落盘 `pin-guard.json`，24h 衰减 | `PinService.cs`、`App.xaml.cs` |
+| 3 | R4 / R5 / R10 | 任务存活改按名字匹配；`GetRecent()`/`Tasks` 返回快照；宿主退出时置位 `StopRequested` | `TaskSchedulerService.cs` |
+| 4 | R6 | 启动失败按"句柄是否已接管"回收进程与作业对象；`ProcessJob` 补终结器 | `TaskRunner.cs`、`ProcessJob.cs` |
+| 5 | R7 / R13 | `taskkill` 前校验 pid 归属；等待退出改用 `Process.Exited`，不再占用线程池线程 | `TaskProcessHandle.cs` |
+| 6 | R8 | 任务日志锁粒度降到每文件一把、目录检查去重、轮转检查限频 | `TaskLogger.cs` |
+| 7 | R11 | 加载错误改为"告知代价 + 用户选择"，保存成功后清空 | `TaskEditorWindow.xaml.cs`、语言包 |
+| 8 | R12 | `tasks.json` 的 Save/Load/LoadOrCreate 共用一把锁 | `TaskConfigService.cs` |
+| 9 | R14 | `WINDOWPOS.flags` 改为 `ushort`；清除 `SWP_NOZORDER` 而非 `SWP_FRAMECHANGED` | `LockWindow.xaml.cs` |
+| 10 | R15 | 剪贴板 ToolTip 改绑 `ToolTipText`（上限 1000 字符） | `ClipboardItem.cs`、`ClipboardHistoryWindow.xaml` |
+| 11 | M15 | 睡眠前启用 `SE_SHUTDOWN_NAME`，并纠正"`true` + 非零 lastError"的误判 | `AwakeService.cs` |
+| 12 | R9 | 消息专用窗口 + `RegisterDeviceNotification` 设备变化桥接（400ms 去抖 + 按默认端点 Id 过滤） | `AudioService.cs`、`App.xaml.cs`、语言包 |
+
+### 部分修复
+
+- **R8（任务日志管道阻塞）**：审查建议的"内存队列 + 单写线程"经实测**不可直接采用** ——
+  - 异步落盘会破坏读后写一致性（任务日志是用户可见的排障入口，编辑器"查看日志"与单测都在写入后立刻读文件）；
+  - 常开追加流会与 `File.ReadAllText`（`FileShare.Read`）双向共享冲突，实测 9 个既有用例直接失败（"文件正被另一进程使用"）。
+  - 已落地的替代方案：全局锁改为每文件一把锁、单条代价从约 8 次文件系统操作降到 1 次开+写+关、目录检查去重、轮转检查按路径限频。真正的根治（输出回调永不阻塞 + 显式 flush 屏障）需要改调用链，留待专项评估。
+
+### 修复过程中新发现并已修掉的问题
+
+- `AudioService` 的 `StartDeviceNotifications` 若依赖 `Application.Current.Dispatcher`，在 Dispatcher 已关闭时 `Invoke` 会**永久阻塞**（全量测试直接挂起 15 分钟）。已加关闭态短路，并让调用方显式传入 Dispatcher。
+- `ProcessJob` 缺少终结器意味着"异常路径漏调 `Dispose`"= 句柄真泄漏（`SafeJobHandle` 只在拥有者被 GC 时才终结）。
+
+### 回归测试
+
+新增 **21 个**用例，其中 5 个经"回退修复 → 确认失败 → 恢复修复 → 确认通过"实证确实能捕获对应缺陷：
+
+- `ScreenLockSecurityTests`（4）：`UnlockOnResume` 默认值与 Clone、设置窗口锁定守卫（含探测抛异常兜底）、未锁定时托盘菜单不被误伤。
+- `PinServiceTests`（3）：失败计数跨实例（等价重启）存活、复位后状态文件清除、未注入路径时不落盘、状态文件损坏时优雅降级。
+- `TaskPersistentRunTests`（3）：配置重载后 detach 守护链继续重启、`GetRecent` 返回快照、进程已退出后停止必须跳过 taskkill。
+- `TaskRunnerTests`（1）：日志写后立即可读 + 8 线程 × 40 行并发不丢行。
+- `ConfigPersistenceTests`（1）：并发 Save/Load 下每次读取都完整无解析错误。
+- `ScreenLockWindowTests`（1）：`WINDOWPOS` 封送布局。
+- `ClipboardHistoryModuleTests`（1）：ToolTip 文本截断。
+- `ComInteropTests`（2）：`ProcessJob` 必须声明终结器、创建/重复释放幂等。
+- `AwakeCapabilityTests`（1）：特权启用入口签名 + 调用顺序（不真正睡眠）。
+- `AudioDeviceChangeTests`（4）：设备变化刷新链路、`RaiseDevicesChanged` 入口、宿主启动确有调用点、服务 Start/Stop/Dispose 幂等。
+
+### 仍未处理
+
+| 编号 | 原因 |
+|---|---|
+| **H1** 锁屏钩子与焦点解耦 | 需非 100% 缩放 + 多显示器 + 前台切换实测；改动涉及键盘钩子与窗口激活，风险高 |
+| **M2** `CommandHost` 超时后 handler 不可取消 | 需为能力 handler 引入 `CancellationToken`，属接口变更 |
+| **M6** 单实例互斥体跨宿主语义 | 互斥体由宿主持有，`killWithHost=false` 时宿主退出即销毁；需专项设计与测试 |
+| **M7** `AllowConcurrent` 时运行槽被覆盖 | 需重构运行注册表为"每任务多实例"模型，改动面较大 |
+| **M9** Cron `5/2` 语义 | 属行为变更（会改变既有用户的触发次数），需产品确认 |
+| **M14** Awake UI 线程全量枚举进程 | 需评估后台快照的线程安全边界，且需实测避免抖动 |
+| **M16** AppAutoMute 白名单轮询周期 | 涉及静音状态机，需实测 |
+| **M19 / M24** 多显示器 DPI 与副屏定位 | 需非 100% 缩放 + 多屏实测 |
+| **M25 / M27** 编辑器脏检查、安装脚本 i18n | 改动面与收益比偏低，留待后续 |
+| **M28** 测试质量 | 布局自检正则、时序脆弱用例未改（详见第二节说明） |
+| **低危 L1–L20** | 多数为释放不规范与维护噪音，逐条修改的收益/风险比不划算 |
+| **S3 明文存储** | 建议后续用 DPAPI 加密 `history.json` 存储层 |
+
+### 测试基线
+
+**336 通过 / 0 失败 / 0 跳过**（第一轮 312 → 第二轮 315 → 第三轮 336），每批均实际执行 `dotnet build`（0 警告 0 错误）与 `dotnet test`。
