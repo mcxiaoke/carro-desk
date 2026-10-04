@@ -154,5 +154,25 @@ namespace CarroDesk.Common
             try { CloseHandle(handle); }
             catch (Exception ex) { Debug.WriteLine("[ProcessJob] CloseHandle failed: " + ex.Message); }
         }
+
+        /// <summary>
+        /// 兜底终结器：<see cref="Dispose"/> 因异常路径被漏调时，SafeHandle 不会自动终结，
+        /// 作业句柄会真泄漏（SafeJobHandle 仅在 ProcessJob 自身被 GC 回收时才关闭）。
+        /// 终结器只做"关闭句柄"，不抛异常——终结器里抛出会终结整个进程。
+        /// 正常路径仍是 Dispose 显式调用，这里只是最后一道防线。
+        /// </summary>
+        ~ProcessJob()
+        {
+            try
+            {
+                var handle = _handle;
+                _handle = IntPtr.Zero;
+                if (handle != IntPtr.Zero) CloseHandle(handle);
+            }
+            catch
+            {
+                // 终结器中绝不抛出
+            }
+        }
     }
 }

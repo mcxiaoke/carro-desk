@@ -235,9 +235,18 @@ namespace CarroDesk.Services.Tasks
 
             TaskLogger.Info(task.Name, "triggered(" + reason + ") -> starting: " + psi.FileName + " " + psi.Arguments + " [workDir=" + workDir + "]");
 
+            // proc/job/startedHandle 必须在 try 外声明：catch 分支要靠它们回收资源。
+            // 进程在 proc.Start() 成功后即已存在，此后的任何异常（典型如进程瞬退时
+            // BeginOutputReadLine 抛 InvalidOperationException）若只做 handle=null，
+            // 会留下一个无人持有的僵尸进程（调用方拿到 false，没人能 Stop 它），
+            // 同时 job 作为局部变量连 SafeHandle 的终结器都等不到 —— 句柄真泄漏，
+            // 且 kill-on-close 兜底因为句柄永不关闭而彻底失效。
+            Process proc = null;
+            ProcessJob job = null;
+            TaskProcessHandle startedHandle = null;
             try
             {
-                var proc = new Process { StartInfo = psi, EnableRaisingEvents = true };
+                proc = new Process { StartInfo = psi, EnableRaisingEvents = true };
 
                 // 输出回调在线程池线程执行：只做逐行落日志（TaskLogger 自身保证线程安全）。
                 proc.OutputDataReceived += (s, e) =>
@@ -254,13 +263,13 @@ namespace CarroDesk.Services.Tasks
                 if (!proc.Start())
                 {
                     TaskLogger.Error(task.Name, "failed to start process");
+                    try { proc.Dispose(); } catch { }
                     return false;
                 }
 
                 // killWithHost=true（默认）时挂 kill-on-close 作业对象：宿主退出连带回收整棵树。
                 // false 时不挂作业对象——宿主退出后进程继续存活，停止走 taskkill /T /F 降级链。
                 bool attachJob = task.Options == null || task.Options.KillWithHost;
-                ProcessJob job = null;
                 if (attachJob)
                 {
                     job = ProcessJob.TryCreate();
@@ -277,7 +286,8 @@ namespace CarroDesk.Services.Tasks
                     }
                 }
 
-                handle = new TaskProcessHandle(task, proc, job);
+                startedHandle = new TaskProcessHandle(task, proc, job);
+                handle = startedHandle;
                 TaskLogger.Info(task.Name, "started pid=" + handle.Pid + (job == null ? " [detached from host]" : ""));
                 proc.BeginOutputReadLine();
                 proc.BeginErrorReadLine();
@@ -287,6 +297,31 @@ namespace CarroDesk.Services.Tasks
             {
                 TaskLogger.Error(task.Name, "exception: " + ex);
                 handle = null;
+                // 回收已启动的进程与句柄，绝不把资源留给 GC（详见上方注释）
+                try
+                {
+                    if (startedHandle != null)
+                    {
+                        // 句柄已接管：由它停止整棵树并释放 job/互斥体
+                        startedHandle.Stop();
+                        startedHandle.Dispose();
+                    }
+                    else
+                    {
+                        // 句柄尚未接管：手动收尾。job.Dispose() 在 kill-on-close 已生效时
+                        // 同样会连带终止进程树，其余情况用 Kill 兜底。
+                        try { if (job != null) job.Dispose(); } catch { }
+                        if (proc != null)
+                        {
+                            try { if (!proc.HasExited) proc.Kill(); } catch { }
+                            try { proc.Dispose(); } catch { }
+                        }
+                    }
+                }
+                catch (Exception cleanupEx)
+                {
+                    TaskLogger.Warn(task.Name, "cleanup after start failure error: " + cleanupEx.Message);
+                }
                 return false;
             }
         }
