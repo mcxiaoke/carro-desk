@@ -42,6 +42,21 @@ namespace CarroDesk.Services.Tasks
         /// </summary>
         public const int CurrentSchemaVersion = 1;
 
+        /// <summary>
+        /// tasks.json 的跨线程串行化锁。
+        ///
+        /// 本类是纯静态类、无实例状态，<see cref="Save"/>（全量覆盖写）与
+        /// <see cref="Load"/>/<see cref="LoadOrCreate"/>（读 + 可能的自愈重建）此前完全没有互斥：
+        /// 任务编辑器在 UI 线程保存的同时，调度器可能正在后台 Reload → Load。
+        /// AtomicFile 只保证单次写入自身是原子的，保证不了"读到的内容与写入的先后关系"，
+        /// 于是出现"保存成功但调度器仍用旧配置"（或反之）的交错窗口。
+        ///
+        /// 锁序：只在本类的公开入口获取，内部不嵌套调用其它需要该锁的方法；
+        /// Monitor 可重入，因此 <see cref="LoadOrCreate"/> → <see cref="Load"/> 的嵌套是安全的。
+        /// 临界区只包含文件 IO（毫秒级），不会长时间占用调用线程。
+        /// </summary>
+        private static readonly object FileIoLock = new object();
+
         public static string FilePath
         {
             get { return ConfigService.TaskFilePath; }
@@ -53,6 +68,14 @@ namespace CarroDesk.Services.Tasks
         }
 
         public static TaskLoadResult LoadOrCreate()
+        {
+            lock (FileIoLock)
+            {
+                return LoadOrCreateLocked();
+            }
+        }
+
+        private static TaskLoadResult LoadOrCreateLocked()
         {
             var result = new TaskLoadResult();
             try
@@ -96,10 +119,19 @@ namespace CarroDesk.Services.Tasks
                 catch { }
             }
 
-            return Load();
+            // 已在 FileIoLock 内；Monitor 可重入，直接调内部实现避免无意义的再次加锁
+            return LoadLocked();
         }
 
         public static TaskLoadResult Load()
+        {
+            lock (FileIoLock)
+            {
+                return LoadLocked();
+            }
+        }
+
+        private static TaskLoadResult LoadLocked()
         {
             var result = new TaskLoadResult();
             try
@@ -248,6 +280,15 @@ namespace CarroDesk.Services.Tasks
         }
 
         public static void Save(List<TaskDefinition> tasks)
+        {
+            // 与 Load/LoadOrCreate 同一把锁：避免"保存成功但调度器仍用旧配置"的交错窗口。
+            lock (FileIoLock)
+            {
+                SaveLocked(tasks);
+            }
+        }
+
+        private static void SaveLocked(List<TaskDefinition> tasks)
         {
             if (tasks == null) tasks = new List<TaskDefinition>();
             var dir = ConfigService.DirPath;

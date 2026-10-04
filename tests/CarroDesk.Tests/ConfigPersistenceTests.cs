@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using CarroDesk.Common;
 using CarroDesk.Models;
 using CarroDesk.Services;
@@ -184,6 +186,76 @@ namespace CarroDesk.Tests
             Assert.AreEqual(1, result.Tasks.Count);
             Assert.AreEqual(TaskTriggerType.Interval, result.Tasks[0].Trigger.Type);
             Assert.AreEqual("interval", TaskConfigService.GetCanonicalTriggerTag(result.Tasks[0].Trigger.Type));
+        }
+
+        /// <summary>
+        /// Save（UI 线程全量覆盖）与 Load（调度器后台重载）必须互斥。
+        ///
+        /// TaskConfigService 是纯静态类，此前 Save/Load/LoadOrCreate 完全没有互斥：
+        /// AtomicFile 只保证单次写入自身原子，保证不了"读到的内容与写入的先后关系"，
+        /// 于是存在"保存成功但调度器仍用旧配置"的交错窗口。这里让两个线程同时读写，
+        /// 每次读取都必须拿到一份完整且自洽的任务列表（数量与解析结果一致）。
+        /// </summary>
+        [TestMethod]
+        public void TaskConfig_SaveAndLoad_AreSerializedAcrossThreads()
+        {
+            var probeScript = "C:\\temp\\probe.bat";
+            const int taskCount = 40;
+
+            var expected = new List<TaskDefinition>();
+            for (int i = 0; i < taskCount; i++)
+            {
+                expected.Add(new TaskDefinition
+                {
+                    Name = "t_par_" + i.ToString("D3"),
+                    Enabled = true,
+                    Trigger = new TaskTrigger { Type = TaskTriggerType.Manual },
+                    Action = new TaskAction { File = probeScript },
+                    Options = new TaskOptions { Hidden = true }
+                });
+            }
+
+            Exception failure = null;
+            var stop = false;
+
+            var writer = new Thread(() =>
+            {
+                try
+                {
+                    while (!Volatile.Read(ref stop))
+                    {
+                        TaskConfigService.Save(expected);
+                    }
+                }
+                catch (Exception ex) { Interlocked.CompareExchange(ref failure, ex, null); }
+            });
+
+            var reader = new Thread(() =>
+            {
+                try
+                {
+                    for (int round = 0; round < 20 && failure == null; round++)
+                    {
+                        var result = TaskConfigService.Load();
+                        Assert.AreEqual(0, result.Errors.Count,
+                            "并发读写下不得读到半截文件（解析错误）");
+                        Assert.AreEqual(taskCount, result.Tasks.Count,
+                            "并发读写下读到的任务数必须完整");
+                    }
+                }
+                catch (Exception ex) { Interlocked.CompareExchange(ref failure, ex, null); }
+            });
+
+            writer.IsBackground = true;
+            reader.IsBackground = true;
+            writer.Start();
+            reader.Start();
+
+            Assert.IsTrue(reader.Join(TimeSpan.FromSeconds(60)), "读线程未在预期时间内结束");
+            Volatile.Write(ref stop, true);
+            Assert.IsTrue(writer.Join(TimeSpan.FromSeconds(30)), "写线程未在预期时间内结束");
+
+            if (failure != null) Assert.Fail("并发 Save/Load 失败: " + failure);
         }
 
         // ---------- P2-4 PIN pending 与 current 语义一致 ----------
