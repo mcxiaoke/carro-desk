@@ -71,6 +71,12 @@ namespace CarroDesk.Tests
             }
         }
 
+        private static string ReadTaskLog(string taskName)
+        {
+            string path = TaskLogger.GetTaskLogPath(taskName);
+            return File.Exists(path) ? File.ReadAllText(path, Encoding.UTF8) : string.Empty;
+        }
+
         private static void WaitUntil(Func<bool> condition, TimeSpan timeout, string what)
         {
             var sw = Stopwatch.StartNew();
@@ -211,6 +217,34 @@ namespace CarroDesk.Tests
             handle.Stop();
             WaitUntil(() => !IsProcessAlive(handle.Pid), TimeSpan.FromSeconds(5),
                 "Stop 后子进程 " + handle.Pid + " 仍存活（killWithHost=false 路径）");
+        }
+
+        /// <summary>
+        /// 进程已退出后停止：必须跳过 taskkill。
+        ///
+        /// taskkill /PID /T /F 是本模块唯一能杀"非本模块启动的进程"的路径，而 pid 在 Windows 上
+        /// 回收极快：实例自然退出而运行槽未清理时，Stop 会对一个已被系统重新分配给无关进程的
+        /// pid 执行 taskkill，连该进程及其整棵子树一起杀掉。这里验证归属校验在危险场景下确实生效。
+        /// </summary>
+        [TestMethod]
+        public void Stop_AfterProcessExited_SkipsTaskkill()
+        {
+            string bat = WriteExitBat("already-gone.bat", 0);
+            var task = NewDetachTask("t_pid_guard", bat, killWithHost: false);
+
+            TaskProcessHandle handle;
+            Assert.AreEqual(0, TaskRunner.StartDetached(task, "unit-test", out handle), "启动应成功");
+
+            // 等进程真正消失（但句柄尚未 Stop，槽位仍被认为在运行 —— 正是 pid 可能被复用的窗口）
+            WaitUntil(() => !IsProcessAlive(handle.Pid), TimeSpan.FromSeconds(15),
+                "子进程应自然退出");
+
+            handle.Stop();
+
+            string log = ReadTaskLog("t_pid_guard");
+            StringAssert.Contains(log, "skip taskkill",
+                "进程已退出时必须跳过 taskkill，否则 pid 复用后会误杀无关进程树。任务日志:\n" + log);
+            handle.Dispose();
         }
 
         // ---------- 调度器运行注册表 ----------

@@ -29,6 +29,14 @@ namespace CarroDesk.Services.Tasks
         private bool _disposed;
         private TaskSingleInstanceMutex _singleInstanceMutex;
 
+        /// <summary>
+        /// 进程真实创建时刻（UTC），构造时读一次。
+        /// pid 在 Windows 上回收极快，原进程自然退出后同一 pid 可能已被分配给无关进程；
+        /// 无条件 `taskkill /PID` 会连该进程及其整棵子树一起杀掉。停止时用它做归属校验。
+        /// 读不到时为 MinValue，表示"无法判定"，校验退化为放行（保持既有行为）。
+        /// </summary>
+        private readonly DateTime _procStartUtc;
+
         internal TaskProcessHandle(TaskDefinition task, Process proc, ProcessJob job)
         {
             _task = task;
@@ -39,6 +47,7 @@ namespace CarroDesk.Services.Tasks
             int pid = -1;
             try { pid = proc.Id; } catch { }
             Pid = pid;
+            try { _procStartUtc = proc.StartTime.ToUniversalTime(); } catch { _procStartUtc = DateTime.MinValue; }
         }
 
         // 属性名不能用 Task：会遮蔽 System.Threading.Tasks.Task 类型名，导致类内 Task.Run 等调用编译失败
@@ -91,7 +100,7 @@ namespace CarroDesk.Services.Tasks
                     using (var stopCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
                     {
                         if (timeoutSec > 0) stopCts.CancelAfter(TimeSpan.FromSeconds(timeoutSec));
-                        var waitTask = Task.Run(() => _proc.WaitForExit());
+                        var waitTask = WaitForExitAsync();
                         var completed = await Task.WhenAny(waitTask, Task.Delay(Timeout.Infinite, stopCts.Token)).ConfigureAwait(false);
 
                         if (completed != waitTask)
@@ -119,11 +128,17 @@ namespace CarroDesk.Services.Tasks
                 }
                 else
                 {
-                    await Task.Run(() => _proc.WaitForExit()).ConfigureAwait(false);
+                    await WaitForExitAsync().ConfigureAwait(false);
                 }
 
-                // 无参 WaitForExit() 会等待异步输出回调处理完毕并 flush 输出缓冲，确保最后几行日志不丢
-                try { await Task.Run(() => _proc.WaitForExit()).ConfigureAwait(false); } catch { }
+                // 无参 WaitForExit() 会等待异步输出回调处理完毕并 flush 输出缓冲，确保最后几行日志不丢。
+                // 进程此时已退出，正常是即时返回；仍加 5 秒上限并用 WhenAny 而非 Wait，避免任何情况下
+                // 在异步续体里阻塞线程池线程（句柄可能已被宿主退出清理释放）。
+                try
+                {
+                    await Task.WhenAny(Task.Run(() => _proc.WaitForExit()), Task.Delay(TimeSpan.FromSeconds(5))).ConfigureAwait(false);
+                }
+                catch { }
 
                 int exitCode = -1;
                 try { exitCode = _proc.HasExited ? _proc.ExitCode : -1; } catch { }
@@ -182,7 +197,7 @@ namespace CarroDesk.Services.Tasks
                 if (_job != null) _job.Dispose();   // kill-on-close 连带整棵树
             }
             catch { }
-            try { KillTree(_proc, Pid); } catch { }
+            try { KillTree(); } catch { }
             // 停止即实例终结：立即释放单实例互斥体（正常路径由 watcher 的 Dispose 释放，
             // 这里兜底覆盖无 watcher 的停止路径），保证随后的启动/重启能立即取到互斥体
             try { if (_singleInstanceMutex != null) _singleInstanceMutex.Dispose(); } catch { }
@@ -221,26 +236,118 @@ namespace CarroDesk.Services.Tasks
             }
         }
 
-        private static void KillTree(Process proc, int pid)
+        /// <summary>
+        /// 等待进程退出，不占用线程池线程。
+        ///
+        /// detach（常驻）模式被强制为 timeoutSec=0 + CancellationToken.None，.NET Framework 又没有
+        /// Process.WaitForExitAsync，于是旧实现只能 <c>Task.Run(() =&gt; _proc.WaitForExit())</c>，
+        /// 让每个常驻任务独占一个线程池线程直到它自然退出——十几个常驻任务就能把线程池占满，
+        /// 拖慢所有依赖 Task.Run 的路径（输出回调、触发器派发等）。
+        ///
+        /// 这里改为订阅 Process.Exited 事件（底层是线程池注册的等待回调，不占线程）。
+        /// EnableRaisingEvents 可能在订阅之前进程就已退出，因此订阅后必须补一次 HasExited 检查；
+        /// 注册失败则退回阻塞等待，保证不会漏掉退出事件。
+        /// </summary>
+        private Task WaitForExitAsync()
         {
+            var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             try
             {
-                // taskkill /T /F 按 pid 杀整棵树；不依赖 proc 对象（句柄 Dispose 后仍可用）
+                _proc.EnableRaisingEvents = true;
+                EventHandler handler = null;
+                handler = (s, e) =>
+                {
+                    try { _proc.Exited -= handler; } catch { }
+                    tcs.TrySetResult(true);
+                };
+                _proc.Exited += handler;
+
+                // 竞态兜底：EnableRaisingEvents 之前进程已退出时不会再有事件
                 try
                 {
-                    var searcherCmd = "taskkill /PID " + pid + " /T /F";
-                    var psi = new ProcessStartInfo("cmd.exe", "/c " + searcherCmd)
+                    if (_proc.HasExited)
                     {
-                        CreateNoWindow = true,
-                        UseShellExecute = false,
-                        WindowStyle = ProcessWindowStyle.Hidden
-                    };
-                    using (var p = Process.Start(psi)) { if (p != null) p.WaitForExit(5000); }
+                        try { _proc.Exited -= handler; } catch { }
+                        tcs.TrySetResult(true);
+                    }
                 }
-                catch { }
-                try { if (proc != null && !proc.HasExited) proc.Kill(); } catch { }
+                catch
+                {
+                    // 句柄已被释放（宿主退出清理）：视为已退出，避免永久挂起
+                    try { _proc.Exited -= handler; } catch { }
+                    tcs.TrySetResult(true);
+                }
+            }
+            catch
+            {
+                return Task.Run(() => _proc.WaitForExit());
+            }
+            return tcs.Task;
+        }
+
+        private void KillTree()
+        {
+            int pid = Pid;
+            try
+            {
+                // taskkill /T /F 按 pid 杀整棵树；不依赖 proc 对象（句柄 Dispose 后仍可用）。
+                // 但 taskkill 是本模块唯一能杀"非本模块启动的进程"的路径，必须先校验 pid 归属：
+                // detach 实例可能已自然退出而槽位未清理，pid 被系统回收后分配给无关进程，
+                // 此时 taskkill 会杀掉一个完全无关的进程树（/T 还连带其所有子进程）。
+                if (IsPidOwnedByTask(pid, _procStartUtc))
+                {
+                    try
+                    {
+                        var searcherCmd = "taskkill /PID " + pid + " /T /F";
+                        var psi = new ProcessStartInfo("cmd.exe", "/c " + searcherCmd)
+                        {
+                            CreateNoWindow = true,
+                            UseShellExecute = false,
+                            WindowStyle = ProcessWindowStyle.Hidden
+                        };
+                        using (var p = Process.Start(psi)) { if (p != null) p.WaitForExit(5000); }
+                    }
+                    catch { }
+                }
+                else
+                {
+                    TaskLogger.Warn(_task?.Name,
+                        "skip taskkill: pid " + pid + " no longer belongs to this task (process exited or pid recycled)");
+                }
+                try { if (_proc != null && !_proc.HasExited) _proc.Kill(); } catch { }
             }
             catch { }
+        }
+
+        /// <summary>
+        /// pid 归属校验：比对当前 pid 持有者的进程创建时间与本进程记录的真实创建时刻。
+        ///
+        /// 判定结果：
+        ///   true  = 同一进程（或无法判定，如权限不足），允许 taskkill；
+        ///   false = pid 不存在 / 已退出 / 已被复用为更晚启动的无关进程，必须跳过。
+        /// </summary>
+        private static bool IsPidOwnedByTask(int pid, DateTime expectedStartUtc)
+        {
+            if (pid <= 0) return false;
+
+            Process current;
+            try { current = Process.GetProcessById(pid); }
+            catch (ArgumentException) { return false; }          // pid 已不存在
+            catch (InvalidOperationException) { return false; }  // 进程已退出
+            catch { return true; }                                // 取不到（如权限）：保守放行
+
+            using (current)
+            {
+                if (expectedStartUtc == DateTime.MinValue) return true; // 构造时没读到创建时间
+                try
+                {
+                    DateTime actual = current.StartTime.ToUniversalTime();
+                    // 允许 2 秒容差：构造句柄与读取 StartTime 之间存在毫秒级取整偏差。
+                    // 明显晚于记录时刻 => pid 已被系统回收复用。
+                    return actual <= expectedStartUtc.AddSeconds(2);
+                }
+                catch { return true; }
+            }
         }
     }
 }
