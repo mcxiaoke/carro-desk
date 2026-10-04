@@ -210,6 +210,59 @@ namespace CarroDesk.Tests
             Assert.AreEqual(new DateTime(2028, 2, 29, 0, 0, 0), next.Value);
         }
 
+        /// <summary>
+        /// 裸值带步长（"5/2"）按标准 cron 展开为 5,7,9…
+        /// 原实现 end=start=5，只在第 5 分钟触发，与标准语义不一致。
+        /// </summary>
+        [TestMethod]
+        public void IsMatch_ValueWithStep_ExpandsToStepSequence()
+        {
+            // 5/2 → 5,7,9,11…
+            Assert.IsTrue(CronHelper.IsMatch(new DateTime(2026, 9, 18, 14, 5, 0), "5/2 * * * *"));
+            Assert.IsTrue(CronHelper.IsMatch(new DateTime(2026, 9, 18, 14, 7, 0), "5/2 * * * *"));
+            Assert.IsTrue(CronHelper.IsMatch(new DateTime(2026, 9, 18, 14, 59, 0), "5/2 * * * *"));
+            Assert.IsFalse(CronHelper.IsMatch(new DateTime(2026, 9, 18, 14, 6, 0), "5/2 * * * *"),
+                "偶数分钟不应被 5/2 命中");
+            Assert.IsFalse(CronHelper.IsMatch(new DateTime(2026, 9, 18, 14, 4, 0), "5/2 * * * *"),
+                "起点之前的分钟不应命中");
+
+            // 小时字段同理：3/5 → 3,8,13,18,23
+            Assert.IsTrue(CronHelper.IsMatch(new DateTime(2026, 9, 18, 13, 0, 0), "0 3/5 * * *"));
+            Assert.IsFalse(CronHelper.IsMatch(new DateTime(2026, 9, 18, 14, 0, 0), "0 3/5 * * *"));
+
+            // 星期字段：5/2 → 周五(5) 与周日(7≡0)
+            Assert.IsTrue(CronHelper.IsMatch(new DateTime(2026, 9, 18, 14, 0, 0), "0 14 * * 5/2"),
+                "2026-09-18 是周五，应命中");
+            Assert.IsTrue(CronHelper.IsMatch(new DateTime(2026, 9, 20, 14, 0, 0), "0 14 * * 5/2"),
+                "2026-09-20 是周日（7≡0），应命中");
+            Assert.IsFalse(CronHelper.IsMatch(new DateTime(2026, 9, 19, 14, 0, 0), "0 14 * * 5/2"),
+                "周六不应命中");
+
+            // 回归：显式区间与 * 的步长语义不变（10-20/2 → 10,12,…,20，不含 15）
+            Assert.IsTrue(CronHelper.IsMatch(new DateTime(2026, 9, 18, 14, 16, 0), "10-20/2 * * * *"));
+            Assert.IsFalse(CronHelper.IsMatch(new DateTime(2026, 9, 18, 14, 15, 0), "10-20/2 * * * *"));
+            Assert.IsFalse(CronHelper.IsMatch(new DateTime(2026, 9, 18, 14, 21, 0), "10-20/2 * * * *"));
+            Assert.IsTrue(CronHelper.IsMatch(new DateTime(2026, 9, 18, 14, 10, 0), "*/10 * * * *"));
+            Assert.IsFalse(CronHelper.IsMatch(new DateTime(2026, 9, 18, 14, 11, 0), "*/10 * * * *"));
+            // step=1 时等同精确值
+            Assert.IsTrue(CronHelper.IsMatch(new DateTime(2026, 9, 18, 14, 7, 0), "7/1 * * * *"));
+            Assert.IsFalse(CronHelper.IsMatch(new DateTime(2026, 9, 18, 14, 9, 0), "7/1 * * * *"));
+        }
+
+        [TestMethod]
+        public void GetNextOccurrence_ValueWithStep_FindsRealNextTrigger()
+        {
+            // 之前 5/2 只在第 5 分钟有触发点；从14:06 起算，下一次应是 14:07
+            var next = CronHelper.GetNextOccurrence("5/2 * * * *", new DateTime(2026, 9, 18, 14, 6, 0));
+            Assert.IsNotNull(next, "5/2 应有后续触发点");
+            Assert.AreEqual(new DateTime(2026, 9, 18, 14, 7, 0), next.Value);
+
+            // 跨过当天最后一个触发点后应落到次小时
+            var nextHour = CronHelper.GetNextOccurrence("5/2 * * * *", new DateTime(2026, 9, 18, 14, 59, 30));
+            Assert.IsNotNull(nextHour);
+            Assert.AreEqual(new DateTime(2026, 9, 18, 15, 5, 0), nextHour.Value);
+        }
+
         [TestMethod]
         public void GetNextOccurrence_UnreachableExpression_ReturnsNull()
         {
@@ -244,6 +297,12 @@ namespace CarroDesk.Tests
             trigger.Dispose();
 
             Assert.AreEqual(0, fired, "不可达表达式不应触发");
+
+            // 必须留痕：否则触发器彻底静默失效，用户只看到"任务从不定时跑"
+            string logPath = TaskLogger.GetTaskLogPath("t_cron");
+            string log = System.IO.File.Exists(logPath) ? System.IO.File.ReadAllText(logPath) : string.Empty;
+            StringAssert.Contains(log, "no occurrence within 8 years",
+                "不可达表达式必须写告警日志");
         }
 
         [TestMethod]

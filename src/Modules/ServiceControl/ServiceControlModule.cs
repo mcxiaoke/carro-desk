@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
+using System.Threading;
 using CarroDesk.Core;
 using CarroDesk.Core.Commands;
 using CarroDesk.Host.Commands;
@@ -140,7 +141,9 @@ namespace CarroDesk.Modules.ServiceControl
                         Description = BuildNameParamDescription(allowed)
                     }
                 },
-                Handler = r => StartHandler(r, allowed)
+                // 可取消执行体：服务启停是本仓最长的能力（等SCM 状态变化），
+                // 超时后应立刻停止等待，而不是继续占着线程等自己的 15 秒。
+                CancellableHandler = (r, token) => StartHandler(r, allowed, token)
             };
         }
 
@@ -163,7 +166,7 @@ namespace CarroDesk.Modules.ServiceControl
                         Description = BuildNameParamDescription(allowed)
                     }
                 },
-                Handler = r => StopHandler(r, allowed)
+                CancellableHandler = (r, token) => StopHandler(r, allowed, token)
             };
         }
 
@@ -211,7 +214,7 @@ namespace CarroDesk.Modules.ServiceControl
             return Success(new { allowlist = allowed.Select(e => e.Name).ToList(), services = items });
         }
 
-        private CommandResult StartHandler(CommandRequest request, List<ServiceAllowlistEntry> allowed)
+        private CommandResult StartHandler(CommandRequest request, List<ServiceAllowlistEntry> allowed, CancellationToken token)
         {
             var name = GetRequestedName(request);
             var entry = FindEntry(allowed, name);
@@ -220,10 +223,19 @@ namespace CarroDesk.Modules.ServiceControl
 
             try
             {
-                var status = _adapter.Start(entry.Name, TimeSpan.FromSeconds(DefaultOperationTimeoutSeconds));
+                var status = _adapter.Start(entry.Name, TimeSpan.FromSeconds(DefaultOperationTimeoutSeconds), token);
                 return Success(new { name = entry.Name, status = status.ToString(), action = "start" });
             }
+            catch (OperationCanceledException)
+            {
+                return Fail(CommandErrorCodes.Timeout,
+                    "start of '" + entry.Name + "' exceeded the command timeout; the service may still be starting");
+            }
             catch (System.ServiceProcess.TimeoutException ex)
+            {
+                return Fail(CommandErrorCodes.Timeout, "timeout starting '" + entry.Name + "': " + ex.Message);
+            }
+            catch (System.TimeoutException ex)
             {
                 return Fail(CommandErrorCodes.Timeout, "timeout starting '" + entry.Name + "': " + ex.Message);
             }
@@ -240,7 +252,7 @@ namespace CarroDesk.Modules.ServiceControl
             }
         }
 
-        private CommandResult StopHandler(CommandRequest request, List<ServiceAllowlistEntry> allowed)
+        private CommandResult StopHandler(CommandRequest request, List<ServiceAllowlistEntry> allowed, CancellationToken token)
         {
             var name = GetRequestedName(request);
             var entry = FindEntry(allowed, name);
@@ -249,10 +261,19 @@ namespace CarroDesk.Modules.ServiceControl
 
             try
             {
-                var status = _adapter.Stop(entry.Name, TimeSpan.FromSeconds(DefaultOperationTimeoutSeconds));
+                var status = _adapter.Stop(entry.Name, TimeSpan.FromSeconds(DefaultOperationTimeoutSeconds), token);
                 return Success(new { name = entry.Name, status = status.ToString(), action = "stop" });
             }
+            catch (OperationCanceledException)
+            {
+                return Fail(CommandErrorCodes.Timeout,
+                    "stop of '" + entry.Name + "' exceeded the command timeout; the service may still be stopping");
+            }
             catch (System.ServiceProcess.TimeoutException ex)
+            {
+                return Fail(CommandErrorCodes.Timeout, "timeout stopping '" + entry.Name + "': " + ex.Message);
+            }
+            catch (System.TimeoutException ex)
             {
                 return Fail(CommandErrorCodes.Timeout, "timeout stopping '" + entry.Name + "': " + ex.Message);
             }

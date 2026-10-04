@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel;
 using System.ServiceProcess;
+using System.Threading;
 
 namespace CarroDesk.Modules.ServiceControl
 {
@@ -35,6 +36,16 @@ namespace CarroDesk.Modules.ServiceControl
 
         public ServiceControllerStatus Start(string serviceName, TimeSpan timeout)
         {
+            return Start(serviceName, timeout, CancellationToken.None);
+        }
+
+        public ServiceControllerStatus Stop(string serviceName, TimeSpan timeout)
+        {
+            return Stop(serviceName, timeout, CancellationToken.None);
+        }
+
+        public ServiceControllerStatus Start(string serviceName, TimeSpan timeout, CancellationToken token)
+        {
             using (var controller = new ServiceController(serviceName))
             {
                 controller.Refresh();
@@ -51,12 +62,11 @@ namespace CarroDesk.Modules.ServiceControl
                         controller.Start();
                         break;
                 }
-                controller.WaitForStatus(ServiceControllerStatus.Running, timeout <= TimeSpan.Zero ? DefaultWait : timeout);
-                return controller.Status;
+                return WaitForStatus(controller, ServiceControllerStatus.Running, timeout, token);
             }
         }
 
-        public ServiceControllerStatus Stop(string serviceName, TimeSpan timeout)
+        public ServiceControllerStatus Stop(string serviceName, TimeSpan timeout, CancellationToken token)
         {
             using (var controller = new ServiceController(serviceName))
             {
@@ -70,8 +80,42 @@ namespace CarroDesk.Modules.ServiceControl
                         controller.Stop();
                         break;
                 }
-                controller.WaitForStatus(ServiceControllerStatus.Stopped, timeout <= TimeSpan.Zero ? DefaultWait : timeout);
-                return controller.Status;
+                return WaitForStatus(controller, ServiceControllerStatus.Stopped, timeout, token);
+            }
+        }
+
+        /// <summary>
+        /// 等待服务到达目标状态。
+        ///
+        /// 不用 <c>ServiceController.WaitForStatus(status, timeout)</c>：它只有一个超时参数，
+        /// 内核能力超时后我们仍要傻等到自己的 timeout（调用方早已拿到超时），
+        /// 且中途无法响应取消。改为短周期轮询，让"外部超时"与"调用方取消"都能立刻生效。
+        ///
+        /// 轮询间隔 200ms：远小于人可感知阈值，同时把 SCM 查询压力压到可忽略。
+        /// </summary>
+        private static ServiceControllerStatus WaitForStatus(
+            ServiceController controller, ServiceControllerStatus target, TimeSpan timeout, CancellationToken token)
+        {
+            var effective = timeout <= TimeSpan.Zero ? DefaultWait : timeout;
+            var deadline = DateTime.UtcNow + effective;
+            var waitFor = TimeSpan.FromMilliseconds(200);
+
+            while (true)
+            {
+                // 取消优先于状态检查：调用方已经超时/放弃，再去读一次状态没有意义
+                if (token.IsCancellationRequested)
+                    throw new OperationCanceledException(token);
+
+                controller.Refresh();
+                if (controller.Status == target) return controller.Status;
+
+                var remaining = deadline - DateTime.UtcNow;
+                if (remaining <= TimeSpan.Zero)
+                    throw new System.TimeoutException("timeout waiting for '" + controller.ServiceName + "' to reach " + target);
+
+                // Sleep 期间保持可响应取消；无令牌时退化为普通等待
+                if (token.CanBeCanceled) token.WaitHandle.WaitOne(waitFor < remaining ? waitFor : remaining);
+                else Thread.Sleep(waitFor < remaining ? waitFor : remaining);
             }
         }
     }

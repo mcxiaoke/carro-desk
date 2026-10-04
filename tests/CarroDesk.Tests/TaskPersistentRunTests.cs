@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
@@ -303,6 +304,116 @@ namespace CarroDesk.Tests
             var scheduler = new TaskSchedulerService();
             Assert.IsFalse(scheduler.TryStop("no-such-task"), "无运行实例时 TryStop 应返回 false");
             Assert.AreEqual(0, scheduler.GetRunning().Count);
+        }
+
+        // ---------- M7 允许并发时的多实例登记 ----------
+
+        /// <summary>
+        /// wait + allowConcurrent：每次触发是一个独立实例，全部登记在册。
+        /// 原实现按任务名只留一个槽（后来的覆盖先来的），被覆盖的实例既查不到也停不掉。
+        /// </summary>
+        [TestMethod]
+        public void Scheduler_AllowConcurrent_MultipleInstances_AllTrackedAndStoppable()
+        {
+            string bat = WriteSleepBat("conc-many.bat", 30);
+            var tasks = new JArray(new JObject(
+                new JProperty("name", "t_conc"),
+                new JProperty("enabled", true),
+                new JProperty("trigger", new JObject(new JProperty("type", "manual"))),
+                new JProperty("action", new JObject(new JProperty("file", bat))),
+                new JProperty("options", new JObject(
+                    new JProperty("hidden", true),
+                    new JProperty("allowConcurrent", true)))));
+
+            File.WriteAllText(TaskConfigService.FilePath, tasks.ToString(), Encoding.UTF8);
+            try
+            {
+                var scheduler = new TaskSchedulerService();
+                scheduler.Start();
+                try
+                {
+                    for (int i = 0; i < 3; i++)
+                        Assert.IsTrue(scheduler.RunManual("t_conc"), "第 " + (i + 1) + " 次触发应成功");
+
+                    WaitUntil(() => scheduler.GetRunning().Count == 3, TimeSpan.FromSeconds(15),
+                        "三个并发实例都应登记在册");
+
+                    var pids = new List<int>();
+                    foreach (var r in scheduler.GetRunning())
+                    {
+                        Assert.AreEqual("t_conc", r.Name);
+                        pids.Add(r.Pid);
+                    }
+                    Assert.AreEqual(3, pids.Count, "每个实例都应有独立 pid");
+                    Assert.AreEqual(3, new HashSet<int>(pids).Count, "三个实例必须是不同进程");
+
+                    // 停止语义：一次 TryStop 应停掉全部实例，而不是只停最后一个
+                    Assert.IsTrue(scheduler.TryStop("t_conc"), "停止并发实例应成功");
+                    foreach (var pid in pids)
+                    {
+                        WaitUntil(() => !IsProcessAlive(pid), TimeSpan.FromSeconds(15),
+                            "pid " + pid + " 应被停止（TryStop 必须覆盖全部实例）");
+                    }
+                    WaitUntil(() => !scheduler.IsRunning("t_conc"), TimeSpan.FromSeconds(15),
+                        "全部实例退出后应出册");
+                }
+                finally
+                {
+                    scheduler.Stop();
+                }
+            }
+            finally
+            {
+                try { File.Delete(TaskConfigService.FilePath); } catch { }
+            }
+        }
+
+        /// <summary>并发实例数有上限，否则"每分钟触发一次 + 任务跑一小时"会无界堆积进程。</summary>
+        [TestMethod]
+        public void Scheduler_AllowConcurrent_InstanceCountIsCapped()
+        {
+            string bat = WriteSleepBat("conc-cap.bat", 60);
+            var tasks = new JArray(new JObject(
+                new JProperty("name", "t_cap"),
+                new JProperty("enabled", true),
+                new JProperty("trigger", new JObject(new JProperty("type", "manual"))),
+                new JProperty("action", new JObject(new JProperty("file", bat))),
+                new JProperty("options", new JObject(
+                    new JProperty("hidden", true),
+                    new JProperty("allowConcurrent", true)))));
+
+            File.WriteAllText(TaskConfigService.FilePath, tasks.ToString(), Encoding.UTF8);
+            try
+            {
+                var scheduler = new TaskSchedulerService();
+                scheduler.Start();
+                try
+                {
+                    // 触发次数远超上限（5）：实例数必须停在上限，且日志说明原因
+                    for (int i = 0; i < 8; i++) scheduler.RunManual("t_cap");
+
+                    WaitUntil(() => scheduler.GetRunning().Count == 5, TimeSpan.FromSeconds(20),
+                        "并发实例数应达到上限 5");
+                    Thread.Sleep(3000);
+                    Assert.AreEqual(5, scheduler.GetRunning().Count, "超过上限后不得继续叠加实例");
+
+                    string log = ReadTaskLog("t_cap");
+                    StringAssert.Contains(log, "instance limit reached",
+                        "触顶时应写明原因，否则用户只看到任务\"没跑\". 任务日志:\n" + log);
+
+                    Assert.IsTrue(scheduler.TryStop("t_cap"), "停止应成功");
+                    WaitUntil(() => !scheduler.IsRunning("t_cap"), TimeSpan.FromSeconds(20),
+                        "全部停止后应出册");
+                }
+                finally
+                {
+                    scheduler.Stop();
+                }
+            }
+            finally
+            {
+                try { File.Delete(TaskConfigService.FilePath); } catch { }
+            }
         }
 
         // ---------- B2 单实例互斥 ----------

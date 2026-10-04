@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using CarroDesk.Core;
 using CarroDesk.Core.Commands;
@@ -45,14 +46,27 @@ namespace CarroDesk.Host.Commands
             _logger = logger;
         }
 
-        /// <summary>阻塞执行（最长等待能力超时）。传输适配层请用 <see cref="InvokeAsync"/>，勿在 UI 线程调用本方法。</summary>
+        /// <summary>
+        /// 同步执行入口，仅供不需要 await 的调用方（如单测）使用。
+        /// 传输适配层一律用 <see cref="InvokeAsync"/>；勿在 UI 线程调用本方法
+        /// （会阻塞 UI 线程直到能力超时）。
+        /// </summary>
         public CommandResult Invoke(CommandRequest request)
+        {
+            return InvokeAsync(request).GetAwaiter().GetResult();
+        }
+
+        /// <summary>
+        /// 异步执行：校验链是毫秒级同步工作，入口立即让出；能力执行阶段等待期间
+        /// 不占用任何线程（见 <see cref="InvokeHandler"/>）。异常绝不逃逸，审计照常。
+        /// </summary>
+        public async Task<CommandResult> InvokeAsync(CommandRequest request)
         {
             var sw = Stopwatch.StartNew();
             CommandResult result;
             try
             {
-                result = InvokeCore(request);
+                result = await InvokeCoreAsync(request).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -75,13 +89,7 @@ namespace CarroDesk.Host.Commands
             return result;
         }
 
-        /// <summary>异步执行：内部转到线程池，传输适配层（管道/HTTP）可直接 await。</summary>
-        public Task<CommandResult> InvokeAsync(CommandRequest request)
-        {
-            return Task.Run(() => Invoke(request));
-        }
-
-        private CommandResult InvokeCore(CommandRequest request)
+        private async Task<CommandResult> InvokeCoreAsync(CommandRequest request)
         {
             if (request == null || string.IsNullOrWhiteSpace(request.Method))
                 return Fail(CommandErrorCodes.CapabilityNotFound, "capability not found");
@@ -116,27 +124,122 @@ namespace CarroDesk.Host.Commands
             if (!_rateLimiter.TryAcquire(descriptor.Name, effective.Source))
                 return Fail(CommandErrorCodes.RateLimited, "rate limited: " + descriptor.Name);
 
-            var timeoutMs = descriptor.TimeoutMs > 0 ? descriptor.TimeoutMs : DefaultTimeoutMs;
+            return await InvokeHandler(descriptor, effective).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// 执行阶段（第7 步）。
+        ///
+        /// 为什么不用 <c>Task.Wait(timeout)</c>：那会让调用线程阻塞在等待上，
+        /// 而 handler 本身已在线程池上跑 —— 每条并发命令白占两个线程池线程（一个纯等待），
+        /// 命名管道允许多连接，这个浪费会被直接放大。改用
+        /// <see cref="Task.WhenAny(Task, Task)"/>：等待期间当前线程完全释放。
+        ///
+        /// 超时语义：返回 -32004，并 <see cref="CancellationTokenSource.Cancel()"/>
+        /// 通知 CancellableHandler 尽快退出。取消只是"尽力而为"的协作式通知，
+        /// 不强制中断 —— 已提交给外部系统的操作无法回滚。
+        /// </summary>
+        private async Task<CommandResult> InvokeHandler(CommandDescriptor descriptor, CommandRequest effective)
+        {
             var handler = descriptor.Handler;
+            var cancellable = descriptor.CancellableHandler;
+            if (handler == null && cancellable == null)
+                return Fail(CommandErrorCodes.Internal, "descriptor has no handler");
+
+            var timeoutMs = descriptor.TimeoutMs > 0 ? descriptor.TimeoutMs : DefaultTimeoutMs;
             var captured = effective;
-            var task = Task.Run(() => handler(captured));
-            CommandResult handlerResult;
+            using (var cts = new CancellationTokenSource(timeoutMs))
+            {
+                Task<CommandResult> task = Task.Run(() =>
+                {
+                    if (cancellable != null) return cancellable(captured, cts.Token);
+                    return handler(captured);
+                });
+
+                var finished = await Task.WhenAny(task, DelayUntilCancelled(cts)).ConfigureAwait(false);
+                if (finished != task)
+                {
+                    // 超时：取消并观察 eventual 异常，避免未观察异常在 GC 时引发
+                    // TaskScheduler.UnobservedTaskException（.NET 4.5 起不再终止进程，
+                    // 但会静默丢失 handler 的真实失败原因）。
+                    CancelQuietly(cts);
+                    ObserveLateCompletion(task, descriptor, timeoutMs);
+                    return Fail(CommandErrorCodes.Timeout, "timeout after " + timeoutMs + "ms");
+                }
+
+                CommandResult handlerResult;
+                try
+                {
+                    handlerResult = await task.ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    // handler 主动响应取消而退出：与超时同义，调用方看到的是超时而非内部错误
+                    return Fail(CommandErrorCodes.Timeout, "timeout after " + timeoutMs + "ms (handler cancelled)");
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogError(descriptor.ModuleId, "能力 '" + descriptor.Name + "' 执行异常", ex);
+                    return Fail(CommandErrorCodes.Internal, "internal error: " + ex.Message);
+                }
+                finally
+                {
+                    // handler 已结束，取消只是为了释放仍在挂着的超时定时器
+                    // （Task.Delay(Infinite, token) 不会因 CTS 被 Dispose 而撤销）
+                    CancelQuietly(cts);
+                }
+
+                if (handlerResult == null)
+                    return Fail(CommandErrorCodes.Internal, "handler returned no result");
+                return handlerResult;
+            }
+        }
+
+        private static void CancelQuietly(CancellationTokenSource cts)
+        {
+            try { cts.Cancel(); }
+            catch (ObjectDisposedException) { }
+            catch (AggregateException) { /* 回调自身抛异常，不影响返回结果 */ }
+        }
+
+        /// <summary>超时信号：与<paramref name="cts"/> 同时到期的延迟任务。</summary>
+        private static async Task DelayUntilCancelled(CancellationTokenSource cts)
+        {
             try
             {
-                if (!task.Wait(timeoutMs))
-                    return Fail(CommandErrorCodes.Timeout, "timeout after " + timeoutMs + "ms");
-                handlerResult = task.Result;
+                await Task.Delay(Timeout.Infinite, cts.Token).ConfigureAwait(false);
             }
-            catch (AggregateException aex)
+            catch (OperationCanceledException)
             {
-                var inner = aex.GetBaseException();
-                _logger?.LogError(descriptor.ModuleId, "能力 '" + descriptor.Name + "' 执行异常", inner);
-                return Fail(CommandErrorCodes.Internal, "internal error: " + inner.Message);
+                // 超时信号本身不需要结果，WhenAny 只看"已完成"
             }
+        }
 
-            if (handlerResult == null)
-                return Fail(CommandErrorCodes.Internal, "handler returned no result");
-            return handlerResult;
+        /// <summary>
+        /// 超时后仍在运行的 handler：必须观察其异常，否则异常会随Task 被终结而
+        /// 变成 UnobservedTaskException；同时记一条日志 —— 此刻调用方已经拿到
+        /// -32004，若handler 的副作用稍后才落地，这是唯一的排障线索。
+        /// </summary>
+        private void ObserveLateCompletion(Task<CommandResult> task, CommandDescriptor descriptor, int timeoutMs)
+        {
+            task.ContinueWith(t =>
+            {
+                var ignored = t.Exception;
+                try
+                {
+                    if (t.IsFaulted && t.Exception != null)
+                    {
+                        _logger?.LogError(descriptor.ModuleId, "能力 '" + descriptor.Name + "' 超时后异常",
+                            t.Exception.GetBaseException());
+                    }
+                    else
+                    {
+                        _logger?.LogWarning(descriptor.ModuleId,
+                            "能力 '" + descriptor.Name + "' 在超时(" + timeoutMs + "ms)后仍在后台完成，副作用可能已生效");
+                    }
+                }
+                catch { }
+            }, TaskContinuationOptions.ExecuteSynchronously);
         }
 
         /// <summary>

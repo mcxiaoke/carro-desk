@@ -498,7 +498,14 @@ namespace CarroDesk
 
                 bool b = false;
                 bool ok = await SafeInvoker.RunTimeoutAsync(module.Id, TimeSpan.FromSeconds(3),
-                    () => b = guard.RequestBlockExit(), (id, ex) => LogError(ex)).ConfigureAwait(true);
+                    token =>
+                    {
+                        // 守卫内部若做耗时工作（弹 PIN、查状态），让它能在超时后尽快收手，
+                        // 而不是继续跑完再让宿主按"未阻塞"处理
+                        if (token.IsCancellationRequested) return;
+                        b = guard.RequestBlockExit();
+                    },
+                    (id, ex) => LogError(ex)).ConfigureAwait(true);
 
                 if (ok && b) { blocked = true; break; }
             }

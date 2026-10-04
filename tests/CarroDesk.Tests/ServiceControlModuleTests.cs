@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ServiceProcess;
+using System.Threading;
 using CarroDesk.Core;
 using CarroDesk.Core.Commands;
 using CarroDesk.Host.Commands;
@@ -49,7 +50,18 @@ namespace CarroDesk.Tests
 
             public ServiceControllerStatus Start(string serviceName, TimeSpan timeout)
             {
+                return Start(serviceName, timeout, CancellationToken.None);
+            }
+
+            public ServiceControllerStatus Stop(string serviceName, TimeSpan timeout)
+            {
+                return Stop(serviceName, timeout, CancellationToken.None);
+            }
+
+            public ServiceControllerStatus Start(string serviceName, TimeSpan timeout, CancellationToken token)
+            {
                 StartCalls++;
+                LastStartToken = token;
                 if (OnStart != null)
                 {
                     var ex = OnStart(serviceName);
@@ -59,9 +71,10 @@ namespace CarroDesk.Tests
                 return ServiceControllerStatus.Running;
             }
 
-            public ServiceControllerStatus Stop(string serviceName, TimeSpan timeout)
+            public ServiceControllerStatus Stop(string serviceName, TimeSpan timeout, CancellationToken token)
             {
                 StopCalls++;
+                LastStopToken = token;
                 if (OnStop != null)
                 {
                     var ex = OnStop(serviceName);
@@ -70,6 +83,10 @@ namespace CarroDesk.Tests
                 Services[serviceName] = ServiceControllerStatus.Stopped;
                 return ServiceControllerStatus.Stopped;
             }
+
+            /// <summary>最近一次启停收到的取消令牌（验证内核确实把令牌透传到了适配器）。</summary>
+            public CancellationToken LastStartToken;
+            public CancellationToken LastStopToken;
         }
 
         private static ServiceControlModule CreateModule(out FakeServiceAdapter adapter, params ServiceAllowlistEntry[] allowlist)
@@ -138,6 +155,26 @@ namespace CarroDesk.Tests
             Assert.IsFalse(commands[1].RequiresPin);
             Assert.IsNotNull(commands[1].RequiresPinFor);
             Assert.AreEqual(30000, commands[1].TimeoutMs);
+
+            // services.start/stop 必须走可取消执行体：这是本仓最长的能力（等 SCM 状态变化），
+            // 用普通 Handler 就只能"停止等待"，内核超时后适配器还会继续阻塞到自己的 15s
+            Assert.IsNotNull(commands[1].CancellableHandler, "services.start 应声明 CancellableHandler");
+            Assert.IsNotNull(commands[2].CancellableHandler, "services.stop 应声明 CancellableHandler");
+        }
+
+        /// <summary>内核必须把取消令牌透传到适配器，否则超时后仍在傻等。</summary>
+        [TestMethod]
+        public void Invoke_StartStop_ForwardsCancellationTokenToAdapter()
+        {
+            FakeServiceAdapter adapter;
+            var module = CreateModule(out adapter, Entry("GameViewerService", requiresPin: false));
+            var host = BuildHost(module);
+
+            Assert.IsTrue(host.Invoke(Call("services.start", "GameViewerService")).Ok);
+            Assert.IsTrue(adapter.LastStartToken.CanBeCanceled, "适配器应收到可取消令牌");
+
+            Assert.IsTrue(host.Invoke(Call("services.stop", "GameViewerService")).Ok);
+            Assert.IsTrue(adapter.LastStopToken.CanBeCanceled, "适配器应收到可取消令牌");
         }
 
         [TestMethod]

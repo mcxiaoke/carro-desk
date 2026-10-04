@@ -1,7 +1,7 @@
 # CarroDesk 代码审查报告
 
 > 审查日期：2026-10-03（GMT+8）；**2026-10-04 第二轮独立复核并修订**
-> **修复状态：2026-10-04 第二轮修复已落地 12 批，见第十四节；测试基线 336 通过 / 0 失败 / 0 跳过**
+> **修复状态：2026-10-04 第二轮修复已落地 12 批 + 第三轮第十三批（M7/M9/M2）；测试基线 347 通过 / 0 失败 / 0 跳过**
 > 审查范围：整个仓库（`src/` 149 个源文件，约 3.5 万行；`cli/`、`tests/`、`scripts/`、工程配置）
 > 审查方式：第一轮按宿主核心 / IPC / 各功能模块 / UI / 基础设施 / 测试 分线逐行阅读；第二轮**独立重审全量源码后再与本报告交叉核对**，所有结论均对照实际代码
 > 目标框架：.NET Framework 4.8 + WPF，C# 7.3
@@ -20,7 +20,9 @@
 
 **第二轮（2026-10-04）结论**：先独立重审全量源码、再与本报告交叉核对。新增 14 项（见第三节），其中 **3 项锁屏安全绕过（R1/R2/R3）应排在已修完的 S1/S2/S3 之前** —— 后者是数据与隐私问题，前者是可直接绕过认证的活路径。第一轮标注 ✅ 的 20 项修复经逐条 grep 复核**全部属实**；第一轮"未能编译/未跑测试"的局限已关闭（实际构建 0 警告 0 错误、315 项测试全通过）。
 
-**第三轮（2026-10-04 下午）结论**：第二轮的 14 项新增已按"改动小、收益大、风险低"分 **12 批**落地（R1/R2/R3/R4/R5/R6/R7/R9/R10/R11/R12/R13/R14/R15/M15 已修，R8 部分修复），新增 21 个回归用例，其中 5 个经实证确认能捕获对应缺陷；测试基线推进到 **336 通过 / 0 失败**。修复过程中另发现并修掉两个真实缺陷（`AudioService` 在已关闭 Dispatcher 上 `Invoke` 永久阻塞、`ProcessJob` 缺终结器导致句柄真泄漏）。仍未处理的主要是需要真机/多屏环境验证的项（H1/M6/M14/M16/M19/M24）与需产品确认的行为变更（M7/M9），逐条见第十四节。
+**第三轮（2026-10-04 下午）结论**：第二轮的 14 项新增已按"改动小、收益大、风险低"分 **12 批**落地（R1/R2/R3/R4/R5/R6/R7/R9/R10/R11/R12/R13/R14/R15/M15 已修，R8 部分修复），新增 21 个回归用例，其中 5 个经实证确认能捕获对应缺陷；测试基线推进到 **336 通过 / 0 失败**。修复过程中另发现并修掉两个真实缺陷（`AudioService` 在已关闭 Dispatcher 上 `Invoke` 永久阻塞、`ProcessJob` 缺终结器导致句柄真泄漏）。
+
+**第四轮（2026-10-04 下午，第十三批）结论**：遗留中的 **M7 / M9 / M2** 已落地（并发多实例登记 + 实例上限、Cron 裸值步长标准语义 + 不可达表达式可见化、命令内核超时可取消并去掉双线程占用），新增 11 个回归用例，测试基线 **347 通过 / 0 失败**。M9 属行为变更，已按用户确认直接修正且不加 legacy 开关。详见第十五节。
 
 ---
 
@@ -51,14 +53,14 @@
 | **R14**  | 中   | **`WINDOWPOS.flags` 声明为 `uint`，清除的是 `SWP_FRAMECHANGED`(0x0020) 而注释写 `SWP_NOZORDER`(0x0004)** ✅已修 | `LockWindow.xaml.cs:139,157`                          |
 | **R15**  | 中   | **剪贴板历史 ToolTip 绑定未截断全文，悬停即加载超大文本** ✅已修 | `ClipboardHistoryWindow.xaml:157`                                   |
 | M1     | 中   | 配置 JSON 语法损坏时静默回退默认配置启动，不提示不记日志（可能导致 PIN"丢失"触发首启向导） ✅已修 | `ConfigService.cs:266-292`                      |
-| M2     | 中   | `CommandHost` 超时后 handler 仍后台运行且不可取消；线程池被额外占用                                                      | `CommandHost.cs:119-129`                                           |
+| M2     | 中   | `CommandHost` 超时后 handler 仍后台运行且不可取消；线程池被额外占用 ✅已修                               | `CommandHost.cs:119-129`                                           |
 | M3     | 中   | `int` 类型参数收到 JSON 小数（如 `5.0`）时静默降级为字符串 ✅已修         | `CommandHost.cs:199-268`                                           |
 | M4     | 中   | `CommandRegistry.Rebuild` 失败后残留半注册状态，日志却称"降级为空" ✅已修 | `CommandRegistry.cs:22-33`                      |
 | M5     | 中   | 日志文件 `log.txt` 无轮转，长期运行无界增长（审计日志已有轮转，两者不一致） ✅已修    | `DefaultLoggerService.cs:38-51`                                    |
 | M6     | 中   | `singleInstance` 互斥体由宿主持有，`killWithHost=false` 时无法阻止常驻子进程重复拉起                                     | `TaskSingleInstanceMutex.cs:44-84`                                 |
-| M7     | 中   | `AllowConcurrent` 时运行槽被覆盖，前一个实例句柄丢失，无法查询/停止                                                       | `TaskSchedulerService.cs:400-408`                                  |
+| M7     | 中   | `AllowConcurrent` 时运行槽被覆盖，前一个实例句柄丢失，无法查询/停止 ✅已修                               | `TaskSchedulerService.cs:400-408`                                  |
 | M8     | 中   | Cron 正常到点也被标记 `cron-catchup`（`missed` 恒真），复检分支不可达 ✅已修 | `CronTrigger.cs:76-93`                                             |
-| M9     | 中   | Cron `5/2` 语义与标准不一致（应表示 5,7,9…，实际只匹配 5）；永不可达表达式静默失效无任何日志                                          | `CronHelper.cs:211-226`、`CronTrigger.cs:52-57`                     |
+| M9     | 中   | Cron `5/2` 语义与标准不一致（应表示 5,7,9…，实际只匹配 5）；永不可达表达式静默失效无任何日志 ✅已修（行为变更）                       | `CronHelper.cs:211-226`、`CronTrigger.cs:52-57`                     |
 | M10    | 中   | `SetGlobalEnabled` 持久化失败回滚路径可递归直至栈溢出 ✅已修     | `TaskSchedulerService.cs:110-132`                                  |
 | M11    | 中   | Job Object 挂接失败时 `killWithHost=true` 静默降级为"孤儿进程"，日志还错报为 false ✅已修 | `TaskRunner.cs:262-275`                    |
 | M12    | 中   | 任务/剪贴板/显示器设置窗口不校验热键（与 AudioSwitch/AppAutoMute 不一致），非法热键静默失效 ✅已修 | `ClipboardHistorySettingsWindow.xaml.cs:44-71` 等                   |
@@ -83,7 +85,8 @@
 > 累计：严重 6 项 / 高 8 项 / 中 35 项 / 低 20 项，共 69 项（第一轮 55 项 + 第二轮新增 14 项）。
 > 状态标记：✅已修 = 已在代码中修复并经实证复核；⚠️部分 = 仅修 related 路径，根因未除；◑部分 = 部分子项已修；⏸ = 需真机/多屏环境验证后再改。
 > **第二轮已逐项实证复核**：S1/S2/S3、H2/H4、M3/M4/M5/M8/M10/M11/M12/M13/M17/M18/M20/M21/M22/M23/M26 的修复均属实（修复时间 2026-10-03 22:53 之后）。
-> **第三轮修复（2026-10-04 下午，12 批）**：R1/R2/R3/R4/R5/R6/R7/R9/R10/R11/R12/R13/R14/R15/M15 已修；R8 部分修复（见第十四节）。仍未处理：H1（根因）、M2/M6/M7/M9/M14/M16/M19/M24/M25/M27/M28 及低危清单。详见第十四节与 `docs/CHANGES-20261004.md`。
+> **第三轮修复（2026-10-04 下午，12 批）**：R1/R2/R3/R4/R5/R6/R7/R9/R10/R11/R12/R13/R14/R15/M15 已修；R8 部分修复（见第十四节）。
+> **第四轮修复（2026-10-04 下午，第十三批）**：M2/M7/M9 已修（见第十五节）。仍未处理：H1（根因）、M6、M14/M16（需实测）、M19/M24（需多屏）、M25/M27/M28 及低危清单。详见第十四、十五节与 `docs/CHANGES-20261004.md`。
 
 ---
 
@@ -445,7 +448,7 @@ bool ok = _inner.Verify(pin);                        // 读 _inner 的 Salt/Hash
 
 **IPC / 命令内核**
 
-- M2 `CommandHost.cs:119-129`：`Task.Run(handler)` 后 `task.Wait(timeoutMs)`，超时返回但 handler 无法取消且继续跑（副作用残留），同时占用线程池。建议 `await Task.WhenAny` + 传 `CancellationToken`。
+- M2 `CommandHost.cs:119-129`：`Task.Run(handler)` 后 `task.Wait(timeoutMs)`，超时返回但 handler 无法取消且继续跑（副作用残留），同时占用线程池。建议 `await Task.WhenAny` + 传 `CancellationToken`。**✅已修**：新增 `CancellableHandler`、超时 `Cancel()`、迟到异常观察与日志，等待改 `Task.WhenAny`；`services.start/stop` 已改用可取消适配器（`WaitForStatus` → 200ms 轮询）。
 - M3 `CommandHost.cs:199-268`：`type=="int"` 时 JSON 小数（`double`）落到末尾兜底分支被 `Convert.ToString` 变成字符串 —— 声明 int 拿到 string，类型契约被破坏。证据：int 分支只覆盖整数类型与 string，未覆盖 `double/decimal`。
 - M4 `CommandRegistry.cs:22-33`：`Clear()` 后逐条 `RegisterCore`，中途抛异常即停在半注册态；`App.xaml.cs:192` 却记日志"能力通道降级为空"，与事实不符，误导排障。
 
@@ -457,9 +460,9 @@ bool ok = _inner.Verify(pin);                        // 读 _inner 的 Salt/Hash
 **TaskScheduler**
 
 - M6 `TaskSingleInstanceMutex.cs:44-84` + `TaskSchedulerService.cs:826-831`：互斥体由**宿主**持有，`killWithHost=false` 时宿主退出即销毁互斥体，但常驻子进程仍活着 → 新宿主认为"未运行"再拉一个，恰是该选项要防的场景失效。
-- M7 `TaskSchedulerService.cs:400-408`：`AllowConcurrent=true` 时 `_running[task.Name] = slot` 覆盖旧槽，第一个实例句柄丢失，`GetRunning/TryStop` 只能看到最后一个。
+- M7 `TaskSchedulerService.cs:400-408`：`AllowConcurrent=true` 时 `_running[task.Name] = slot` 覆盖旧槽，第一个实例句柄丢失，`GetRunning/TryStop` 只能看到最后一个。**✅已修**：运行表改为 `Dictionary<string, List<RunSlot>>`，`TryStop` 停全部在册实例，`GetRunning` 逐实例返回，并加实例上限 5。
 - M8 `CronTrigger.cs:76-93`：`missed = scheduled < now`，而定时器已等到 `scheduled`，故 `scheduled < now` 恒真 → 每次正常触发都标 `cron-catchup:`，`IsMatch` 复检分支（`:93`）不可达。
-- M9 `CronHelper.cs:211-226`：无区间时 `start=end=值`，`5/2` 只匹配 5（标准应为 5,7,9…）；`CronTrigger.cs:52-57` 对"合法但永不可达"（如 2 月 30 日）直接 `return`，无日志无提示，触发器静默失效。
+- M9 `CronHelper.cs:211-226`：无区间时 `start=end=值`，`5/2` 只匹配 5（标准应为 5,7,9…）；`CronTrigger.cs:52-57` 对"合法但永不可达"（如 2 月 30 日）直接 `return`，无日志无提示，触发器静默失效。**✅已修**：裸值步长按标准展开为 `[值, 上限]`（行为变更）；不可达表达式写告警日志，编辑器改红色提示并在保存时拦截。
 - M10 `TaskSchedulerService.cs:110-132`：`SaveModuleConfig` 失败 → `SetGlobalEnabled(!enabled)` 回滚 → 回滚里再失败 → 再回滚，递归直至栈溢出（仅持续失败时触发）。
 - M11 `TaskRunner.cs:262-275` + `TaskProcessHandle.cs:50`：`ProcessJob.TryAssign` 失败即 `job=null`，`KillWithHost` 直接以 `_job != null` 判定为 false —— 用户显式 `killWithHost=true` 被静默当 false，宿主退出留下孤儿进程，日志还错报 `killWithHost=false`。
 - M12 热键不校验：`ClipboardHistorySettingsWindow.xaml.cs:44-71`、`MonitorProfileSettingsWindow.xaml.cs:533-538` 直接 `Text.Trim()` 写配置（对比 `AudioSwitchSettingsWindow.xaml.cs:420-427` 有 `HotkeyHelper.Validate`）；非法热键注册静默失败无提示。
@@ -510,7 +513,7 @@ bool ok = _inner.Verify(pin);                        // 读 _inner 的 Salt/Hash
 | `NamedPipeCommandServer.cs:46,60`                                       | `WindowsIdentity.GetCurrent()` 实现 IDisposable，构造时调用两次且未释放                                                                         |
 | `HostMenuActions.cs:73`                                                 | `Process.Start(path)` 返回值未 Dispose                                                                                                |
 | `DynamicTrayController.cs:224,99-108`                                   | `OnToggleClick` 只退订未订阅（死代码）；`_debounceTimer` 从未 Stop/清理                                                                           |
-| `SafeInvoker.cs:34-51`                                                  | 创建超时 CTS 并把 token 传给不观察 token 的 action，超时无法取消也无从观测，属误导性实现                                                                         |
+| `SafeInvoker.cs:34-51`                                                  | 创建超时 CTS 并把 token 传给不观察 token 的 action，超时无法取消也无从观测，属误导性实现 **✅已修**（第十三批：删掉误导写法、超时后观察迟到异常、新增带 `CancellationToken` 的 `RunTimeoutAsync`）            |
 | `PipeRpcClient.cs:37-43`                                                | `Connect` 有超时，随后 `ReadFrame` 同步无超时，对端不回包会永久阻塞                                                                                     |
 | `ServiceContainer.cs:134-154`                                           | 释放顺序依赖 `Dictionary` 枚举顺序（.NET 不承诺），与"按注册逆序释放"意图不符                                                                                 |
 | `App.xaml.cs:277-283`                                                   | 浮动面板热键注册失败被静默（`out _` 丢弃错误），用户无感知                                                                                                 |
@@ -564,13 +567,13 @@ bool ok = _inner.Verify(pin);                        // 读 _inner 的 Salt/Hash
 9. ~~**R4 常驻任务守护链**~~、~~**R5 托盘菜单消失**~~ ✅已修。
 10. **R8 任务日志管道阻塞** —— ◑部分修复：已去掉全局锁并把单条代价从约 8 次文件系统操作降到 1 次开+写+关；根治（输出回调永不阻塞 + flush 屏障）需改调用链，见第十四节。
 11. ~~H2 wait 模式停止语义~~ ✅已修；~~H3 悬浮面板滚动~~ ✅已修；~~H4 PIN 并发~~ ✅已修（但见 R3）。
-12. **M2 命令内核超时不可取消**（需接口变更）；~~M3~~ ✅已修。
+12. ~~**M2 命令内核超时不可取消**~~ ✅已修 —— `CancellableHandler` + 取消透传 + 迟到异常观察；等待改 `Task.WhenAny`，每条命令从占 2 个线程池线程降到 0 个阻塞线程。
 
 **P2（质量与体验）**
 
 13. ~~**R9 音频设备刷新死代码**~~、~~**R10 虚假失败通知**~~、~~**R11 编辑器保存死锁**~~、~~**R12 配置并发覆盖**~~、~~**R13 线程池占用**~~ ✅已修。
-14. ~~R14/R15~~ ✅已修；M8/M9 Cron 语义；M26 CLI 编码 ✅已修；M27 安装脚本 i18n；M28 测试断言与隔离；M5 日志轮转 ✅已修；~~M15~~ ✅已修。
-15. 待实机验证项：M19/M24（多屏 DPI）、M16（白名单轮询）、M14（后台进程快照）、M6/M7（常驻任务治理）、M25（编辑器脏检查）。
+14. ~~R14/R15~~ ✅已修；~~M8~~ ✅已修、~~M9 Cron 语义~~ ✅已修（行为变更，裸值步长按标准展开 + 不可达表达式可见化）；M26 CLI 编码 ✅已修；M27 安装脚本 i18n；M28 测试断言与隔离；M5 日志轮转 ✅已修；~~M15~~ ✅已修。
+15. ~~M7 并发运行槽~~ ✅已修（多实例登记 + 停全部 + 实例上限 5）。待实机验证项：M19/M24（多屏 DPI）、M16（白名单轮询）、M14（后台进程快照）、M6（单实例互斥体跨宿主语义）、M25（编辑器脏检查）。
 
 ---
 
@@ -625,9 +628,10 @@ bool ok = _inner.Verify(pin);                        // 读 _inner 的 Salt/Hash
 - **M19 / M24** 多显示器物理像素与 DIP 混用（锁屏窗口错位）、悬浮面板位置预设只用主屏工作区——同源，需一并处理 DPI 换算，需非 100% 缩放 + 多屏实测。
 - **M15** Awake `SetSuspendState` 未启用 SE_SHUTDOWN_NAME——需在受限账户实测睡眠。
 - **M16** AppAutoMute 白名单模式轮询周期——涉及静音状态机，需实测避免抖动。
-- **M6 / M7** 单实例互斥体跨宿主语义、并发实例槽位覆盖——涉及常驻任务治理，需专项设计与测试。
-- **M2** `CommandHost` 超时 handler 不可取消——需为能力 handler 引入 `CancellationToken`，属接口变更。
-- **M9** Cron `5/2` 语义与标准不一致——**属行为变更**（会改变既有用户的触发次数），需产品确认后再改。
+- ~~**M7** 并发实例槽位覆盖~~ ✅已修（第十三批，见第十五节）。
+- **M6** 单实例互斥体跨宿主语义——涉及常驻任务治理，需专项设计与测试。
+- ~~**M2** `CommandHost` 超时 handler 不可取消~~ ✅已修（第十三批，见第十五节）。
+- ~~**M9** Cron `5/2` 语义与标准不一致~~ ✅已修（第十三批；属行为变更，已确认直接按标准修正、不加 legacy 开关）。
 - **M14** Awake UI 线程全量枚举进程——需评估后台快照的线程安全边界。
 - **M25** 配置编辑器关闭脏检查、**M27** 安装脚本 i18n。
 
@@ -709,10 +713,10 @@ bool ok = _inner.Verify(pin);                        // 读 _inner 的 Salt/Hash
 | 编号 | 原因 |
 |---|---|
 | **H1** 锁屏钩子与焦点解耦 | 需非 100% 缩放 + 多显示器 + 前台切换实测；改动涉及键盘钩子与窗口激活，风险高 |
-| **M2** `CommandHost` 超时后 handler 不可取消 | 需为能力 handler 引入 `CancellationToken`，属接口变更 |
+| ~~**M2** `CommandHost` 超时后 handler 不可取消~~ | ✅已修（第十三批）—— `CancellableHandler` + 取消透传 + 迟到异常观察 + `Task.WhenAny` 去掉双线程占用；`services.start/stop` 改用可取消适配器 |
 | **M6** 单实例互斥体跨宿主语义 | 互斥体由宿主持有，`killWithHost=false` 时宿主退出即销毁；需专项设计与测试 |
-| **M7** `AllowConcurrent` 时运行槽被覆盖 | 需重构运行注册表为"每任务多实例"模型，改动面较大 |
-| **M9** Cron `5/2` 语义 | 属行为变更（会改变既有用户的触发次数），需产品确认 |
+| ~~**M7** `AllowConcurrent` 时运行槽被覆盖~~ | ✅已修（第十三批）—— 运行表改为槽列表，`TryStop` 停全部实例，实例数上限 5 |
+| ~~**M9** Cron `5/2` 语义~~ | ✅已修（第十三批，行为变更已确认）—— 裸值步长按标准展开；不可达表达式写日志 + 编辑器红色提示 + 保存拦截 |
 | **M14** Awake UI 线程全量枚举进程 | 需评估后台快照的线程安全边界，且需实测避免抖动 |
 | **M16** AppAutoMute 白名单轮询周期 | 涉及静音状态机，需实测 |
 | **M19 / M24** 多显示器 DPI 与副屏定位 | 需非 100% 缩放 + 多屏实测 |
@@ -723,4 +727,23 @@ bool ok = _inner.Verify(pin);                        // 读 _inner 的 Salt/Hash
 
 ### 测试基线
 
-**336 通过 / 0 失败 / 0 跳过**（第一轮 312 → 第二轮 315 → 第三轮 336），每批均实际执行 `dotnet build`（0 警告 0 错误）与 `dotnet test`。
+**336 通过 / 0 失败 / 0 跳过**（第一轮 312→ 第二轮 315 → 第三轮 336），每批均实际执行 `dotnet build`（0 警告 0 错误）与 `dotnet test`。
+
+---
+
+## 十五、第四轮修复进展（2026-10-04 下午，第十三批）
+
+处理第十四节遗留中的 **M7 / M9 / M2** 三项（用户已确认全部四项决策：TryStop 停全部实例、并发实例加上限、Cron 语义直接改不保留 legacy 开关、命令内核连异步化一起做）。**M6 不在本批**（需专项设计单实例互斥体的跨宿主语义）。
+
+| 编号 | 主题 | 关键改动 |
+|---|---|---|
+| M7 | 并发运行槽 | 运行表 `Dictionary<string, RunSlot>` → `Dictionary<string, List<RunSlot>>`；`TryStop` 停全部在册实例；新增 `MaxConcurrentInstances = 5`；`GetRunning` 逐实例返回；编辑器多实例提示 |
+| M9 | Cron 语义 | `ParseFieldMask64` / `ParseDowMask` 的裸值步长按标准展开为 `[值, 上限]`；`CronTrigger` 对不可达表达式写一次告警；编辑器红色提示 + 保存拦截 |
+| M2 | 超时可取消 | `CommandDescriptor.CancellableHandler`（`Handler` 保留兼容）；超时 `Cancel()` + 迟到异常观察与日志；`Task.Run`+`Wait` → `Task.WhenAny`；`services.start/stop` 走可取消适配器（等待逻辑由 `WaitForStatus` 改200ms 轮询）；`SafeInvoker` 同步收敛 |
+
+### 实证与遗留
+
+- 新增 **11 个**回归用例，其中 5 个经"回退修复 → 确认失败 → 恢复"实证能捕获对应缺陷（并发实例上限临时改为 2 → 两条用例失败；Cron 步长展开回退 → 两条失败；`CancellableHandler` 回退为 `Handler` → 两条失败；移除 `Cancel`/`ObserveLateCompletion` → 一条失败）。
+- **测试基线推进到 347 通过 / 0 失败 / 0 跳过**，`dotnet build` 0 警告 0 错误。
+- M9 的行为变更已按用户确认直接落地，**未加 legacy 兼容开关**：既有配置中 `0/15` 这类表达式会从"每小时第 0 分"变为真正的"每 15 分钟"。`docs/CHANGES-20261004.md` 已记录该影响。
+- 仍未处理：H1（根因）、M6、M14/M16（需实测）、M19/M24（需多屏）、M25/M27/M28、低危清单、S3 明文存储。

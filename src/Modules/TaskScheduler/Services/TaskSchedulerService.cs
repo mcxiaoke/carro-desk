@@ -20,7 +20,24 @@ namespace CarroDesk.Services.Tasks
         private List<TaskDefinition> _tasks = new List<TaskDefinition>();
         private List<ITrigger> _triggers = new List<ITrigger>();
         private readonly HashSet<string> _firedStartupTasks = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        private Dictionary<string, RunSlot> _running = new Dictionary<string, RunSlot>(StringComparer.OrdinalIgnoreCase);
+        /// <summary>
+        /// 运行表：任务名 → 该任务当前在册的运行槽列表。
+        ///
+        /// 为什么是列表而不是单槽：allowConcurrent=true 时同一任务允许多个实例并存，
+        /// 原实现按任务名只留一个槽（后来的覆盖先来的），被覆盖的实例句柄彻底失联 ——
+        /// GetRunning/TryStop 只能看到最后一个，用户既查不到也停不掉。
+        /// detach + allowConcurrent 已被 <see cref="TaskDefinition.Validate"/> 拒绝，
+        /// 因此多实例只可能出现在 wait 模式，不涉及守护/重启链。
+        /// </summary>
+        private readonly Dictionary<string, List<RunSlot>> _running =
+            new Dictionary<string, List<RunSlot>>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// 单任务并发实例上限（仅对 allowConcurrent 生效）。
+        /// 没有上限时"每分钟触发一次 + 任务跑一小时"会无界堆积进程。
+        /// 上限只拦新实例，不影响已跑着的实例被查询/停止。
+        /// </summary>
+        private const int MaxConcurrentInstances = 5;
         private bool _started;
         private bool _globalEnabled = true;
         private readonly IIdleService _idleService;
@@ -408,21 +425,12 @@ namespace CarroDesk.Services.Tasks
             }
 
             // 占槽即防重：槽在进程真正启动前就存在，启动窗口期内的并发触发不会漏判。
-            // wait 模式在 finally 清槽；detach 模式的槽由退出 watcher 清理。
+            // allowConcurrent 时同一任务可有多实例并存，故登记进"该任务的槽列表"。
             RunSlot slot = new RunSlot();
-            bool skip = false;
-            lock (_lock)
+            string slotRefusal;
+            if (!TryOccupySlot(task.Name, task.Options != null && task.Options.AllowConcurrent, slot, out slotRefusal))
             {
-                if (_running.ContainsKey(task.Name))
-                {
-                    bool allow = task.Options != null && task.Options.AllowConcurrent;
-                    if (!allow) skip = true;
-                }
-                if (!skip) _running[task.Name] = slot;
-            }
-            if (skip)
-            {
-                TaskLogger.Warn(task.Name, "skipped(" + reason + ") concurrent execution not allowed");
+                TaskLogger.Warn(task.Name, "skipped(" + reason + ") " + slotRefusal);
                 return;
             }
 
@@ -572,10 +580,61 @@ namespace CarroDesk.Services.Tasks
 
         private void RemoveSlot(string name, RunSlot slot)
         {
+            if (slot == null) return;
             lock (_lock)
             {
-                RunSlot cur;
-                if (_running.TryGetValue(name, out cur) && ReferenceEquals(cur, slot)) _running.Remove(name);
+                List<RunSlot> slots;
+                if (!_running.TryGetValue(name, out slots)) return;
+                // 只摘这一个实例：allowConcurrent 下同名槽可能有多个，
+                // 误摘会让仍在运行的实例失去登记（进而在守护重启校验里被当成"已释放"）。
+                if (slots.Remove(slot) && slots.Count == 0) _running.Remove(name);
+            }
+        }
+
+        /// <summary>
+        /// 运行槽登记。allowConcurrent=false 时同名已有在册实例即拒绝；=true 时允许并存，
+        /// 但不超过 <see cref="MaxConcurrentInstances"/>。返回 false 时 <paramref name="reason"/>
+        /// 给出可写入日志的原因。
+        /// </summary>
+        private bool TryOccupySlot(string name, bool allowConcurrent, RunSlot slot, out string reason)
+        {
+            lock (_lock)
+            {
+                List<RunSlot> slots;
+                if (!_running.TryGetValue(name, out slots))
+                {
+                    slots = new List<RunSlot>();
+                    _running[name] = slots;
+                }
+
+                if (slots.Count > 0)
+                {
+                    if (!allowConcurrent)
+                    {
+                        reason = "concurrent execution not allowed";
+                        return false;
+                    }
+                    if (slots.Count >= MaxConcurrentInstances)
+                    {
+                        reason = "instance limit reached (" + slots.Count + "/" + MaxConcurrentInstances + " concurrent instances)";
+                        return false;
+                    }
+                }
+
+                slots.Add(slot);
+                reason = null;
+                return true;
+            }
+        }
+
+        /// <summary>该任务名下是否仍登记着这个槽：只有真正出册（停止/退出/被替换）才会消失。</summary>
+        private bool IsSlotRegistered(string name, RunSlot slot)
+        {
+            if (slot == null) return false;
+            lock (_lock)
+            {
+                List<RunSlot> slots;
+                return _running.TryGetValue(name, out slots) && slots.Contains(slot);
             }
         }
 
@@ -705,14 +764,10 @@ namespace CarroDesk.Services.Tasks
             try
             {
                 // 槽已不在册 = 用户停止 / 宿主退出 / 配置重载替换过：放弃重启
-                lock (_lock)
+                if (!IsSlotRegistered(task.Name, slot))
                 {
-                    RunSlot cur;
-                    if (!_running.TryGetValue(task.Name, out cur) || !ReferenceEquals(cur, slot))
-                    {
-                        TaskLogger.Info(task.Name, "supervise: restart cancelled (slot released)");
-                        return;
-                    }
+                    TaskLogger.Info(task.Name, "supervise: restart cancelled (slot released)");
+                    return;
                 }
                 if (!_started || !_globalEnabled || !IsTaskStillEnabled(task) || slot.StopRequested)
                 {
@@ -770,17 +825,21 @@ namespace CarroDesk.Services.Tasks
             var list = new List<TaskRunInfo>();
             lock (_lock)
             {
-                foreach (var s in _running.Values)
+                //逐实例列出：allowConcurrent 下同名任务会有多条记录（此前只报最后一个）
+                foreach (var slots in _running.Values)
                 {
-                    var h = s != null ? s.Handle : null;
-                    if (h == null) continue;
-                    list.Add(new TaskRunInfo
+                    foreach (var s in slots)
                     {
-                        Name = h.Definition != null ? h.Definition.Name : "",
-                        Pid = h.Pid,
-                        StartedAt = h.StartedAt,
-                        KillWithHost = h.KillWithHost
-                    });
+                        var h = s != null ? s.Handle : null;
+                        if (h == null) continue;
+                        list.Add(new TaskRunInfo
+                        {
+                            Name = h.Definition != null ? h.Definition.Name : "",
+                            Pid = h.Pid,
+                            StartedAt = h.StartedAt,
+                            KillWithHost = h.KillWithHost
+                        });
+                    }
                 }
             }
             return list.AsReadOnly();
@@ -789,35 +848,54 @@ namespace CarroDesk.Services.Tasks
         public bool IsRunning(string taskName)
         {
             if (string.IsNullOrEmpty(taskName)) return false;
-            lock (_lock) return _running.ContainsKey(taskName);
+            lock (_lock)
+            {
+                List<RunSlot> slots;
+                return _running.TryGetValue(taskName, out slots) && slots.Count > 0;
+            }
         }
 
+        /// <summary>
+        /// 停止该任务当前在册的**全部**实例（allowConcurrent 下可能不止一个）。
+        /// 用户点一次"停止任务"的语义是"这个任务停下来"，不是"停掉其中一个"。
+        /// 同时对每个槽置StopRequested，取消各自挂起中的自动重启（systemctl stop 语义）。
+        /// </summary>
         public bool TryStop(string taskName)
         {
             if (string.IsNullOrEmpty(taskName)) return false;
-            TaskProcessHandle handle;
+            List<TaskProcessHandle> handles;
             lock (_lock)
             {
-                RunSlot s;
-                if (!_running.TryGetValue(taskName, out s)) return false;
-                if (s != null) s.StopRequested = true; // 同时取消挂起中的自动重启（systemctl stop 语义）
-                handle = s != null ? s.Handle : null;
-                if (handle == null)
+                List<RunSlot> slots;
+                if (!_running.TryGetValue(taskName, out slots) || slots.Count == 0) return false;
+
+                handles = new List<TaskProcessHandle>();
+                // 倒序遍历：延迟期内无活进程的槽要就地摘除，正序会破坏迭代器
+                for (int i = slots.Count - 1; i >= 0; i--)
                 {
-                    // 重启延迟期内没有活进程：取消挂起重启即可，立即出册
-                    _running.Remove(taskName);
+                    var s = slots[i];
+                    if (s == null) { slots.RemoveAt(i); continue; }
+                    s.StopRequested = true;
+                    var h = s.Handle;
+                    if (h == null)
+                    {
+                        // 重启延迟期/尚未启动：没有活进程可杀，取消挂起重启即可，立即出册
+                        slots.RemoveAt(i);
+                        continue;
+                    }
+                    handles.Add(h);
                 }
+                if (slots.Count == 0) _running.Remove(taskName);
             }
-            if (handle == null) return true;
-            try
+            if (handles.Count == 0) return true;
+
+            var ok = true;
+            foreach (var h in handles)
             {
-                handle.Stop();
-                return true;
+                try { h.Stop(); }
+                catch { ok = false; }
             }
-            catch
-            {
-                return false;
-            }
+            return ok;
         }
 
         /// <summary>detach 任务的守护状态快照：连续失败计数与熔断标记（供 UI 展示"已标记失败"）。</summary>
@@ -846,15 +924,19 @@ namespace CarroDesk.Services.Tasks
             lock (_lock)
             {
                 handles = new List<TaskProcessHandle>();
-                foreach (var s in _running.Values)
+                // 逐实例遍历（allowConcurrent 下同名任务可能有多条在册槽）
+                foreach (var slots in _running.Values)
                 {
-                    if (s == null) continue;
-                    // 宿主退出对所有实例都是"主动停止"：先置位 StopRequested，
-                    // 否则 killWithHost=false 的常驻任务在 h.Dispose() 之后，
-                    // 仍在等待的 exit watcher 只能拿到异常退出码，会被判定为意外退出
-                    // 而弹一次虚假"失败"通知（Dispose 使 WaitForExit 抛异常 → 返回 -1）。
-                    s.StopRequested = true;
-                    if (s.Handle != null) handles.Add(s.Handle);
+                    foreach (var s in slots)
+                    {
+                        if (s == null) continue;
+                        // 宿主退出对所有实例都是"主动停止"：先置位 StopRequested，
+                        // 否则 killWithHost=false 的常驻任务在 h.Dispose() 之后，
+                        // 仍在等待的 exit watcher 只能拿到异常退出码，会被判定为意外退出
+                        // 而弹一次虚假"失败"通知（Dispose 使 WaitForExit 抛异常 → 返回 -1）。
+                        s.StopRequested = true;
+                        if (s.Handle != null) handles.Add(s.Handle);
+                    }
                 }
                 _running.Clear();
             }

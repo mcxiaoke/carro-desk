@@ -656,6 +656,16 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                     controlToFocus = CronBox;
                     return false;
                 }
+                // 语法合法但永不可达（如 0 0 30 2 *）：存下去等于建一个永不执行的任务，
+                // 而用户在列表里看不出任何异常。放在此处拦截而不是加载校验，
+                // 是为了不影响既有配置里已存在的同类表达式（它们仍按"不触发"处理）。
+                if (!CronHelper.GetNextOccurrence(built.Trigger.Expr, DateTime.Now).HasValue)
+                {
+                    error = Loc.T("Tasks.ValCronUnreachable",
+                        "Cron 表达式语法合法但没有触发点（如 2 月 30 日），该任务永远不会执行");
+                    controlToFocus = CronBox;
+                    return false;
+                }
             }
             else if (built.Trigger.Type == TaskTriggerType.Idle)
             {
@@ -1011,9 +1021,19 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             {
                 string desc = CronHelper.ExplainCron(expr);
                 var next = CronHelper.GetNextOccurrence(expr, DateTime.Now);
-                string nextStr = next.HasValue ? Loc.T("Tasks.CronHintNext", next.Value) : "";
-                CronHintText.Text = "✓ " + desc + nextStr;
-                CronHintText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x05, 0x96, 0x69));
+                if (!next.HasValue)
+                {
+                    // 语法合法但永不可达（如 2 月 30 日）：绝不能显示成绿色的"✓ 有效"。
+                    // 此前 nextStr 为空串、整行仍是绿色，用户看不出这个任务永远不会跑。
+                    CronHintText.Text = Loc.T("Tasks.CronHintUnreachable",
+                        "该表达式语法合法，但未来 8 年内没有任何触发点，任务不会执行");
+                    CronHintText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xD9, 0x30, 0x25));
+                }
+                else
+                {
+                    CronHintText.Text = "✓ " + desc + Loc.T("Tasks.CronHintNext", next.Value);
+                    CronHintText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x05, 0x96, 0x69));
+                }
             }
         }
 
@@ -1210,17 +1230,21 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             {
                 var cur = TaskList.SelectedItem as TaskDefinition;
                 string name = cur != null ? cur.Name : NameBox.Text.Trim();
-                TaskRunInfo run = null;
+                List<TaskRunInfo> runs = new List<TaskRunInfo>();
                 if (_scheduler != null && !string.IsNullOrWhiteSpace(name))
                 {
                     foreach (var r in _scheduler.GetRunning())
                     {
-                        if (string.Equals(r.Name, name, StringComparison.OrdinalIgnoreCase)) { run = r; break; }
+                        if (string.Equals(r.Name, name, StringComparison.OrdinalIgnoreCase)) runs.Add(r);
                     }
                 }
+                var run = runs.Count > 0 ? runs[runs.Count - 1] : null;
                 if (run != null)
                 {
-                    RunStatusText.Text = Loc.T("Tasks.RunStatusRunning", "运行中 pid={0} ({1:0}s)", run.Pid, run.DurationSec);
+                    // 允许并发时同名任务可能有多条实例，全部列出才不会被"只看到最后一个"误导
+                    RunStatusText.Text = runs.Count > 1
+                        ? Loc.T("Tasks.RunStatusRunningMulti", "运行中 {0} 个实例，最新 pid={1} ({2:0}s)", runs.Count, run.Pid, run.DurationSec)
+                        : Loc.T("Tasks.RunStatusRunning", "运行中 pid={0} ({1:0}s)", run.Pid, run.DurationSec);
                     StopTaskButton.Visibility = Visibility.Visible;
                 }
                 else

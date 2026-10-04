@@ -29,6 +29,9 @@ namespace CarroDesk.Services.Tasks.Triggers
         private string _expr;
         private DateTime _lastFiredMinute = DateTime.MinValue;
 
+        /// <summary>不可达表达式只告警一次：<see cref="ScheduleNext"/> 每次重排都会走到这个分支。</summary>
+        private bool _warnedUnreachable;
+
         /// <summary>当前定时器所指向的目标触发时刻，用于休眠恢复后的漏触发补偿。</summary>
         private DateTime? _scheduledFor;
 
@@ -52,7 +55,19 @@ namespace CarroDesk.Services.Tasks.Triggers
             var next = CronHelper.GetNextOccurrence(_expr, now);
             if (!next.HasValue)
             {
-                // 表达式合法但未来一年内没有任何触发点（例如 2 月 30 日），不再空转
+                // 表达式合法但未来八年内没有任何触发点（例如 2 月 30 日），不再空转。
+                // 必须留下痕迹：否则触发器彻底静默失效，用户只会看到"任务从不定时跑"，
+                // 而配置本身是合法的，编辑器也不会报错。
+                if (!_warnedUnreachable)
+                {
+                    _warnedUnreachable = true;
+                    try
+                    {
+                        TaskLogger.Warn(Task != null ? Task.Name : "cron",
+                            "cron expression '" + _expr + "' is valid but has no occurrence within 8 years; trigger will never fire");
+                    }
+                    catch { }
+                }
                 return;
             }
 

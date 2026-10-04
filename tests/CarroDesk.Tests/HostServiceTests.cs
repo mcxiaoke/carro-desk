@@ -142,8 +142,75 @@ namespace CarroDesk.Tests
         [TestMethod]
         public async Task SafeInvoker_RunTimeoutAsync_NullAction_ReturnsTrueImmediately()
         {
-            bool ok = await SafeInvoker.RunTimeoutAsync("t", TimeSpan.FromSeconds(1), null);
+            bool ok = await SafeInvoker.RunTimeoutAsync("t", TimeSpan.FromSeconds(1), (Action)null);
             Assert.IsTrue(ok);
+        }
+
+        /// <summary>
+        /// 可取消重载：超时时必须发出取消信号，且不得阻塞到 action 跑完。
+        /// 旧实现只有"停止等待"语义，回调会继续跑完，调用方看到失败时副作用却已发生。
+        /// </summary>
+        [TestMethod]
+        public async Task SafeInvoker_RunTimeoutAsync_Cancellable_ReceivesCancellationOnTimeout()
+        {
+            var errors = new List<string>();
+            bool sawCancellation = false;
+            var finished = new ManualResetEventSlim(false);
+
+            bool ok = await SafeInvoker.RunTimeoutAsync("t", TimeSpan.FromMilliseconds(200),
+                (System.Threading.CancellationToken token) =>
+                {
+                    for (int i = 0; i < 100 && !token.IsCancellationRequested; i++)
+                        Thread.Sleep(20);
+                    sawCancellation = token.IsCancellationRequested;
+                    finished.Set();
+                },
+                (id, ex) => errors.Add(id + ":" + ex.GetType().Name));
+
+            Assert.IsFalse(ok, "超时应视为放行（返回 false）");
+            Assert.IsTrue(finished.Wait(TimeSpan.FromSeconds(5)), "action 应在取消后收手");
+            Assert.IsTrue(sawCancellation, "超时应触发 CancellationToken，让 action 能停止后续步骤");
+            Assert.AreEqual(1, errors.Count, "超时必须留痕");
+            StringAssert.Contains(errors[0], "TimeoutException");
+        }
+
+        [TestMethod]
+        public async Task SafeInvoker_RunTimeoutAsync_Cancellable_NullAction_ReturnsTrueImmediately()
+        {
+            bool ok = await SafeInvoker.RunTimeoutAsync("t", TimeSpan.FromSeconds(1),
+                (Action<System.Threading.CancellationToken>)null);
+            Assert.IsTrue(ok);
+        }
+
+        /// <summary>超时后 action 才抛出的异常不得变成 UnobservedTaskException。</summary>
+        [TestMethod]
+        public async Task SafeInvoker_RunTimeoutAsync_LateException_IsObserved()
+        {
+            var unobserved = new List<Exception>();
+            EventHandler<UnobservedTaskExceptionEventArgs> handler = (s, e) =>
+            {
+                lock (unobserved) unobserved.Add(e.Exception);
+                e.SetObserved();
+            };
+            System.Threading.Tasks.TaskScheduler.UnobservedTaskException += handler;
+            try
+            {
+                var finished = new ManualResetEventSlim(false);
+                bool ok = await SafeInvoker.RunTimeoutAsync("t", TimeSpan.FromMilliseconds(150),
+                    () => { Thread.Sleep(500); finished.Set(); throw new InvalidOperationException("late-boom"); });
+
+                Assert.IsFalse(ok);
+                Assert.IsTrue(finished.Wait(TimeSpan.FromSeconds(5)));
+
+                for (int i = 0; i < 3; i++) { GC.Collect(); GC.WaitForPendingFinalizers(); }
+
+                lock (unobserved)
+                    Assert.AreEqual(0, unobserved.Count, "超时后的异常必须已被观察");
+            }
+            finally
+            {
+                System.Threading.Tasks.TaskScheduler.UnobservedTaskException -= handler;
+            }
         }
 
         private interface IServiceStub

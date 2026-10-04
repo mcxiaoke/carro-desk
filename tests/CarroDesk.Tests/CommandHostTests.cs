@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using CarroDesk.Core;
 using CarroDesk.Core.Commands;
 using CarroDesk.Core.Models;
@@ -33,7 +34,40 @@ namespace CarroDesk.Tests
         private sealed class MemoryAuditSink : ICommandAuditSink
         {
             public readonly List<CommandAuditEntry> Entries = new List<CommandAuditEntry>();
-            public void Write(CommandAuditEntry entry) { Entries.Add(entry); }
+
+            /// <summary>
+            /// 并发命令会同时写审计（每条命令写一条），必须加锁：
+            /// 否则 List.Add 的内部数组扩容会在并发下抛 IndexOutOfRangeException，
+            /// 表现为随机失败 —— 这是测试替身自身的线程安全问题，不是被测代码的缺陷。
+            /// </summary>
+            public void Write(CommandAuditEntry entry) { lock (Entries) Entries.Add(entry); }
+
+            /// <summary>读取快照（加锁拷贝，避免与并发写入争用）。</summary>
+            public List<CommandAuditEntry> Snapshot()
+            {
+                lock (Entries) return new List<CommandAuditEntry>(Entries);
+            }
+        }
+
+        private sealed class RecordingLogger : ILoggerService
+        {
+            public readonly List<string> Warnings = new List<string>();
+            public readonly List<string> Errors = new List<string>();
+            public void LogInfo(string module, string message) { }
+            public void LogWarning(string module, string message)
+            {
+                lock (Warnings) Warnings.Add(module + "|" + message);
+            }
+            public void LogError(string module, string message, Exception ex = null)
+            {
+                lock (Errors) Errors.Add(module + "|" + message + "|" + (ex != null ? ex.Message : ""));
+            }
+            public bool AnyWarningContains(string fragment)
+            {
+                lock (Warnings)
+                    foreach (var w in Warnings) if (w.Contains(fragment)) return true;
+                return false;
+            }
         }
 
         private sealed class CommandedModule : ModuleBase<DummyConfig>, ICommandProvider
@@ -91,7 +125,8 @@ namespace CarroDesk.Tests
             Func<string, ModuleStatus> status = null,
             PinGuard pinGuard = null,
             CommandRateLimiter rateLimiter = null,
-            ICommandAuditSink audit = null)
+            ICommandAuditSink audit = null,
+            ILoggerService logger = null)
         {
             var registry = new CommandRegistry();
             setup?.Invoke(registry);
@@ -100,7 +135,8 @@ namespace CarroDesk.Tests
                 status ?? (id => ModuleStatus.Running),
                 pinGuard,
                 audit ?? new MemoryAuditSink(),
-                rateLimiter);
+                rateLimiter,
+                logger);
         }
 
         [TestMethod]
@@ -343,6 +379,154 @@ namespace CarroDesk.Tests
             Assert.IsTrue(sw.ElapsedMilliseconds < 3000, "Invoke 应在超时后尽快返回，而不是等 handler 跑完");
         }
 
+        /// <summary>
+        /// 超时必须发出取消信号：否则"忽略超时的能力"无法知道该收手，
+        /// 用户收到 -32004 后后台仍在继续（审计也只留下超时那一刻）。
+        /// </summary>
+        [TestMethod]
+        public void Invoke_Timeout_CancelsCancellableHandler()
+        {
+            var observed = new ManualResetEventSlim(false);
+            CancellationToken tokenSeen = default(CancellationToken);
+
+            var descriptor = new CommandDescriptor
+            {
+                Name = "test.echo",
+                ModuleId = "test",
+                Summary = "test",
+                Risk = CommandRisk.ReadOnly,
+                TimeoutMs = 200,
+                CancellableHandler = (req, token) =>
+                {
+                    tokenSeen = token;
+                    // 模拟真实的长耗时轮询：观察取消信号后立刻退出
+                    for (int i = 0; i < 100; i++)
+                    {
+                        if (token.IsCancellationRequested) break;
+                        Thread.Sleep(20);
+                    }
+                    observed.Set();
+                    return CommandResult.Success("should-not-be-used");
+                }
+            };
+
+            var host = BuildHost(r => r.Register("test", descriptor));
+            var result = host.Invoke(CommandRequest.Create("test.echo"));
+
+            Assert.AreEqual(CommandErrorCodes.Timeout, result.Error.Code);
+            Assert.IsTrue(observed.Wait(TimeSpan.FromSeconds(5)), "handler 应在收到取消后退出");
+            Assert.IsTrue(tokenSeen.CanBeCanceled, "handler 必须拿到可取消的令牌");
+            Assert.IsTrue(tokenSeen.IsCancellationRequested, "超时应触发 CancellationToken");
+        }
+
+        /// <summary>
+        /// 不响应取消的 handler：内核不能被它拖住（照常按超时返回），
+        /// 但必须观察它稍后抛出的异常 —— 否则会变成 UnobservedTaskException，
+        /// handler 的真实失败原因就此静默丢失。
+        /// </summary>
+        [TestMethod]
+        public void Invoke_Timeout_IgnoringHandler_LateExceptionIsObservedAndLogged()
+        {
+            var unobserved = new List<Exception>();
+            EventHandler<UnobservedTaskExceptionEventArgs> handler = (s, e) =>
+            {
+                lock (unobserved) unobserved.Add(e.Exception);
+                e.SetObserved();
+            };
+            TaskScheduler.UnobservedTaskException += handler;
+            try
+            {
+                var logger = new RecordingLogger();
+                var finished = new ManualResetEventSlim(false);
+
+                var descriptor = new CommandDescriptor
+                {
+                    Name = "test.echo",
+                    ModuleId = "test",
+                    Summary = "test",
+                    Risk = CommandRisk.ReadOnly,
+                    TimeoutMs = 150,
+                    // 完全忽略令牌：睡到超时之后才抛
+                    Handler = req =>
+                    {
+                        Thread.Sleep(600);
+                        finished.Set();
+                        throw new InvalidOperationException("late-boom");
+                    }
+                };
+
+                var host = BuildHost(r => r.Register("test", descriptor), logger: logger);
+                var result = host.Invoke(CommandRequest.Create("test.echo"));
+
+                Assert.AreEqual(CommandErrorCodes.Timeout, result.Error.Code,
+                    "不响应取消的 handler 不应让内核一直等下去");
+                Assert.IsTrue(finished.Wait(TimeSpan.FromSeconds(5)));
+
+                // 强制 GC 触发未观察异常的终结流程
+                for (int i = 0; i < 3; i++)
+                {
+                    GC.Collect();
+                    GC.WaitForPendingFinalizers();
+                }
+
+                lock (unobserved)
+                    Assert.AreEqual(0, unobserved.Count,
+                        "超时后 handler 的异常必须已被内核观察（否则会成为 UnobservedTaskException）");
+
+                // 并且留下可排障的日志：调用方拿到的是超时，真实原因只有这里有
+                Assert.IsTrue(logger.Errors.Exists(m => m.Contains("late-boom")),
+                    "超时后 handler 的异常应记入日志（实际记录: " +
+                    string.Join(" | ", logger.Errors.ToArray()) + ")");
+            }
+            finally
+            {
+                TaskScheduler.UnobservedTaskException -= handler;
+            }
+        }
+
+        /// <summary>
+        /// 等待期间不得占用线程：老实现是 Task.Wait(timeout)，
+        /// 每条并发命令白占两个线程池线程（handler 一个、纯等待一个）。
+        /// 这里用"同时发起大量慢命令"验证吞吐不再被等待线程数限制。
+        /// </summary>
+        [TestMethod]
+        public void InvokeAsync_ConcurrentSlowCommands_DoNotConsumeOneThreadPerCall()
+        {
+            const int concurrency = 60;
+            var host = BuildHost(r => r.Register("test", SimpleCommand(
+                timeoutMs: 30000,
+                handler: req => { Thread.Sleep(300); return CommandResult.Success(); })));
+
+            int peakThreads = 0;
+            var sampler = new Thread(() =>
+            {
+                while (Volatile.Read(ref peakThreads) >= 0)
+                {
+                    try { peakThreads = Math.Max(peakThreads, Process.GetCurrentProcess().Threads.Count); }
+                    catch { return; }
+                    Thread.Sleep(15);
+                }
+            });
+            var baseline = Process.GetCurrentProcess().Threads.Count;
+
+            var tasks = new List<Task<CommandResult>>();
+            for (int i = 0; i < concurrency; i++)
+                tasks.Add(host.InvokeAsync(CommandRequest.Create("test.echo", "src" + i)));
+
+            sampler.Start();
+            Task.WaitAll(tasks.ToArray(), TimeSpan.FromSeconds(60));
+            sampler.Interrupt();
+
+            int succeeded = 0;
+            foreach (var t in tasks) if (t.Result != null && t.Result.Ok) succeeded++;
+            Assert.AreEqual(concurrency, succeeded, "所有慢命令都应正常完成");
+
+            // 60 条并发若每条占 2 个线程池线程会明显膨胀；给出宽松上界只抓回归
+            int grew = peakThreads - baseline;
+            Assert.IsTrue(grew < concurrency,
+                "等待期间不应按并发数线性占用线程（线程数增长 " + grew + "，并发 " + concurrency + "）");
+        }
+
         [TestMethod]
         public void Invoke_RateLimitExceeded_ReturnsRateLimited()
         {
@@ -384,8 +568,9 @@ namespace CarroDesk.Tests
             request.Pin = "1234";
             Assert.IsTrue(host.Invoke(request).Ok);
 
-            Assert.AreEqual(1, audit.Entries.Count);
-            var entry = audit.Entries[0];
+            var entries = audit.Snapshot();
+            Assert.AreEqual(1, entries.Count);
+            var entry = entries[0];
             Assert.IsTrue(entry.Ok);
             Assert.AreEqual("test.echo", entry.Method);
             Assert.AreEqual("mcp", entry.Source);
@@ -404,7 +589,7 @@ namespace CarroDesk.Tests
             var audit = new MemoryAuditSink();
             var host = BuildHost(r => r.Register("test", SimpleCommand()), audit: audit);
             Assert.IsTrue(host.Invoke(CommandRequest.Create("test.echo")).Ok);
-            Assert.IsFalse(audit.Entries[0].PinUsed);
+            Assert.IsFalse(audit.Snapshot()[0].PinUsed);
         }
 
         [TestMethod]
@@ -413,9 +598,10 @@ namespace CarroDesk.Tests
             var audit = new MemoryAuditSink();
             var host = BuildHost(r => r.Register("test", SimpleCommand()), audit: audit);
             Assert.IsFalse(host.Invoke(CommandRequest.Create("test.nope")).Ok);
-            Assert.AreEqual(1, audit.Entries.Count);
-            Assert.IsFalse(audit.Entries[0].Ok);
-            Assert.AreEqual(CommandErrorCodes.CapabilityNotFound, audit.Entries[0].Code);
+            var entries = audit.Snapshot();
+            Assert.AreEqual(1, entries.Count);
+            Assert.IsFalse(entries[0].Ok);
+            Assert.AreEqual(CommandErrorCodes.CapabilityNotFound, entries[0].Code);
         }
 
         [TestMethod]

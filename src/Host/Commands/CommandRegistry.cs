@@ -53,8 +53,9 @@ namespace CarroDesk.Host.Commands
         {
             if (string.IsNullOrWhiteSpace(descriptor.Name))
                 throw new ArgumentException("能力名不能为空", nameof(descriptor));
-            if (descriptor.Handler == null)
-                throw new ArgumentException("能力 '" + descriptor.Name + "' 缺少 Handler", nameof(descriptor));
+            // 两个执行体至少要有一个：只有 CancellableHandler 的能力同样是完整的能力定义
+            if (descriptor.Handler == null && descriptor.CancellableHandler == null)
+                throw new ArgumentException("能力 '" + descriptor.Name + "' 缺少 Handler/CancellableHandler", nameof(descriptor));
 
             descriptor.ModuleId = moduleId ?? descriptor.ModuleId ?? string.Empty;
             var key = descriptor.Name.Trim();

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 
 namespace CarroDesk.Core.Commands
 {
@@ -36,7 +37,20 @@ namespace CarroDesk.Core.Commands
         /// <summary>
         /// 执行体。在线程池上被调用（内核只做超时兜底），需要 UI/COM 的能力必须在实现内部
         /// 自行经 Context.Dispatcher 封送（沿用 ModuleBase 既有跨线程封装）。
+        ///
+        /// 内核超时只是"停止等待"，无法终止本委托：忽略超时的能力请改用
+        /// <see cref="CancellableHandler"/>，否则调用方已收到 -32004，副作用却仍在后台生效。
         /// </summary>
         public Func<CommandRequest, CommandResult> Handler { get; set; }
+
+        /// <summary>
+        /// 可取消的执行体。设置后优先于 <see cref="Handler"/>：超时时内核先
+        /// <c>CancellationTokenSource.Cancel()</c> 再返回 -32004，实现应在耗时点检查该令牌
+        /// 并尽快退出，避免"用户看到超时、后台仍在继续"。
+        ///
+        /// 令牌只覆盖 handler 执行阶段，它<strong>不是</strong>对已发出外部操作的中断保证
+        /// （如已提交给 SCM 的启动命令无法回滚）；实现只需停止后续步骤并尽快返回。
+        /// </summary>
+        public Func<CommandRequest, CancellationToken, CommandResult> CancellableHandler { get; set; }
     }
 }

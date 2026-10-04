@@ -221,7 +221,9 @@ namespace CarroDesk.Services.Tasks
                     else
                     {
                         start = int.Parse(rangePart);
-                        end = start;
+                        // 裸值带步长（"5/2"）按标准 cron 展开为 [值, 维度上限]，
+                        // 即 5,7,9…；此前 end=start=5，只匹配 5，与标准语义不符。
+                        end = step > 1 ? max : start;
                     }
                 }
 
@@ -270,7 +272,8 @@ namespace CarroDesk.Services.Tasks
                     else
                     {
                         start = int.Parse(rangePart);
-                        end = start;
+                        // 同 ParseFieldMask64：裸值带步长展开到维度上限（0/2 → 0,2,4,6）
+                        end = step > 1 ? 7 : start;
                     }
                 }
 
