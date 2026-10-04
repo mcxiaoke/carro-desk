@@ -176,8 +176,8 @@
                         </Grid>
 
                         <!-- 解锁行为（整行换行，避免长文案挤压三列网格造成截断/重叠） -->
-                        <TextBlock Text="{loc:Loc Config.UnlockOnResumeLabel, Default='Windows 解锁后自动解除伪锁屏（推荐开启）'}" FontWeight="SemiBold" Foreground="#FF444444" TextWrapping="Wrap" Margin="0,10,0,2"/>
-                        <CheckBox x:Name="UnlockOnResumeBox" FontSize="12" IsChecked="True">
+                        <TextBlock Text="{loc:Loc Config.UnlockOnResumeLabel, Default='Windows 会话解锁后自动解除伪锁屏（不校验 PIN）'}" FontWeight="SemiBold" Foreground="#FF444444" TextWrapping="Wrap" Margin="0,10,0,2"/>
+                        <CheckBox x:Name="UnlockOnResumeBox" FontSize="12" IsChecked="False">
                                 <TextBlock Text="{loc:Loc Config.UnlockOnResumeDesc, Default='会话恢复时自动解锁'}" TextWrapping="Wrap"/>
                             </CheckBox>
                     </StackPanel>

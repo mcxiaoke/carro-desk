@@ -41,7 +41,7 @@ CarroDesk（标题）
 | `IdleMinutes` | 5 | 空闲多久后锁屏 |
 | `Hotkey` | `Ctrl+Alt+L` | 手动锁屏热键 |
 | `ShowClock` / `OverlayOpacity` | true / 0.88 | 锁屏界面 |
-| `UnlockOnResume` | true | 睡眠唤醒后立即锁定 |
+| `UnlockOnResume` | false | Windows 会话解锁后自动解除 CarroDesk 伪锁屏。**该路径跳过 PIN 校验**，开启后任何一次会话解锁都能解除锁屏，默认关闭 |
 | `ExcludeProcesses` | [] | 排除进程：列表内进程运行时暂停空闲计时（游戏挂机、下载器场景）。支持数组或逗号分隔字符串，大小写不敏感，可含路径 |
 
 ### Awake（保持唤醒）

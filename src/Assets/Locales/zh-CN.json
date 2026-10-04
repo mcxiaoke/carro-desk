@@ -182,7 +182,8 @@
     "PromptPauseMinutes": "请输入暂停计时的分钟数 (1-1440)：",
     "CapsLockOn": "⚠️ 大写锁定 (Caps Lock) 已开启",
     "FallbackToWindows": "🔒 切换至 Windows 锁屏",
-    "FallbackToWindowsTip": "如果无法输入或忘记PIN，可安全降级到系统登录界面锁屏"
+    "FallbackToWindowsTip": "如果无法输入或忘记PIN，可安全降级到系统登录界面锁屏",
+    "SettingsBlockedWhileLocked": "屏幕已锁定，请先输入 PIN 解锁后再修改锁屏设置。"
   },
   "FirstRun": {
     "Title": "CarroDesk - 设置安全 PIN",
@@ -231,8 +232,8 @@
     "HotkeyDesc": "(一键立即锁屏，如 Ctrl+Alt+L)",
     "SystemIntegration": "系统集成",
     "AutoStartLabel": "开机自启（写入注册表 Run）",
-    "UnlockOnResumeLabel": "Windows 解锁后自动解除伪锁屏（推荐开启）",
-    "UnlockOnResumeDesc": "系统锁屏解锁（密码/人脸）后，自动解除 CarroDesk，无需重复输入 PIN 码",
+    "UnlockOnResumeLabel": "Windows 会话解锁后自动解除伪锁屏（不校验 PIN）",
+    "UnlockOnResumeDesc": "系统锁屏解锁（密码/人脸）后，自动解除 CarroDesk，无需重复输入 PIN 码。该路径跳过 PIN 校验，开启后任何一次会话解锁都能解除 CarroDesk 锁屏，仅在信任当前 Windows 会话环境时才建议开启。",
     "TasksEnabledLabel": "启用任务调度（全局总开关）",
     "TasksEnabledDesc": "关闭后所有定时/热键/监听等自动化任务将全部暂停运行",
     "ExcludeTitle": "排除进程（防游戏 / 播放器挂机误锁）",

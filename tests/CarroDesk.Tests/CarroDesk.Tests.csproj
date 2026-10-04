@@ -21,6 +21,7 @@
     <Compile Include="HostServiceTests.cs" />
     <Compile Include="LocalizationContractTests.cs" />
     <Compile Include="ScreenLockWindowTests.cs" />
+    <Compile Include="ScreenLockSecurityTests.cs" />
     <Compile Include="TaskRunnerTests.cs" />
     <Compile Include="TaskPersistentRunTests.cs" />
     <Compile Include="CarroDeskContractTests.cs" />

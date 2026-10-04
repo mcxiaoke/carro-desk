@@ -47,7 +47,7 @@
     "OverlayOpacity": 0.98,
 
     // Windows 系统解锁（如 Win+L 登录恢复）后，是否自动解除本软件的伪锁屏
-    "UnlockOnResume": true,
+    "UnlockOnResume": false,
 
     // 排除进程列表：当列出的进程正在运行时，自动暂停闲置锁屏计时（防止打游戏、视频渲染或全屏观影时被锁屏）
     // 支持直接填写进程名（忽略大小写，带不带 .exe 均可）

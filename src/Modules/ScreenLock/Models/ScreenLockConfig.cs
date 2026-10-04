@@ -19,7 +19,14 @@ namespace CarroDesk.Modules.ScreenLock.Models
 
         [JsonConverter(typeof(StringOrStringListConverter))]
         public List<string> ExcludeProcesses { get; set; } = new List<string>();
-        public bool UnlockOnResume { get; set; } = true;
+        /// <summary>
+        /// Windows 会话解锁后是否自动解除 CarroDesk 伪锁屏。
+        ///
+        /// 默认为 false：该路径**不校验 PIN**，一旦开启，任何能造成一次 Windows 会话解锁的动作
+        /// （含用户自己解锁 Windows）都会免 PIN 解除 CarroDesk 锁屏，使"忘记 PIN"与"绕过保护"
+        /// 在行为上不可区分。默认关闭以保证"设了 PIN 就是安全的"这一预期成立。
+        /// </summary>
+        public bool UnlockOnResume { get; set; } = false;
 
         public ScreenLockConfig Clone()
         {

@@ -299,6 +299,8 @@ namespace CarroDesk.Modules.ScreenLock
         {
             if (Config != null && Config.UnlockOnResume && Controller.IsLocked)
             {
+                // 该路径不校验 PIN，属用户显式选择的行为，必须留痕以便事后分辨锁屏为何被解除。
+                LogInfo("Windows 会话解锁后按配置自动解除伪锁屏（UnlockOnResume=true，跳过 PIN 校验）");
                 Controller.Unlock();
             }
             ResetIdleMachine();
@@ -435,6 +437,18 @@ namespace CarroDesk.Modules.ScreenLock
         {
             // 按模块二级聚合规范：本模块仅输出单一根节点，所有控制项收敛入二级菜单
             var items = new List<TrayMenuItem>();
+
+            // 锁屏安全边界：锁定期间必须禁用本模块全部托盘入口。
+            // 锁屏把"忘记 PIN"的风险转移给用户，因此不能再留一条无需凭据的解除路径：
+            // 托盘图标并不被 LockWindow 独占（任务栏 Shell_TrayWnd 是独立顶层窗口），
+            // 用户可经托盘打开锁屏设置 → 关掉"启用"并保存 → OnConfigReloaded 执行
+            // Controller.Unlock()，全程不需要 PIN。锁定期间唯一的凭据入口是 PIN 界面。
+            if (Controller != null && Controller.IsLocked)
+            {
+                LogInfo("锁屏期间已禁用托盘菜单（防止经托盘关闭“启用”绕过 PIN 解除锁定）");
+                return items;
+            }
+
             int currentMinutes = Config != null ? Config.IdleMinutes : 0;
 
             var root = new TrayMenuItem
@@ -549,8 +563,13 @@ namespace CarroDesk.Modules.ScreenLock
                 {
                     try
                     {
+                        // 纵深防御：即使菜单构建后、点击前恰好发生自动锁定，也不能弹出设置窗口。
+                        if (Controller != null && Controller.IsLocked) return;
                         var cfgMgr = Context?.GetService<IConfigManager>();
-                        var win = new ScreenLockSettingsWindow(cfgMgr, () => OnConfigReloaded())
+                        var win = new ScreenLockSettingsWindow(
+                            cfgMgr,
+                            () => OnConfigReloaded(),
+                            () => Controller != null && Controller.IsLocked)
                         {
                             WindowStartupLocation = WindowStartupLocation.CenterScreen
                         };

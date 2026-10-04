@@ -23,12 +23,27 @@ namespace CarroDesk.Modules.ScreenLock.Views
         private readonly IConfigManager _configManager;
         private readonly Action _onApplied;
 
-        public ScreenLockSettingsWindow(IConfigManager configManager = null, Action onApplied = null)
+        /// <summary>
+        /// 由模块注入的"当前是否处于锁定态"只读探测（规范 M9：窗口不直驱模块/Controller）。
+        /// 锁定期间禁止保存：否则"关掉启用 → 保存 → OnConfigReloaded 解除锁定"会成为
+        /// 一条完全不需要 PIN 的锁屏解除路径。
+        /// </summary>
+        private readonly Func<bool> _isLocked;
+
+        public ScreenLockSettingsWindow(IConfigManager configManager = null, Action onApplied = null, Func<bool> isLocked = null)
         {
             InitializeComponent();
             _configManager = configManager;
             _onApplied = onApplied;
+            _isLocked = isLocked;
             Loaded += OnLoaded;
+        }
+
+        /// <summary>当前是否处于锁屏中（由模块注入的探测函数判定；未注入时视为未锁定）。</summary>
+        public bool IsLockedNow()
+        {
+            try { return _isLocked != null && _isLocked(); }
+            catch { return false; }
         }
 
         private void OnLoaded(object sender, RoutedEventArgs e) => LoadCurrent();
@@ -344,6 +359,14 @@ namespace CarroDesk.Modules.ScreenLock.Views
 
         private void OnSaveApplyClick(object sender, RoutedEventArgs e)
         {
+            // 锁屏期间禁止保存锁屏配置：否则"关掉启用"即可免 PIN 解除锁定。
+            if (IsLockedNow())
+            {
+                MessageBox.Show(
+                    Loc.T("Lock.SettingsBlockedWhileLocked", "屏幕已锁定，请先输入 PIN 解锁后再修改锁屏设置。"),
+                    Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
             SyncFromUI();
             string err = Validate();
             if (err != null)

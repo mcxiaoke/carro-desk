@@ -400,7 +400,7 @@ namespace CarroDesk.Services
                         ["ShowClock"] = true,
                         ["OverlayOpacity"] = 0.88,
                         ["ExcludeProcesses"] = new JArray(),
-                        ["UnlockOnResume"] = true
+                        ["UnlockOnResume"] = false
                     };
                     _moduleConfigs["ScreenLock"] = slObj;
                     changed = true;
