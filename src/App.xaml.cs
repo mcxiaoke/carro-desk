@@ -108,7 +108,9 @@ namespace CarroDesk
             // PIN 能力下沉 Host（规范 §3.5）：缺模块仍按"有 PIN 则验"兜底
             var hostPinService = new HostPinService(rawConfig);
             Services.AddSingleton<IPinService>(hostPinService);
-            var sharedPinGuard = new PinGuard(hostPinService);
+            // 失败计数/封锁窗口落盘：只存内存时"输错 4 次 → 重启宿主 → 继续试"可无限试探，
+            // 限流形同虚设（状态文件路径随数据目录，便携模式/测试隔离自动生效）
+            var sharedPinGuard = new PinGuard(hostPinService, PinGuard.DefaultStatePath);
             Services.AddSingleton(sharedPinGuard);
 
             I18nService.Instance.Init(_configManager.Current.Language);

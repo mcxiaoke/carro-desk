@@ -1,6 +1,9 @@
 using System;
+using System.IO;
 using System.Security.Cryptography;
 using System.Text;
+using CarroDesk.Common;
+using Newtonsoft.Json;
 
 namespace CarroDesk.Services
 {
@@ -107,18 +110,41 @@ namespace CarroDesk.Services
     {
         private const int MaxFreeAttempts = 5;
 
+        /// <summary>
+        /// 持久化状态的衰减窗口：距上次记账超过该时长即视为"旧账作废"，
+        /// 避免一次手滑留下的计数在几天后仍然把用户挡在门外。
+        /// </summary>
+        private static readonly TimeSpan StateDecayWindow = TimeSpan.FromHours(24);
+
         private readonly Func<IPinService> _pinProvider;
         private readonly object _sync = new object();
         private int _fails;
         private DateTime _blockedUntil = DateTime.MinValue;
 
-        public PinGuard(Func<IPinService> pinProvider)
+        /// <summary>
+        /// 失败计数/封锁窗口的状态文件路径。为 null（默认）时不落盘，仅内存计数——
+        /// 单元测试与不需要跨进程限流的场景走这条路径，避免污染用户数据目录。
+        /// 传入路径后，进程重启不再把失败计数清零（否则"输错 4 次 → 重启宿主 → 继续试"可无限试探）。
+        /// </summary>
+        private readonly string _statePath;
+
+        private DateTime _lastUpdateUtc = DateTime.MinValue;
+        private bool _stateLoaded;
+
+        public PinGuard(Func<IPinService> pinProvider, string statePath = null)
         {
             _pinProvider = pinProvider;
+            _statePath = statePath;
         }
 
-        public PinGuard(IPinService pin) : this(() => pin)
+        public PinGuard(IPinService pin, string statePath = null) : this(() => pin, statePath)
         {
+        }
+
+        /// <summary>供宿主注入默认状态文件路径（%AppData%\CarroDesk 或便携目录下的 pin-guard.json）。</summary>
+        public static string DefaultStatePath
+        {
+            get { return Path.Combine(ConfigService.DirPath, "pin-guard.json"); }
         }
 
         public void Reload(IPinService pin)
@@ -127,6 +153,7 @@ namespace CarroDesk.Services
             {
                 _fails = 0;
                 _blockedUntil = DateTime.MinValue;
+                _lastUpdateUtc = DateTime.MinValue;
             }
         }
 
@@ -134,6 +161,9 @@ namespace CarroDesk.Services
         {
             lock (_sync)
             {
+                // 读回持久化状态：刚启动的进程也必须看到上一次留下的封锁窗口，
+                // 否则界面会显示"无锁定"而实际 Try 直接 Blocked。
+                EnsureStateLoadedNoLock();
                 return RemainingBlockNoLock();
             }
         }
@@ -159,10 +189,13 @@ namespace CarroDesk.Services
             // 阶段一：锁内原子地检查封锁状态并预留本次尝试的名额。
             lock (_sync)
             {
+                EnsureStateLoadedNoLock();
                 blockRemaining = RemainingBlockNoLock();
                 if (blockRemaining > TimeSpan.Zero) return PinAttemptResult.Blocked;
 
                 _fails++;
+                _lastUpdateUtc = DateTime.UtcNow;
+                PersistNoLock();
             }
 
             // 阶段二：锁外执行 PBKDF2 验证（10 万轮，耗时约数十毫秒，不能占用锁）。
@@ -176,6 +209,8 @@ namespace CarroDesk.Services
                 {
                     _fails = 0;
                     _blockedUntil = DateTime.MinValue;
+                    _lastUpdateUtc = DateTime.UtcNow;
+                    PersistNoLock();
                     blockRemaining = TimeSpan.Zero;
                     return PinAttemptResult.Success;
                 }
@@ -189,6 +224,7 @@ namespace CarroDesk.Services
                 {
                     blockRemaining = TimeSpan.Zero;
                 }
+                PersistNoLock();
                 return PinAttemptResult.Wrong;
             }
         }
@@ -197,9 +233,81 @@ namespace CarroDesk.Services
         {
             lock (_sync)
             {
+                EnsureStateLoadedNoLock();
                 _fails = 0;
                 _blockedUntil = DateTime.MinValue;
+                _lastUpdateUtc = DateTime.UtcNow;
+                PersistNoLock();
             }
+        }
+
+        /// <summary>
+        /// 延迟读回持久化状态（首次使用时，且仍在锁内调用）。
+        /// 读回只用于恢复失败计数/封锁窗口；超出衰减窗口的旧状态按"过期"丢弃。
+        /// </summary>
+        private void EnsureStateLoadedNoLock()
+        {
+            if (_stateLoaded) return;
+            _stateLoaded = true;
+            if (string.IsNullOrEmpty(_statePath)) return;
+
+            try
+            {
+                if (!File.Exists(_statePath)) return;
+                var json = File.ReadAllText(_statePath, Encoding.UTF8);
+                var state = JsonConvert.DeserializeObject<PinGuardState>(json);
+                if (state == null) return;
+                if (state.Fails <= 0) return;
+
+                // 只接受近期的记账，过期计数自动作废（防止手滑一次被永久连坐）
+                if (state.UpdatedUtc == default(DateTime)) return;
+                if (DateTime.UtcNow - state.UpdatedUtc > StateDecayWindow) return;
+
+                _fails = state.Fails;
+                _blockedUntil = state.BlockedUntilLocal;
+                _lastUpdateUtc = state.UpdatedUtc;
+            }
+            catch
+            {
+                // 状态文件损坏/不可读：按"无历史失败"继续，绝不让限流自身成为不可用点
+            }
+        }
+
+        private void PersistNoLock()
+        {
+            if (string.IsNullOrEmpty(_statePath)) return;
+            try
+            {
+                if (_fails <= 0 && _blockedUntil <= DateTime.MinValue)
+                {
+                    // 已完全复位：删除状态文件，避免"一次成功校验"永久留下计数痕迹
+                    if (File.Exists(_statePath)) File.Delete(_statePath);
+                    return;
+                }
+
+                var state = new PinGuardState
+                {
+                    Fails = _fails,
+                    BlockedUntilLocal = _blockedUntil,
+                    UpdatedUtc = _lastUpdateUtc
+                };
+                AtomicFile.WriteAllText(_statePath, JsonConvert.SerializeObject(state), Encoding.UTF8);
+            }
+            catch
+            {
+                // 落盘失败不影响本次判定：限流降级为进程内生效
+            }
+        }
+
+        private sealed class PinGuardState
+        {
+            public int Fails { get; set; }
+
+            /// <summary>封锁截止时刻（本机本地时间，与 <see cref="System.DateTime.Now"/> 同源）。</summary>
+            public DateTime BlockedUntilLocal { get; set; }
+
+            /// <summary>最后一次记账的 UTC 时间，用于衰减窗口判定。</summary>
+            public DateTime UpdatedUtc { get; set; }
         }
     }
 }

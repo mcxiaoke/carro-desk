@@ -186,5 +186,93 @@ namespace CarroDesk.Tests
             guard.Reload(pinService);
             Assert.AreEqual(TimeSpan.Zero, guard.RemainingBlock());
         }
+
+        // ===== R3：失败计数/封锁窗口必须跨进程重启存活 =====
+
+        private static string NewGuardStatePath(string name)
+        {
+            return System.IO.Path.Combine(TestEnvironment.TempRoot, "pin-guard-" + name + ".json");
+        }
+
+        /// <summary>
+        /// 只存内存时，"输错 4 次 → 重启宿主 → 计数归零 → 继续试" 可无限试探，限流形同虚设。
+        /// 换一个 PinGuard 实例（等价于重启进程）后，失败计数与封锁窗口必须仍在。
+        /// </summary>
+        [TestMethod]
+        public void PinGuard_FailuresSurviveGuardRecreation()
+        {
+            string statePath = NewGuardStatePath("survive");
+            var pinService = new PinService();
+            pinService.SetNewPin("8888");
+
+            var first = new PinGuard(pinService, statePath);
+            for (int i = 0; i < 5; i++)
+            {
+                TimeSpan block;
+                first.Try("wrong", out block);
+            }
+            Assert.IsTrue(first.RemainingBlock() > TimeSpan.Zero, "5 次失败后应进入封锁期");
+            Assert.IsTrue(System.IO.File.Exists(statePath), "限流状态必须落盘，否则重启即清零");
+
+            // 等价于宿主重启：全新实例从磁盘读回
+            var afterRestart = new PinGuard(pinService, statePath);
+            Assert.IsTrue(afterRestart.RemainingBlock() > TimeSpan.Zero,
+                "重启后封锁窗口必须仍在（否则限流可被绕过）");
+
+            TimeSpan remaining;
+            Assert.AreEqual(PinAttemptResult.Blocked, afterRestart.Try("8888", out remaining),
+                "重启后即使 PIN 正确也必须先等封锁结束");
+
+            // 正确 PIN 校验成功后计数复位，状态文件也应随之清除
+            var third = new PinGuard(pinService, statePath);
+            third.Reset();
+            Assert.AreEqual(TimeSpan.Zero, third.RemainingBlock());
+            Assert.IsFalse(System.IO.File.Exists(statePath), "复位后不应残留限流状态文件");
+        }
+
+        /// <summary>未显式传入状态路径时保持纯内存语义（单元测试不得污染用户数据目录）。</summary>
+        [TestMethod]
+        public void PinGuard_WithoutStatePath_DoesNotTouchDisk()
+        {
+            string defaultPath = PinGuard.DefaultStatePath;
+            bool existedBefore = System.IO.File.Exists(defaultPath);
+            long stampBefore = existedBefore ? System.IO.File.GetLastWriteTimeUtc(defaultPath).Ticks : 0;
+
+            var pinService = new PinService();
+            pinService.SetNewPin("8888");
+            var guard = new PinGuard(pinService);
+            for (int i = 0; i < 6; i++)
+            {
+                TimeSpan block;
+                guard.Try("wrong", out block);
+            }
+            Assert.IsTrue(guard.RemainingBlock() > TimeSpan.Zero, "内存态限流本身必须仍然生效");
+
+            Assert.AreEqual(existedBefore, System.IO.File.Exists(defaultPath),
+                "未注入状态路径时不得创建默认状态文件");
+            if (existedBefore)
+            {
+                Assert.AreEqual(stampBefore, System.IO.File.GetLastWriteTimeUtc(defaultPath).Ticks,
+                    "未注入状态路径时不得改写默认状态文件");
+            }
+        }
+
+        /// <summary>状态文件损坏不得让 PIN 校验链路整体不可用（降级为无历史失败）。</summary>
+        [TestMethod]
+        public void PinGuard_CorruptStateFile_DegradesGracefully()
+        {
+            string statePath = NewGuardStatePath("corrupt");
+            System.IO.File.WriteAllText(statePath, "{ this is not json");
+
+            var pinService = new PinService();
+            pinService.SetNewPin("8888");
+            var guard = new PinGuard(pinService, statePath);
+
+            Assert.AreEqual(TimeSpan.Zero, guard.RemainingBlock(), "损坏状态文件应按无历史失败处理");
+
+            TimeSpan remaining;
+            Assert.AreEqual(PinAttemptResult.Success, guard.Try("8888", out remaining),
+                "状态文件损坏不应影响正确 PIN 的校验");
+        }
     }
 }
