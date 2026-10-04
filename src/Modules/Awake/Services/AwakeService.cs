@@ -44,6 +44,119 @@ namespace CarroDesk.Modules.Awake.Services
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool SetSuspendState(bool hibernate, bool forceCritical, bool disableWakeEvent);
 
+        // ===== SE_SHUTDOWN_NAME 权限（SetSuspendState 前置条件） =====
+
+        private const uint TOKEN_ADJUST_PRIVILEGES = 0x0020;
+        private const uint TOKEN_QUERY = 0x0008;
+        private const uint SE_PRIVILEGE_ENABLED = 0x0002;
+        private static readonly Guid SeShutdownName = new Guid("6d43ee9d-ce70-11cf-b7d7-00aa004bd83b");
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct LUID
+        {
+            public uint LowPart;
+            public int HighPart;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct LUID_AND_ATTRIBUTES
+        {
+            public LUID Luid;
+            public uint Attributes;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct TOKEN_PRIVILEGES
+        {
+            public uint PrivilegeCount;
+            public LUID_AND_ATTRIBUTES Privilege;   // 长度为 1
+        }
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool OpenProcessToken(IntPtr processHandle, uint desiredAccess, out IntPtr tokenHandle);
+
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool LookupPrivilegeValue(string host, string name, out LUID luid);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool AdjustTokenPrivileges(IntPtr tokenHandle,
+            [MarshalAs(UnmanagedType.Bool)] bool disableAll, ref TOKEN_PRIVILEGES newState,
+            uint bufferLength, IntPtr previousState, IntPtr returnLength);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool CloseHandle(IntPtr handle);
+
+        [DllImport("kernel32.dll")]
+        private static extern IntPtr GetCurrentProcess();
+
+        /// <summary>
+        /// 启用 <c>SE_SHUTDOWN_NAME</c> 特权。
+        ///
+        /// <c>SetSuspendState</c> 需要"关机"特权，默认状态下普通交互式登录进程并不持有它，
+        /// 直接调用会在受限账户 / UAC 提升过的非管理员账户下返回 FALSE(1314 = 权限不足)，
+        /// 而此时 IPC 早已回"已调度"，用户只在到点后才发现根本没睡下去。
+        /// 关机路径借用了系统 <c>shutdown.exe</c>（权限由该工具自行处理），因此只有睡眠/休眠受影响。
+        ///
+        /// 返回 false 时不阻断调用（提权本身可能失败），但必须让调用方知道，以便把真实错误记进日志。
+        /// </summary>
+        private static bool TryEnableShutdownPrivilege(out string error)
+        {
+            error = null;
+            IntPtr token = IntPtr.Zero;
+            try
+            {
+                if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, out token))
+                {
+                    error = "OpenProcessToken failed: " + Marshal.GetLastWin32Error();
+                    return false;
+                }
+
+                LUID luid;
+                if (!LookupPrivilegeValue(null, SeShutdownName.ToString(), out luid))
+                {
+                    error = "LookupPrivilegeValue(SE_SHUTDOWN_NAME) failed: " + Marshal.GetLastWin32Error();
+                    return false;
+                }
+
+                var tp = new TOKEN_PRIVILEGES
+                {
+                    PrivilegeCount = 1,
+                    Privilege = new LUID_AND_ATTRIBUTES { Luid = luid, Attributes = SE_PRIVILEGE_ENABLED }
+                };
+                if (!AdjustTokenPrivileges(token, false, ref tp, 0, IntPtr.Zero, IntPtr.Zero))
+                {
+                    error = "AdjustTokenPrivileges failed: " + Marshal.GetLastWin32Error();
+                    return false;
+                }
+
+                // 成功返回 true 时 GetLastError 为 ERROR_SUCCESS(0)；
+                // 返回 true 但错误码非 0 说明"没有全部启用"，这里同样视为失败。
+                int lastError = Marshal.GetLastWin32Error();
+                if (lastError != 0)
+                {
+                    error = "SE_SHUTDOWN_NAME not assigned to token (error=" + lastError + ")";
+                    return false;
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+            finally
+            {
+                if (token != IntPtr.Zero)
+                {
+                    try { CloseHandle(token); } catch { }
+                }
+            }
+        }
+
         /// <summary>延迟执行的电源动作。单一待执行槽位：同一时刻只允许一个，新调度替换旧调度。</summary>
         public enum PendingPowerAction
         {
@@ -393,6 +506,14 @@ namespace CarroDesk.Modules.Awake.Services
             {
                 if (action == PendingPowerAction.Sleep)
                 {
+                    // SetSuspendState 需要 SE_SHUTDOWN_NAME，默认登录进程并不持有；
+                    // 不显式启用时受限账户会静默失败（返回 FALSE/1314），而此时 IPC 早已回"已调度"。
+                    string privErr;
+                    if (!TryEnableShutdownPrivilege(out privErr))
+                    {
+                        _logger?.LogWarning("Awake", "启用 SE_SHUTDOWN_NAME 失败，睡眠可能被系统拒绝: " + privErr);
+                    }
+
                     if (!SetSuspendState(false, false, false))
                     {
                         _logger?.LogError("Awake", $"SetSuspendState 调用失败 (Win32Error={Marshal.GetLastWin32Error()})");

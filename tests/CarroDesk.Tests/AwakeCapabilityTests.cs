@@ -1,11 +1,15 @@
 using System;
+using System.IO;
 using System.Linq;
+using System.Text;
+using System.Windows;
 using System.Windows.Threading;
 using CarroDesk.Core;
 using CarroDesk.Core.Commands;
 using CarroDesk.Host.Commands;
 using CarroDesk.Host.Services;
 using CarroDesk.Modules.Awake;
+using CarroDesk.Modules.Awake.Services;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Newtonsoft.Json.Linq;
 
@@ -258,6 +262,62 @@ namespace CarroDesk.Tests
 
             // awake.off 管保持唤醒，不牵连电源动作调度
             Assert.AreEqual("shutdown", (string)status["pendingAction"]);
+        }
+
+        /// <summary>
+        /// 睡眠路径必须在调用 SetSuspendState 之前启用 SE_SHUTDOWN_NAME 特权。
+        ///
+        /// SetSuspendState 需要"关机"特权，默认交互式登录进程并不持有；受限账户 /
+        /// UAC 提升后的非管理员账户下会返回 FALSE(1314 权限不足)，而 IPC 早已回"已调度"，
+        /// 用户只在到点后才发现根本没睡下去。（关机路径借用 shutdown.exe，不受影响。）
+        ///
+        /// 断言：AwakeService 存在无参的 TryEnableShutdownPrivilege(out string)，
+        /// 且 ExecutePowerAction 的睡眠分支在调用 SetSuspendState 之前调用它。
+        /// 这里不真正睡眠 —— 会挂起测试机器。
+        /// </summary>
+        [TestMethod]
+        public void SleepPath_EnablesShutdownPrivilegeBeforeSuspend()
+        {
+            var serviceType = typeof(AwakeService);
+
+            var tryEnable = serviceType.GetMethod("TryEnableShutdownPrivilege",
+                System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
+            Assert.IsNotNull(tryEnable, "AwakeService 必须提供启用 SE_SHUTDOWN_NAME 的入口");
+
+            var parameters = tryEnable.GetParameters();
+            Assert.AreEqual(1, parameters.Length);
+            Assert.AreEqual(typeof(string).MakeByRefType(), parameters[0].ParameterType,
+                "应通过 out string 回传失败原因");
+
+            // 直接调用一次确认 P/Invoke 结构与错误处理不抛异常（不会触发任何电源动作）
+            object[] args = new object[] { null };
+            bool ok = (bool)tryEnable.Invoke(null, args);
+            Assert.IsTrue(ok || !string.IsNullOrEmpty((string)args[0]),
+                "特权启用失败时必须给出错误原因，不能静默");
+
+            // 顺序校验：ExecutePowerAction 里必须先启用特权再调用 SetSuspendState
+            string source = ReadAwakeServiceSource();
+            int body = source.IndexOf("private void ExecutePowerAction", StringComparison.Ordinal);
+            Assert.IsTrue(body >= 0, "应能找到 ExecutePowerAction");
+            int enableAt = source.IndexOf("TryEnableShutdownPrivilege", body, StringComparison.Ordinal);
+            int suspendAt = source.IndexOf("SetSuspendState(", body, StringComparison.Ordinal);
+            Assert.IsTrue(enableAt > body && suspendAt > body, "ExecutePowerAction 中应同时出现特权启用与 SetSuspendState");
+            Assert.IsTrue(enableAt < suspendAt, "必须先启用 SE_SHUTDOWN_NAME 再调用 SetSuspendState");
+        }
+
+        private static string ReadAwakeServiceSource()
+        {
+            string name = "AwakeService.cs";
+            var dir = new DirectoryInfo(AppContext.BaseDirectory);
+            while (dir != null && !File.Exists(Path.Combine(dir.FullName, "CarroDesk.slnx")))
+            {
+                dir = dir.Parent;
+            }
+            Assert.IsNotNull(dir, "未能定位仓库根目录（向上找不到 CarroDesk.slnx）");
+
+            string path = Path.Combine(dir.FullName, "src", "Modules", "Awake", "Services", name);
+            Assert.IsTrue(File.Exists(path), "未找到源文件: " + path);
+            return File.ReadAllText(path, Encoding.UTF8);
         }
     }
 }
