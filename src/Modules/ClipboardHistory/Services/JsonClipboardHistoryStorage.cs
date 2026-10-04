@@ -15,6 +15,11 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
     /// <summary>
     /// JSON 文件持久化。
     ///
+    /// 可选加密：构造时传入 <see cref="ClipboardStorageCrypto"/> 后，磁盘文件可切换为
+    /// DPAPI 密文格式（Base64 + magic 头）。Load 一律按文件头自识别格式，与开关状态无关；
+    /// 解密失败时原文件改名留档（.undecryptable-*）并触发 <see cref="DecryptionFailed"/>，
+    /// 不走损坏备份路径。设计细节见 docs/CLIPBOARD-ENCRYPTED-STORAGE-DESIGN-20261004.md。
+    ///
     /// 写入策略：<see cref="Save"/> 只做"登记最新快照"并立即返回，真正的序列化与落盘
     /// 由后台线程合并执行（高频复制时只写最后一版，天然防抖）。
     ///
@@ -29,16 +34,31 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
     public class JsonClipboardHistoryStorage : IClipboardHistoryStorage, IDisposable
     {
         private readonly string _filePath;
+        private readonly ClipboardStorageCrypto _crypto;
         private readonly object _ioLock = new object();
 
         private List<ClipboardItem> _pendingSnapshot;
         private bool _writing;
         private bool _disposed;
+        // 保险丝：加密历史解密失败且留档也失败时冻结 I/O，禁止空历史覆盖密文
+        private bool _ioFrozen;
         private readonly ManualResetEventSlim _idle = new ManualResetEventSlim(true);
 
+        /// <summary>
+        /// 加密历史在当前环境解密失败且已成功留档后触发（参数为留档文件路径；
+        /// 留档失败时为 null，此时存储已冻结 I/O）。
+        /// </summary>
+        public event Action<string> DecryptionFailed;
+
         public JsonClipboardHistoryStorage(string filePath)
+            : this(filePath, null)
+        {
+        }
+
+        public JsonClipboardHistoryStorage(string filePath, ClipboardStorageCrypto crypto)
         {
             _filePath = filePath ?? throw new ArgumentNullException(nameof(filePath));
+            _crypto = crypto;
         }
 
         public List<ClipboardItem> Load()
@@ -48,6 +68,11 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
 
             lock (_ioLock)
             {
+                if (_ioFrozen)
+                {
+                    return new List<ClipboardItem>();
+                }
+
                 try
                 {
                     if (!File.Exists(_filePath))
@@ -55,16 +80,37 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
                         return new List<ClipboardItem>();
                     }
 
-                    string json = File.ReadAllText(_filePath, Encoding.UTF8);
-                    if (string.IsNullOrWhiteSpace(json))
+                    string raw = File.ReadAllText(_filePath, Encoding.UTF8);
+                    if (string.IsNullOrWhiteSpace(raw))
                     {
                         return new List<ClipboardItem>();
                     }
 
-                    var items = JsonConvert.DeserializeObject<List<ClipboardItem>>(json);
-                    if (items != null && items.Any(x => x == null))
-                        throw new InvalidDataException("clipboard history contains null item");
-                    return items ?? new List<ClipboardItem>();
+                    // 密文自识别：与配置状态无关，避免配置与磁盘不一致时把密文当损坏清掉
+                    if (ClipboardStorageCrypto.IsEncryptedText(raw))
+                    {
+                        if (_crypto == null)
+                        {
+                            ArchiveUndecryptable();
+                            return new List<ClipboardItem>();
+                        }
+
+                        string json;
+                        try
+                        {
+                            json = _crypto.DecryptToText(raw);
+                        }
+                        catch (StorageDecryptionException ex)
+                        {
+                            Debug.WriteLine("[ClipboardStorage] decrypt failed: " + ex.Message);
+                            ArchiveUndecryptable();
+                            return new List<ClipboardItem>();
+                        }
+
+                        return ParseItems(json);
+                    }
+
+                    return ParseItems(raw);
                 }
                 catch (Exception ex)
                 {
@@ -83,6 +129,40 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
             }
         }
 
+        private static List<ClipboardItem> ParseItems(string json)
+        {
+            var items = JsonConvert.DeserializeObject<List<ClipboardItem>>(json);
+            if (items != null && items.Any(x => x == null))
+                throw new InvalidDataException("clipboard history contains null item");
+            return items ?? new List<ClipboardItem>();
+        }
+
+        /// <summary>
+        /// 加密历史无法解密（DPAPI masterkey 丢失、换 Windows 用户运行）：原文件改名留档，
+        /// 腾出干净路径让后续保存从空历史开始；留档失败则冻结 I/O 禁止覆盖原文件。
+        /// </summary>
+        private void ArchiveUndecryptable()
+        {
+            string archived = null;
+            try
+            {
+                archived = _filePath + ".undecryptable-" + DateTime.Now.ToString("yyyyMMddHHmmss");
+                File.Move(_filePath, archived);
+                Debug.WriteLine("[ClipboardStorage] undecryptable history archived to: " + archived);
+            }
+            catch (Exception ex)
+            {
+                _ioFrozen = true;
+                Debug.WriteLine("[ClipboardStorage] archive undecryptable history failed, io frozen: " + ex.Message);
+            }
+
+            var handler = DecryptionFailed;
+            if (handler != null)
+            {
+                try { handler(archived); } catch { }
+            }
+        }
+
         public void Save(List<ClipboardItem> items)
         {
             if (items == null) return;
@@ -90,7 +170,7 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
             bool startWriter = false;
             lock (_ioLock)
             {
-                if (_disposed) return;
+                if (_disposed || _ioFrozen) return;
                 _pendingSnapshot = Snapshot(items);
                 if (!_writing)
                 {
@@ -152,7 +232,16 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
                 }
 
                 string json = JsonConvert.SerializeObject(snapshot, Formatting.Indented);
-                AtomicFile.WriteAllText(_filePath, json, Encoding.UTF8);
+
+                // Enabled 只决定写盘格式；Load 靠文件头自识别，配置与磁盘短暂不一致可自愈
+                string output = json;
+                var crypto = _crypto;
+                if (crypto != null && crypto.Enabled)
+                {
+                    output = crypto.EncryptToText(json);
+                }
+
+                AtomicFile.WriteAllText(_filePath, output, Encoding.UTF8);
             }
             catch (Exception ex)
             {

@@ -552,7 +552,13 @@
     "Hotkey": "唤出快捷键",
     "PreviewEmpty": "(空)",
     "DeleteConfirmBody": "删除该剪贴板条目？\n\n{0}",
-    "DeleteConfirmTitle": "删除条目"
+    "DeleteConfirmTitle": "删除条目",
+    "EncryptStorage": "加密历史存储（绑定本机当前 Windows 用户）",
+    "EncryptConfirm": "启用后，磁盘上的剪贴板历史文件将使用 Windows DPAPI 加密。\n\n· 日常使用无感：本机当前 Windows 用户启动时自动解密；\n· 历史文件拷到其他电脑或其他用户下无法解密；\n· 管理员重置 Windows 密码后，加密历史将无法恢复。\n\n确定启用加密存储吗？",
+    "EncryptConfirmCaption": "启用加密存储",
+    "EncryptToggleFailed": "切换加密存储失败，历史文件未改变。请检查磁盘与权限后重试。",
+    "EncryptUndecryptableArchived": "加密的剪贴板历史无法在当前环境解密（可能 Windows 密码被重置或更换了用户），原文件已保留为：{0}。本次将以空历史运行。",
+    "EncryptUndecryptableFrozen": "加密的剪贴板历史无法在当前环境解密且留档失败，为防止数据丢失已暂停读写历史文件。"
   },
   "Cron": {
     "Invalid": "表达式无效: {0}",

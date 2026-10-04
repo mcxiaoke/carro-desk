@@ -40,6 +40,7 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
             TxtRetentionDays.Text = config.RetentionDays.ToString();
             TxtMaxPreviewChars.Text = config.MaxPreviewChars.ToString();
             TxtHotkey.Text = config.Hotkey ?? "Win+Alt+V";
+            ChkEncryptStorage.IsChecked = config.EncryptStorage;
         }
 
         private void OnSaveClick(object sender, RoutedEventArgs e)
@@ -77,6 +78,41 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
             }
             config.Hotkey = hotkey;
 
+            bool wantEncrypt = ChkEncryptStorage.IsChecked == true;
+
+            // 开启加密先确认边界（DPAPI 语义 + 数据风险），用户拒绝则回弹复选框
+            if (wantEncrypt && !config.EncryptStorage)
+            {
+                var confirm = MessageBox.Show(this,
+                    Loc.T("Clipboard.EncryptConfirm",
+                        "启用后，磁盘上的剪贴板历史文件将使用 Windows DPAPI 加密。\n\n" +
+                        "· 日常使用无感：本机当前 Windows 用户启动时自动解密；\n" +
+                        "· 历史文件拷到其他电脑或其他用户下无法解密；\n" +
+                        "· 管理员重置 Windows 密码后，加密历史将无法恢复。\n\n" +
+                        "确定启用加密存储吗？"),
+                    Loc.T("Clipboard.EncryptConfirmCaption", "启用加密存储"),
+                    MessageBoxButton.YesNo, MessageBoxImage.Question);
+                if (confirm != MessageBoxResult.Yes)
+                {
+                    ChkEncryptStorage.IsChecked = false;
+                    return;
+                }
+            }
+
+            // 存储格式转换：先落盘、后存配置。失败则中断保存，其余字段保持不变
+            if (wantEncrypt != config.EncryptStorage)
+            {
+                if (_module == null || !_module.EnableStorageEncryption(wantEncrypt))
+                {
+                    MessageBox.Show(this,
+                        Loc.T("Clipboard.EncryptToggleFailed", "切换加密存储失败，历史文件未改变。请检查磁盘与权限后重试。"),
+                        Loc.T("Common.Error", "错误"), MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
+
+                config.EncryptStorage = wantEncrypt;
+            }
+
             if (configMgr == null || !configMgr.SaveModuleConfig("ClipboardHistory", config))
             {
                 config.AutoRecord = previous.AutoRecord;
@@ -84,6 +120,12 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
                 config.RetentionDays = previous.RetentionDays;
                 config.MaxPreviewChars = previous.MaxPreviewChars;
                 config.Hotkey = previous.Hotkey;
+                if (config.EncryptStorage != previous.EncryptStorage)
+                {
+                    // 配置保存失败时把磁盘格式一并回滚，保持配置与磁盘一致
+                    _module?.EnableStorageEncryption(previous.EncryptStorage);
+                    config.EncryptStorage = previous.EncryptStorage;
+                }
                 MessageBox.Show(this, Loc.T("Config.SaveFailed"), Loc.T("Common.Error", "错误"), MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
             }

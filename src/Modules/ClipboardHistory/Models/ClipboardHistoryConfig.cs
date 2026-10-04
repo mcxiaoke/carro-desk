@@ -28,6 +28,12 @@ namespace CarroDesk.Modules.ClipboardHistory.Models
         /// <summary>历史记录最大保留天数（天）</summary>
         public int RetentionDays { get; set; } = 90;
 
+        /// <summary>
+        /// 是否以 DPAPI 密文格式落盘（绑定本机当前 Windows 用户）。
+        /// 只决定写入格式；读取靠文件头自识别，不依赖此配置。
+        /// </summary>
+        public bool EncryptStorage { get; set; }
+
         public ClipboardHistoryConfig Clone()
         {
             return (ClipboardHistoryConfig)MemberwiseClone();

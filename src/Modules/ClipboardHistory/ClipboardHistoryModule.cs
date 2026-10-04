@@ -23,6 +23,7 @@ namespace CarroDesk.Modules.ClipboardHistory
         private ClipboardHistoryService _service;
         private IClipboardListener _listener;
         private ClipboardHistoryWindow _window;
+        private ClipboardStorageCrypto _crypto;
 
         /// <summary>模块自建存储（测试注入 service 时为 null），仅用于退出前 Flush。</summary>
         private IClipboardHistoryStorage _ownedStorage;
@@ -45,7 +46,9 @@ namespace CarroDesk.Modules.ClipboardHistory
             if (_service == null)
             {
                 string storagePath = Path.Combine(ConfigService.DirPath, "data", "ClipboardHistory", "history.json");
-                var storage = new JsonClipboardHistoryStorage(storagePath);
+                _crypto = new ClipboardStorageCrypto { Enabled = Config != null && Config.EncryptStorage };
+                var storage = new JsonClipboardHistoryStorage(storagePath, _crypto);
+                storage.DecryptionFailed += OnHistoryDecryptionFailed;
                 // 保存模块自建的存储引用：其写入是后台合并落盘（不阻塞 UI），
                 // 退出前必须 Flush，否则最后一批剪贴板记录会丢失。
                 _ownedStorage = storage;
@@ -108,9 +111,71 @@ namespace CarroDesk.Modules.ClipboardHistory
             }
         }
 
+        /// <summary>
+        /// 加密历史解密失败（Windows 密码被重置 / 换用户运行）：原文件已由存储层改名留档，
+        /// 本会话以空历史运行，这里只负责告知用户与留痕。
+        /// </summary>
+        private void OnHistoryDecryptionFailed(string archivedPath)
+        {
+            string message = archivedPath != null
+                ? Loc.T("Clipboard.EncryptUndecryptableArchived",
+                    "加密的剪贴板历史无法在当前环境解密（可能 Windows 密码被重置或更换了用户），原文件已保留为：{0}。本次将以空历史运行。", archivedPath)
+                : Loc.T("Clipboard.EncryptUndecryptableFrozen",
+                    "加密的剪贴板历史无法在当前环境解密且留档失败，为防止数据丢失已暂停读写历史文件。");
+
+            LogWarning(message);
+
+            var dispatcher = Context?.Dispatcher;
+            if (dispatcher != null)
+            {
+                dispatcher.BeginInvoke(new Action(() =>
+                {
+                    try { Context?.ShowNotification(message); } catch { }
+                }));
+            }
+            else
+            {
+                try { Context?.ShowNotification(message); } catch { }
+            }
+        }
+
+        /// <summary>
+        /// 切换历史文件的加密格式（设置窗口调用）：立即用当前内存历史重写磁盘，
+        /// Flush 保证确定性落盘；成功后由调用方保存模块配置。
+        /// 磁盘与配置短暂不一致时，存储层按文件头自识别读取、下次落盘自愈。
+        /// </summary>
+        public bool EnableStorageEncryption(bool enable)
+        {
+            if (_service == null || _crypto == null) return false;
+            if (_crypto.Enabled == enable) return true;
+
+            _crypto.Enabled = enable;
+            try
+            {
+                var storage = _ownedStorage as JsonClipboardHistoryStorage;
+                if (storage != null)
+                {
+                    storage.Save(new List<ClipboardItem>(_service.GetItems()));
+                    storage.Flush();
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _crypto.Enabled = !enable;
+                LogError("切换剪贴板历史加密存储失败", ex);
+                return false;
+            }
+        }
+
         public override void OnConfigReloaded()
         {
             base.OnConfigReloaded();
+
+            if (_crypto != null)
+            {
+                _crypto.Enabled = Config != null && Config.EncryptStorage;
+            }
 
             _service?.ApplyConfig(Config);
 

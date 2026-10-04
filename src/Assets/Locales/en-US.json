@@ -552,7 +552,13 @@
     "Hotkey": "Show window hotkey",
     "PreviewEmpty": "(empty)",
     "DeleteConfirmBody": "Delete this clipboard entry?\n\n{0}",
-    "DeleteConfirmTitle": "Delete Entry"
+    "DeleteConfirmTitle": "Delete Entry",
+    "EncryptStorage": "Encrypt history on disk (bound to current Windows user)",
+    "EncryptConfirm": "Clipboard history on disk will be encrypted with Windows DPAPI.\n\n· Seamless daily use: decrypted automatically at startup for the current Windows user;\n· The history file cannot be decrypted on other machines or under other users;\n· If an administrator resets your Windows password, encrypted history cannot be recovered.\n\nEnable encrypted storage?",
+    "EncryptConfirmCaption": "Enable Encrypted Storage",
+    "EncryptToggleFailed": "Failed to switch encrypted storage; the history file is unchanged. Check disk and permissions, then try again.",
+    "EncryptUndecryptableArchived": "The encrypted clipboard history cannot be decrypted in this environment (the Windows password may have been reset, or the user changed). The original file has been kept at: {0}. Running with an empty history this session.",
+    "EncryptUndecryptableFrozen": "The encrypted clipboard history cannot be decrypted in this environment and archiving failed. Reading and writing the history file has been paused to prevent data loss."
   },
   "Cron": {
     "Invalid": "Invalid expression: {0}",
