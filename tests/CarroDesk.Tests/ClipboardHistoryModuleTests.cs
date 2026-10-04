@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using CarroDesk.Core;
 using CarroDesk.Host.Services;
@@ -8,6 +9,7 @@ using CarroDesk.Modules.ClipboardHistory.Models;
 using CarroDesk.Modules.ClipboardHistory.Services;
 using CarroDesk.Services;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Newtonsoft.Json;
 
 namespace CarroDesk.Tests
 {
@@ -39,6 +41,48 @@ namespace CarroDesk.Tests
             Assert.AreEqual(100, config.MaxPreviewChars);
             Assert.AreEqual(1000, config.MaxItems);
             Assert.AreEqual(90, config.RetentionDays);
+            Assert.IsFalse(config.EncryptStorage, "加密存储默认应关闭");
+        }
+
+        [TestMethod]
+        public void ClipboardHistory_ExportHistory_WritesStorageCompatibleJson()
+        {
+            var service = new ClipboardHistoryService(new MemoryClipboardStorage());
+            service.Start(new ClipboardHistoryConfig());
+            service.RecordText("导出测试第一条");
+            service.RecordText("导出测试第二条");
+            service.TogglePin(service.GetItems()[1].Id);
+
+            var module = new ClipboardHistoryModule(service, null);
+            string path = Path.Combine(TestEnvironment.TempRoot, "clip-export-" + Guid.NewGuid().ToString("N") + ".json");
+
+            int count = module.ExportHistory(path);
+
+            Assert.AreEqual(2, count);
+            Assert.IsTrue(File.Exists(path));
+
+            // 导出文件必须能被真实存储类按明文格式读回（与未来导入功能兼容）
+            using (var readStorage = new JsonClipboardHistoryStorage(path))
+            {
+                var restored = readStorage.Load();
+                Assert.AreEqual(2, restored.Count);
+                Assert.IsTrue(restored.Any(x => x.FullText == "导出测试第一条"));
+                Assert.IsTrue(restored.Any(x => x.FullText == "导出测试第一条" && x.IsPinned));
+                Assert.IsTrue(restored.All(x => !string.IsNullOrEmpty(x.Hash)), "导出必须保留 Hash 等字段以维持去重语义");
+            }
+        }
+
+        [TestMethod]
+        public void ClipboardHistory_ExportHistory_EmptyHistoryReturnsZeroWithoutWriting()
+        {
+            var service = new ClipboardHistoryService(new MemoryClipboardStorage());
+            service.Start(new ClipboardHistoryConfig());
+
+            var module = new ClipboardHistoryModule(service, null);
+            string path = Path.Combine(TestEnvironment.TempRoot, "clip-export-" + Guid.NewGuid().ToString("N") + ".json");
+
+            Assert.AreEqual(0, module.ExportHistory(path));
+            Assert.IsFalse(File.Exists(path), "空历史不得产生导出文件");
         }
 
         [TestMethod]

@@ -558,7 +558,15 @@
     "EncryptConfirmCaption": "启用加密存储",
     "EncryptToggleFailed": "切换加密存储失败，历史文件未改变。请检查磁盘与权限后重试。",
     "EncryptUndecryptableArchived": "加密的剪贴板历史无法在当前环境解密（可能 Windows 密码被重置或更换了用户），原文件已保留为：{0}。本次将以空历史运行。",
-    "EncryptUndecryptableFrozen": "加密的剪贴板历史无法在当前环境解密且留档失败，为防止数据丢失已暂停读写历史文件。"
+    "EncryptUndecryptableFrozen": "加密的剪贴板历史无法在当前环境解密且留档失败，为防止数据丢失已暂停读写历史文件。",
+    "ExportHistory": "导出历史记录...",
+    "ExportTooltip": "导出为明文 JSON 备份文件，请自行保存到安全位置（如加密云盘）。可用于系统重装或更换电脑后恢复数据。",
+    "ExportTitle": "导出剪贴板历史",
+    "ExportFilter": "JSON 文件|*.json|所有文件|*.*",
+    "ExportEmpty": "当前没有历史记录可导出。",
+    "ExportSuccess": "已导出 {0} 条记录到：\n{1}\n\n注意：导出文件为明文 JSON，请妥善保管（建议存放于加密云盘或私密目录）。",
+    "ExportDone": "导出完成",
+    "ExportFailed": "导出失败：{0}"
   },
   "Cron": {
     "Invalid": "表达式无效: {0}",

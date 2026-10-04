@@ -558,7 +558,15 @@
     "EncryptConfirmCaption": "Enable Encrypted Storage",
     "EncryptToggleFailed": "Failed to switch encrypted storage; the history file is unchanged. Check disk and permissions, then try again.",
     "EncryptUndecryptableArchived": "The encrypted clipboard history cannot be decrypted in this environment (the Windows password may have been reset, or the user changed). The original file has been kept at: {0}. Running with an empty history this session.",
-    "EncryptUndecryptableFrozen": "The encrypted clipboard history cannot be decrypted in this environment and archiving failed. Reading and writing the history file has been paused to prevent data loss."
+    "EncryptUndecryptableFrozen": "The encrypted clipboard history cannot be decrypted in this environment and archiving failed. Reading and writing the history file has been paused to prevent data loss.",
+    "ExportHistory": "Export History...",
+    "ExportTooltip": "Export a plaintext JSON backup and keep it somewhere safe yourself (e.g. an encrypted cloud drive). Use it to restore data after reinstalling Windows or moving to a new PC.",
+    "ExportTitle": "Export Clipboard History",
+    "ExportFilter": "JSON files|*.json|All files|*.*",
+    "ExportEmpty": "No history records to export.",
+    "ExportSuccess": "Exported {0} records to:\n{1}\n\nNote: the export file is plaintext JSON. Keep it safe (prefer an encrypted cloud drive or a private folder).",
+    "ExportDone": "Export Complete",
+    "ExportFailed": "Export failed: {0}"
   },
   "Cron": {
     "Invalid": "Invalid expression: {0}",

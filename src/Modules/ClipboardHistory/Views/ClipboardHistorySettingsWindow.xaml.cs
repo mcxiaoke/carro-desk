@@ -137,6 +137,43 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
             Close();
         }
 
+        private void OnExportClick(object sender, RoutedEventArgs e)
+        {
+            if (_module == null) return;
+
+            try
+            {
+                var dialog = new Microsoft.Win32.SaveFileDialog
+                {
+                    FileName = "ClipboardHistory-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".json",
+                    Filter = Loc.T("Clipboard.ExportFilter", "JSON 文件|*.json|所有文件|*.*"),
+                    Title = Loc.T("Clipboard.ExportTitle", "导出剪贴板历史"),
+                    OverwritePrompt = true
+                };
+                if (dialog.ShowDialog(this) != true) return;
+
+                int count = _module.ExportHistory(dialog.FileName);
+                if (count == 0)
+                {
+                    MessageBox.Show(this,
+                        Loc.T("Clipboard.ExportEmpty", "当前没有历史记录可导出。"),
+                        Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                MessageBox.Show(this,
+                    Loc.T("Clipboard.ExportSuccess",
+                        "已导出 {0} 条记录到：\n{1}\n\n注意：导出文件为明文 JSON，请妥善保管（建议存放于加密云盘或私密目录）。", count, dialog.FileName),
+                    Loc.T("Clipboard.ExportDone", "导出完成"), MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this,
+                    Loc.T("Clipboard.ExportFailed", "导出失败：{0}", ex.Message),
+                    Loc.T("Common.Error", "错误"), MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
         private void OnCancelClick(object sender, RoutedEventArgs e)
         {
             DialogResult = false;

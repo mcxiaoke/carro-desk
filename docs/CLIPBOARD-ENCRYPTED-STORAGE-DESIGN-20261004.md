@@ -80,6 +80,15 @@
 - 失败路径：存储转换失败 → 提示并中断保存；配置保存失败 → 回滚存储转换并提示。
 - 崩溃安全性：`AtomicFile` 原子替换 + 格式自识别保证任意时刻磁盘上只有一份完整有效文件。
 
+## 6.1 明文导出（2026-10-04 追加）
+
+加密使历史文件无法在系统重装/换机后恢复（DPAPI 绑定本机本用户），因此设置窗口提供"导出历史记录…"按钮：
+
+- 数据来源为**内存当前历史**（磁盘密文的最新明文形态），无需触碰磁盘密文；
+- 格式与存储明文格式完全一致（`List<ClipboardItem>` 的缩进 JSON），可直接被 `JsonClipboardHistoryStorage` 读回，为将来导入/恢复预留兼容性（有单测锁定）；
+- 文件名默认 `ClipboardHistory-yyyyMMdd-HHmmss.json`，SaveFileDialog 让用户自选位置（如加密网盘）；
+- 空历史返回 0 且不写文件；成功提示明确告知"导出文件为明文 JSON，请妥善保管"——导出后的保管责任在用户，应用不再追管。
+
 ## 7. 测试计划
 
 扩展现有 `tests/CarroDesk.Tests/ClipboardStorageTests.cs`（MSTest）：

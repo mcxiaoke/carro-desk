@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using CarroDesk.Core;
 using CarroDesk.Core.Models;
 using CarroDesk.Modules.ClipboardHistory.Models;
@@ -8,6 +9,7 @@ using CarroDesk.Modules.ClipboardHistory.Services;
 using CarroDesk.Modules.ClipboardHistory.Views;
 using CarroDesk.Services;
 using CarroDesk.Services.Localization;
+using Newtonsoft.Json;
 
 namespace CarroDesk.Modules.ClipboardHistory
 {
@@ -327,6 +329,23 @@ namespace CarroDesk.Modules.ClipboardHistory
                     // 忽略剪贴板处理异常
                 }
             });
+        }
+
+        /// <summary>
+        /// 将当前内存历史导出为明文 JSON 备份（与存储明文格式一致，可整文件读回）。
+        /// 返回导出条数；无历史时返回 0 且不写文件。导出内容为明文，保管责任在用户。
+        /// </summary>
+        public int ExportHistory(string filePath)
+        {
+            if (string.IsNullOrWhiteSpace(filePath)) throw new ArgumentException("export path is empty", nameof(filePath));
+            if (_service == null) throw new InvalidOperationException("clipboard history service not initialized");
+
+            var items = new List<ClipboardItem>(_service.GetItems());
+            if (items.Count == 0) return 0;
+
+            string json = JsonConvert.SerializeObject(items, Formatting.Indented);
+            File.WriteAllText(filePath, json, Encoding.UTF8);
+            return items.Count;
         }
 
         public override void Dispose()
