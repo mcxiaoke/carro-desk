@@ -804,13 +804,44 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             }
         }
 
+        /// <summary>
+        /// 保存前的"加载错误"闸门。
+        ///
+        /// 加载失败的任务不会进入 _tasks，若直接保存会把它们从 tasks.json 里永久删除 ——
+        /// 所以不能静默放行。但也不能一看到错误就硬拦：旧实现把 MessageBox 的 OK 按钮
+        /// 当成了"取消"，用户手写错一个 cron 表达式后，打开编辑器点任何保存都被拦下，
+        /// 唯一出路是手动改 JSON。这里改为明确告知代价并让用户自己选。
+        /// </summary>
+        private bool ConfirmProceedDespiteLoadErrors()
+        {
+            if (_loadErrors == null || _loadErrors.Count == 0) return true;
+
+            string detail = Loc.T("Tasks.LoadErrors", "加载 tasks.json 有错误:\n{0}", string.Join("\n", _loadErrors));
+            var answer = MessageBox.Show(
+                detail + Environment.NewLine + Environment.NewLine +
+                Loc.T("Tasks.LoadErrorsSaveConfirm",
+                    "继续保存将把上述无效任务从 tasks.json 中移除（保存后可再次手工补回）。确定继续吗？"),
+                Loc.T("Common.Prompt", "提示"), MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            return answer == MessageBoxResult.Yes;
+        }
+
+        /// <summary>
+        /// 保存成功后清空加载错误：磁盘上的 tasks.json 已被内存中的合法任务整体覆盖，
+        /// 旧的解析错误不再成立。不清空的话，同一个过期告警会拦住本窗口后续的每一次保存。
+        /// </summary>
+        private void ClearLoadErrorsAfterSave()
+        {
+            if (_loadErrors == null || _loadErrors.Count == 0) return;
+            foreach (var err in _loadErrors)
+            {
+                TaskLogger.Warn("", "save discarded invalid tasks.json entries: " + err);
+            }
+            _loadErrors = new List<string>();
+        }
+
         private bool SaveTasksInternal()
         {
-            if (_loadErrors != null && _loadErrors.Count > 0)
-            {
-                MessageBox.Show(Loc.T("Tasks.LoadErrors", "加载 tasks.json 有错误:\n{0}", string.Join("\n", _loadErrors)), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
-                return false;
-            }
+            if (!ConfirmProceedDespiteLoadErrors()) return false;
 
             var cur = TaskList.SelectedItem as TaskDefinition;
             var built = BuildCurrent(cur);
@@ -879,6 +910,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             try
             {
                 TaskConfigService.Save(_tasks);
+                ClearLoadErrorsAfterSave();
                 ValidateText.Text = "✓ " + Loc.T("Tasks.SavedAt", "已保存 ({0})", DateTime.Now.ToString("HH:mm:ss"));
 
                 // 刷新左侧列表展示（徽标、状态圆点、名称）并保持当前选中项
@@ -1223,17 +1255,14 @@ namespace CarroDesk.Modules.TaskScheduler.Views
 
         private void OnItemEnabledToggleClick(object sender, RoutedEventArgs e)
         {
-            if (_loadErrors != null && _loadErrors.Count > 0)
-            {
-                MessageBox.Show(Loc.T("Tasks.LoadErrors", "加载 tasks.json 有错误:\n{0}", string.Join("\n", _loadErrors)), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
+            if (!ConfirmProceedDespiteLoadErrors()) return;
             if (sender is CheckBox cb && cb.DataContext is TaskDefinition task)
             {
                 bool previousEnabled = !(cb.IsChecked == true);
                 try
                 {
                     TaskConfigService.Save(_tasks);
+                    ClearLoadErrorsAfterSave();
                     _scheduler?.Reload();
                     _onReloadCompleted?.Invoke();
                     if (TaskList.SelectedItem == task)

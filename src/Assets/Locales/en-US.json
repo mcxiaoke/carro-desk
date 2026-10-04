@@ -402,6 +402,7 @@
     "SaveAndReload": "Save & Apply",
     "SaveOnly": "Save Only",
     "LoadErrors": "Errors found in tasks.json:\n{0}",
+    "LoadErrorsSaveConfirm": "Saving will drop those invalid tasks from tasks.json (you can add them back manually afterwards). Continue?",
     "LoadFailed": "Failed to load tasks: {0}",
     "SelectWorkDir": "Select working directory",
     "SelectWatchDir": "Select watch directory",

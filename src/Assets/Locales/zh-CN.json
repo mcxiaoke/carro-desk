@@ -402,6 +402,7 @@
     "SaveAndReload": "保存并生效",
     "SaveOnly": "仅保存",
     "LoadErrors": "加载 tasks.json 有错误:\n{0}",
+    "LoadErrorsSaveConfirm": "继续保存将把上述无效任务从 tasks.json 中移除（保存后可再次手工补回）。确定继续吗？",
     "LoadFailed": "加载失败: {0}",
     "SelectWorkDir": "选择工作目录",
     "SelectWatchDir": "选择监听目录",
