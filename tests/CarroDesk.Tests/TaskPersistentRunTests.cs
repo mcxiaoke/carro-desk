@@ -505,5 +505,96 @@ namespace CarroDesk.Tests
                 try { File.Delete(TaskConfigService.FilePath); } catch { }
             }
         }
+
+        /// <summary>
+        /// 配置重载不得摧毁常驻任务的守护链。
+        ///
+        /// Reload 会整体替换任务列表，而元素由 ParseTaskNode 重新 new 出来 —— 存量
+        /// TaskDefinition 引用全部失效。若"任务是否仍启用"用引用相等判定，
+        /// "重载"就会被当成"任务被删除"：detach 守护在重启延续阶段被静默取消，
+        /// 常驻任务永久失去守护，而日志原因还误导用户以为是自己关掉了开关。
+        /// </summary>
+        [TestMethod]
+        public void Supervise_ConfigReloadDoesNotBreakDetachedWatchdog()
+        {
+            string bat = WriteExitBat("crash7c.bat", 7);
+            // 重启间隔 3s：留出足够窗口在"挂起重启"期间插入一次配置重载
+            WriteSuperviseTasksJson(bat, "{ \"restart\": \"on-failure\", \"restartDelaySec\": 3, \"restartLimit\": 5, \"stableUptimeSec\": 60, \"notifyOnFailure\": false }");
+            try
+            {
+                var scheduler = new TaskSchedulerService();
+                scheduler.Start();
+                try
+                {
+                    scheduler.RunManual(SuperviseTaskName);
+                    WaitUntil(() => scheduler.GetSupervision(SuperviseTaskName).ConsecutiveFailures >= 1,
+                        TimeSpan.FromSeconds(10), "首次失败应被计数");
+                    Assert.IsTrue(scheduler.IsRunning(SuperviseTaskName), "重启延迟期内槽保持占用");
+
+                    // 重载配置：任务定义全部换成新实例，但任务名与启用状态不变
+                    var reload = scheduler.Reload();
+                    Assert.AreEqual(0, reload.Errors.Count, "重载不应有解析错误");
+                    Assert.IsTrue(scheduler.IsRunning(SuperviseTaskName), "重载不得清空运行槽");
+
+                    // 重载后计数从 0 重新开始；能涨到 2 说明挂起的重启真的执行了，
+                    // 且后续重启链仍然按"同名的启用任务"继续（引用相等判定会永远停在 0）
+                    WaitUntil(() => scheduler.GetSupervision(SuperviseTaskName).ConsecutiveFailures >= 2,
+                        TimeSpan.FromSeconds(25),
+                        "配置重载后 detach 守护链必须继续重启（失败计数应继续增长）");
+                }
+                finally
+                {
+                    scheduler.Stop();
+                }
+            }
+            finally
+            {
+                try { File.Delete(TaskConfigService.FilePath); } catch { }
+            }
+        }
+
+        /// <summary>
+        /// GetRecent 必须返回快照。
+        ///
+        /// 原实现返回内部列表的活视图（AsReadOnly 只做包装，锁在返回瞬间就释放），
+        /// watcher 线程持续写入时消费方 foreach 会抛"集合已修改"，被
+        /// ModuleManager.GetItemsGuarded 捕获后整个托盘 Tasks 菜单整块消失。
+        /// </summary>
+        [TestMethod]
+        public void GetRecent_ReturnsSnapshot_NotLiveView()
+        {
+            string bat = WriteSleepBat("snapshot-sleeper.bat", 30);
+            WriteSuperviseTasksJson(bat, "{ \"restart\": \"none\", \"notifyOnFailure\": false }");
+            try
+            {
+                var scheduler = new TaskSchedulerService();
+                scheduler.Start();
+                try
+                {
+                    scheduler.RunManual(SuperviseTaskName);
+                    WaitUntil(() => scheduler.GetRecent().Count > 0 && scheduler.GetRecent()[0].Contains("started"),
+                        TimeSpan.FromSeconds(15), "运行记录应出现 started");
+
+                    var snapshot = scheduler.GetRecent();
+                    int snapshotCount = snapshot.Count;
+
+                    // 产生新条目：停止运行实例 → recent 追加 "stopped"
+                    Assert.IsTrue(scheduler.TryStop(SuperviseTaskName), "停止运行中实例应成功");
+                    WaitUntil(() => scheduler.GetRecent().Count > snapshotCount,
+                        TimeSpan.FromSeconds(15), "停止后应产生新的 recent 条目");
+
+                    Assert.AreEqual(snapshotCount, snapshot.Count,
+                        "GetRecent 必须返回快照：返回值会随内部列表增长即为活视图（托盘菜单会因此整块消失）");
+                }
+                finally
+                {
+                    scheduler.Stop();
+                }
+            }
+            finally
+            {
+                try { File.Delete(TaskConfigService.FilePath); } catch { }
+            }
+        }
     }
 }

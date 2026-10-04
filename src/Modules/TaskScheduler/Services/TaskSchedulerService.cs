@@ -32,7 +32,10 @@ namespace CarroDesk.Services.Tasks
 
         public bool GlobalEnabled => _globalEnabled;
         public bool IsGlobalEnabled => _globalEnabled;
-        public IReadOnlyList<TaskDefinition> Tasks => _tasks.AsReadOnly();
+        public IReadOnlyList<TaskDefinition> Tasks
+        {
+            get { lock (_lock) return _tasks.ToArray(); }
+        }
 
         public TaskSchedulerService(
             IIdleService idleService = null,
@@ -845,7 +848,13 @@ namespace CarroDesk.Services.Tasks
                 handles = new List<TaskProcessHandle>();
                 foreach (var s in _running.Values)
                 {
-                    if (s != null && s.Handle != null) handles.Add(s.Handle);
+                    if (s == null) continue;
+                    // 宿主退出对所有实例都是"主动停止"：先置位 StopRequested，
+                    // 否则 killWithHost=false 的常驻任务在 h.Dispose() 之后，
+                    // 仍在等待的 exit watcher 只能拿到异常退出码，会被判定为意外退出
+                    // 而弹一次虚假"失败"通知（Dispose 使 WaitForExit 抛异常 → 返回 -1）。
+                    s.StopRequested = true;
+                    if (s.Handle != null) handles.Add(s.Handle);
                 }
                 _running.Clear();
             }
@@ -874,8 +883,19 @@ namespace CarroDesk.Services.Tasks
             if (task == null) return false;
             lock (_lock)
             {
-                return _started && _globalEnabled && _tasks.Any(t =>
-                    ReferenceEquals(t, task) && t.Enabled);
+                if (!_started || !_globalEnabled) return false;
+
+                // 按任务名判定，而不是引用相等。
+                // 每次 ApplyCoreLocked 都整体替换 _tasks，而元素来自 ParseTaskNode —— 每次解析都 new
+                // TaskDefinition()。因此任何一次配置重载（托盘"重载任务"、编辑器"保存并重载"、
+                // ReloadConfig()）都会让存量 TaskDefinition 引用全部失效：
+                //   - 用 ReferenceEquals 时，"重载"会被误判成"任务被删除"，detach 守护链在重启延续
+                //     阶段被静默取消，常驻任务永久失去守护，且日志原因误导用户（"retry cancelled
+                //     because task was disabled, removed, or scheduler stopped"）；
+                //   - wait 模式的重试循环同样会在这里提前 return。
+                var current = _tasks.FirstOrDefault(t =>
+                    string.Equals(t.Name, task.Name, StringComparison.OrdinalIgnoreCase));
+                return current != null && current.Enabled;
             }
         }
 
@@ -897,7 +917,10 @@ namespace CarroDesk.Services.Tasks
         }
         public IReadOnlyList<string> GetRecent()
         {
-            lock (_lock) return _recent.AsReadOnly();
+            // 必须返回快照：AsReadOnly() 只是包装原 list 的活视图，锁在返回瞬间即释放。
+            // watcher 线程持续 Insert(0, entry) 时，消费方 foreach 会抛"集合已修改"，
+            // 被 ModuleManager.GetItemsGuarded catch 后整个托盘 Tasks 菜单整块消失。
+            lock (_lock) return _recent.ToArray();
         }
 
         private void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
