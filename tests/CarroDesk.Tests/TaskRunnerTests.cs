@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
@@ -78,6 +79,69 @@ namespace CarroDesk.Tests
         {
             string path = TaskLogger.GetTaskLogPath(taskName);
             return File.Exists(path) ? File.ReadAllText(path, Encoding.UTF8) : string.Empty;
+        }
+
+        /// <summary>
+        /// 任务日志写入：写后必须可被普通读取方式读到，且并发写入不丢行、不串行。
+        ///
+        /// 三条约束都来自真实调用方：
+        ///   1. 读后写一致——"查看日志"与单测都在写入后立刻用 File.ReadAllText 读；
+        ///   2. 外部可读——常开写句柄会让 File.ReadAllText(FileShare.Read) 直接失败；
+        ///   3. 并发安全——WriteOutput 是子进程 stdout/stderr 的回调线程，多任务同时输出。
+        /// </summary>
+        [TestMethod]
+        public void TaskLogger_AppendIsReadableAndConcurrencySafe()
+        {
+            string taskName = "t_logger_probe";
+            string path = TaskLogger.GetTaskLogPath(taskName);
+            try { File.Delete(path); } catch { }
+
+            TaskLogger.Info(taskName, "first-line");
+            StringAssert.Contains(File.ReadAllText(path, Encoding.UTF8), "first-line",
+                "日志写入后必须立即可被 File.ReadAllText 读到（读后写一致）");
+
+            const int threads = 8;
+            const int perThread = 40;
+            var barrier = new ManualResetEventSlim(false);
+            var failures = new List<Exception>();
+            var workers = new List<Thread>();
+            for (int t = 0; t < threads; t++)
+            {
+                int id = t;
+                var worker = new Thread(() =>
+                {
+                    try
+                    {
+                        barrier.Wait();
+                        for (int i = 0; i < perThread; i++)
+                        {
+                            TaskLogger.WriteOutput(taskName, "OUT", "w" + id + "-l" + i);
+                        }
+                    }
+                    catch (Exception ex) { lock (failures) failures.Add(ex); }
+                });
+                worker.IsBackground = true;
+                workers.Add(worker);
+                worker.Start();
+            }
+            barrier.Set();
+            foreach (var w in workers) Assert.IsTrue(w.Join(TimeSpan.FromSeconds(30)), "并发写入线程未在预期时间内结束");
+
+            if (failures.Count > 0) Assert.Fail("并发写入抛异常: " + failures[0]);
+
+            string content = File.ReadAllText(path, Encoding.UTF8);
+            for (int t = 0; t < threads; t++)
+            {
+                for (int i = 0; i < perThread; i++)
+                {
+                    StringAssert.Contains(content, "w" + t + "-l" + i,
+                        "并发写入丢行（线程 " + t + " 第 " + i + " 行）");
+                }
+            }
+
+            // 聚合日志同样必须落盘且含同一条记录
+            StringAssert.Contains(File.ReadAllText(TaskLogger.GetAggregateLogPath(), Encoding.UTF8), "first-line",
+                "聚合日志必须同步落盘");
         }
 
         private static void AssertProbeReceived(string taskName, string expectedArgs)
