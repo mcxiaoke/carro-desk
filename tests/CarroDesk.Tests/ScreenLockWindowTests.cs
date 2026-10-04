@@ -206,5 +206,40 @@ namespace CarroDesk.Tests
                 WaitUntilClosed(win, 2000);
             });
         }
+
+        /// <summary>
+        /// 锁屏窗口的 WINDOWPOS 结构必须与原生布局一致（截断/错位会让无闪烁置顶失效）。
+        ///
+        /// 原生：HWND hwnd; HWND hwndInsertAfter; int x, y, cx, cy; WORD flags;
+        /// flags 声明为 uint 会让后面多出 2 字节填充差；更关键的是原实现清除的是
+        /// SWP_FRAMECHANGED(0x0020) 而不是注释所写的 SWP_NOZORDER(0x0004) ——
+        /// 置了 NOZORDER 时 hwndInsertAfter 会被忽略，强制 TOPMOST 等于没做。
+        /// </summary>
+        [TestMethod]
+        public void LockWindow_WndProcKeepsTopmostWithoutFightingZOrder()
+        {
+            var type = typeof(LockWindow);
+
+            var windowPos = type.GetNestedType("WINDOWPOS", System.Reflection.BindingFlags.NonPublic);
+            Assert.IsNotNull(windowPos, "应存在 WINDOWPOS 嵌套结构");
+
+            var flagsField = windowPos.GetField("flags");
+            Assert.IsNotNull(flagsField);
+            Assert.AreEqual(typeof(ushort), flagsField.FieldType,
+                "WINDOWPOS.flags 原生是 WORD（16 位），声明为 uint/uint+padding 会与原生布局不符");
+
+            // x64: hwnd(8) + hwndInsertAfter(8) + 4*int(16) + WORD(2) = 36 字节有效载荷（结构按 8 对齐后 SizeOf 为 40）
+            // x86: 4 + 4 + 16 + 2 = 28 字节有效载荷（对齐后 28）
+            int nativeMinimum = IntPtr.Size == 8 ? 36 : 28;
+            int actual = System.Runtime.InteropServices.Marshal.SizeOf(windowPos);
+            Assert.IsTrue(actual >= nativeMinimum,
+                string.Format("WINDOWPOS 封送尺寸 {0} 小于原生有效载荷 {1}，读取时会越界", actual, nativeMinimum));
+            Assert.IsTrue(actual <= nativeMinimum + 8,
+                string.Format("WINDOWPOS 封送尺寸 {0} 明显大于原生有效载荷 {1}，字段类型声明有误", actual, nativeMinimum));
+
+            var afterField = windowPos.GetField("hwndInsertAfter");
+            Assert.IsNotNull(afterField);
+            Assert.AreEqual(typeof(IntPtr), afterField.FieldType);
+        }
     }
 }

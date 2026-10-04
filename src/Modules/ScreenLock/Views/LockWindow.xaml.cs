@@ -19,6 +19,8 @@ namespace CarroDesk.Views
         private const uint SWP_NOSIZE = 0x1;
         private const uint SWP_NOACTIVATE = 0x10;
         private const uint GW_HWNDPREV = 3;
+        /// <summary>保持 TOPMOST 时必须清除此位，否则 hwndInsertAfter 会被忽略。</summary>
+        private const uint SWP_NOZORDER = 0x0004;
         private static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
 
         [DllImport("user32.dll")]
@@ -136,7 +138,11 @@ namespace CarroDesk.Views
                     var pos = (WINDOWPOS)Marshal.PtrToStructure(lParam, typeof(WINDOWPOS));
                     // 强制保持 TOPMOST 且不激活，避免 SetWindowPos 轮询带来的闪烁
                     // 仅在窗口试图去掉 TOPMOST 时修正，正常 DWM 合成不干预
-                    pos.flags &= ~((uint)0x0020); // 去掉 SWP_NOZORDER
+                    //
+                    // 清除的必须是 SWP_NOZORDER(0x0004)：置了它 hwndInsertAfter 就被忽略，
+                    // 下面的 HWND_TOPMOST 赋值等于白写。原实现清除的是 SWP_FRAMECHANGED(0x0020)
+                    // —— 注释与实现不符，实际并未在清除 NOZORDER。
+                    pos.flags &= unchecked((ushort)~SWP_NOZORDER);
                     pos.hwndInsertAfter = HWND_TOPMOST;
                     Marshal.StructureToPtr(pos, lParam, true);
                 }
@@ -154,7 +160,8 @@ namespace CarroDesk.Views
             public int y;
             public int cx;
             public int cy;
-            public uint flags;
+            /// <summary>原生 WINDOWPOS.flags 是 WORD（16 位），声明为 uint 会与之不符。</summary>
+            public ushort flags;
         }
 
         private void OnLoaded(object sender, RoutedEventArgs e)
