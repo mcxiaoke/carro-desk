@@ -91,7 +91,8 @@ namespace CarroDesk.Host.Ipc
             const int BufferSize = 64 * 1024;
             if (_useAcl)
             {
-                return new NamedPipeServerStream(
+                // 现代 .NET 移除了带 PipeSecurity 的构造函数，改用 Acl 工厂方法
+                return NamedPipeServerStreamAcl.Create(
                     PipeName, PipeDirection.InOut,
                     NamedPipeServerStream.MaxAllowedServerInstances,
                     PipeTransmissionMode.Byte, PipeOptions.Asynchronous,

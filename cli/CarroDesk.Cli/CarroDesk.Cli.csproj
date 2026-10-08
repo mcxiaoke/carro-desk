@@ -2,8 +2,7 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net48</TargetFramework>
-    <LangVersion>7.3</LangVersion>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <RootNamespace>CarroDesk.Cli</RootNamespace>
     <AssemblyName>CarroDesk.Cli</AssemblyName>
     <Nullable>disable</Nullable>
@@ -15,8 +14,8 @@
 
   <ItemGroup>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
-    <PackageReference Include="Costura.Fody" Version="6.0.0" PrivateAssets="all" />
-    <PackageReference Include="Fody" Version="6.9.2" PrivateAssets="all" />
+    <!-- <PackageReference Include="Costura.Fody" Version="6.0.0" PrivateAssets="all" /> -->
+    <!-- <PackageReference Include="Fody" Version="6.9.2" PrivateAssets="all" /> -->
   </ItemGroup>
 
   <!-- Costura 已把 CarroDesk.exe/Newtonsoft 嵌入本 exe；主工程的 config 与样例文件

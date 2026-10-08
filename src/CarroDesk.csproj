@@ -2,15 +2,17 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net48</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
-    <LangVersion>7.3</LangVersion>
     <RootNamespace>CarroDesk</RootNamespace>
     <AssemblyName>CarroDesk</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <Nullable>disable</Nullable>
     <ApplicationIcon>Assets\Icon.ico</ApplicationIcon>
+    <!-- CLI 单文件发布时 PublishSingleFile 会流入本项目并默认推断 SelfContained=true，
+         触发 NETSDK1151（自包含 exe 不可被非自包含 exe 引用），显式关闭 -->
+    <SelfContained Condition="'$(SelfContained)' == ''">false</SelfContained>
   </PropertyGroup>
 
   <ItemGroup>
@@ -40,16 +42,17 @@
     <EmbeddedResource Include="..\docs\AI-AGENT-MANUAL.md" Link="Docs\AI-AGENT-MANUAL.md" />
   </ItemGroup>
 
+  <!-- net48 Framework references → NuGet 包（现代 .NET 上为独立包；
+       SystemEvents/ProtectedData/Drawing/Extensions 已内置于 net10.0-windows，无需引用） -->
   <ItemGroup>
-    <Reference Include="System.Management" />
-    <Reference Include="System.Security" />
-    <Reference Include="System.ServiceProcess" />
+    <PackageReference Include="System.Management" Version="10.0.12" />
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="10.0.12" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Hardcodet.NotifyIcon.Wpf" Version="2.0.1" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
-    <PackageReference Include="Costura.Fody" Version="6.0.0" PrivateAssets="all" />
-    <PackageReference Include="Fody" Version="6.9.2" PrivateAssets="all" />
+    <!-- <PackageReference Include="Costura.Fody" Version="6.0.0" PrivateAssets="all" /> -->
+    <!-- <PackageReference Include="Fody" Version="6.9.2" PrivateAssets="all" /> -->
   </ItemGroup>
 
 </Project>

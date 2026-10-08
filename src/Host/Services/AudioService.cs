@@ -1,9 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
-using System.Security;
 using System.Windows.Interop;
 using System.Windows.Threading;
 using CarroDesk.Core;
@@ -335,8 +333,6 @@ namespace CarroDesk.Host.Services
             return null;
         }
 
-        [HandleProcessCorruptedStateExceptions]
-        [SecurityCritical]
         public bool SetDefaultPlaybackDevice(string deviceId)
         {
             if (string.IsNullOrEmpty(deviceId)) return false;

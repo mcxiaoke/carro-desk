@@ -50,8 +50,8 @@ if sys.platform == "win32":
 ROOT = Path(__file__).resolve().parent.parent
 GUI_PROJECT = ROOT / "src" / "CarroDesk.csproj"
 CLI_PROJECT = ROOT / "cli" / "CarroDesk.Cli" / "CarroDesk.Cli.csproj"
-GUI_OUT = ROOT / "src" / "bin" / "Release" / "net48"
-CLI_OUT = ROOT / "cli" / "CarroDesk.Cli" / "bin" / "Release" / "net48"
+GUI_OUT = ROOT / "src" / "bin" / "Release" / "net10.0-windows" / "win-x64" / "publish"
+CLI_OUT = ROOT / "cli" / "CarroDesk.Cli" / "bin" / "Release" / "net10.0-windows" / "win-x64" / "publish"
 ISS_SCRIPT = ROOT / "scripts" / "installer" / "CarroDesk.iss"
 APP_ICON = ROOT / "src" / "Assets" / "Icon.ico"
 
@@ -94,9 +94,15 @@ def get_version(positional: list[str] | None = None) -> str:
 
 
 def build():
-    """Release 构建两个项目（依赖顺序：GUI 先建，CLI 引用 GUI）。"""
+    """Release 构建两个项目（依赖顺序：GUI 先建，CLI 引用 GUI）。
+
+    CLI 用 PublishSingleFile 产出单 exe（框架依赖，目标机需 .NET 10 桌面运行时）
+    """
     run("dotnet build src/CarroDesk.csproj -c Release")
-    run("dotnet build cli/CarroDesk.Cli/CarroDesk.Cli.csproj -c Release")
+    run("dotnet publish src/CarroDesk.csproj -c Release "
+        "-r win-x64 --self-contained false -p:PublishSingleFile=true")
+    run("dotnet publish cli/CarroDesk.Cli/CarroDesk.Cli.csproj -c Release "
+        "-r win-x64 --self-contained false -p:PublishSingleFile=true")
 
 
 def copy_cli_exe():

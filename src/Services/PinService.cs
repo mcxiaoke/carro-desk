@@ -43,21 +43,19 @@ namespace CarroDesk.Services
 
         public static byte[] GenerateSalt()
         {
-            using (var rng = new RNGCryptoServiceProvider())
+            var data = new byte[16];
+            using (var rng = RandomNumberGenerator.Create())
             {
-                var data = new byte[16];
                 rng.GetBytes(data);
-                return data;
             }
+            return data;
         }
 
         public static string ComputeHash(byte[] salt, string pin)
         {
             var password = Encoding.UTF8.GetBytes(Convert.ToBase64String(salt) + ":" + pin);
-            using (var derive = new Rfc2898DeriveBytes(password, salt, Pbkdf2Iterations, HashAlgorithmName.SHA256))
-            {
-                return "pbkdf2$" + Pbkdf2Iterations + "$" + Convert.ToBase64String(derive.GetBytes(32));
-            }
+            var derived = Rfc2898DeriveBytes.Pbkdf2(password, salt, Pbkdf2Iterations, HashAlgorithmName.SHA256, 32);
+            return "pbkdf2$" + Pbkdf2Iterations + "$" + Convert.ToBase64String(derived);
         }
 
         private static string ComputeLegacyHash(byte[] salt, string pin)

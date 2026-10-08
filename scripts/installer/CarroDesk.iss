@@ -22,7 +22,7 @@
 #endif
 
 #ifndef PayloadDir
-  #define PayloadDir "..\..\src\bin\Release\net48"
+  #define PayloadDir "..\..\src\bin\Release\net10.0-windows"
 #endif
 
 #ifndef IconFile
@@ -113,7 +113,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 ; 主程序与命令行工具（每次升级均覆盖更新）
 Source: "{#PayloadDir}\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PayloadDir}\{#AppCliExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#PayloadDir}\CarroDesk.exe.config"; DestDir: "{app}"; Flags: ignoreversion; Check: FileExists(ExpandConstant('{#PayloadDir}\CarroDesk.exe.config'))
+;Source: "{#PayloadDir}\CarroDesk.exe.config"; DestDir: "{app}"; Flags: ignoreversion; Check: FileExists(ExpandConstant('{#PayloadDir}\CarroDesk.exe.config'))
 
 ; 样例文件：仅在目标不存在时复制，避免覆盖用户已修改的样例
 Source: "{#PayloadDir}\config.sample.json"; DestDir: "{app}"; Flags: onlyifdoesntexist; Check: FileExists(ExpandConstant('{#PayloadDir}\config.sample.json'))

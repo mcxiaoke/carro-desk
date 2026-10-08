@@ -689,11 +689,11 @@ namespace CarroDesk.Services.Tasks
         private static string TryReadSampleFile()
         {
             // 构建时自动复制到输出目录的样例文件，运行时优先读取
+            string baseDir = AppContext.BaseDirectory;
             string[] candidates = new string[]
             {
-                Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "tasks.sample.json"),
-                Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Samples", "tasks.sample.json"),
-                Path.Combine(Path.GetDirectoryName(typeof(TaskConfigService).Assembly.Location) ?? "", "tasks.sample.json"),
+                Path.Combine(baseDir, "tasks.sample.json"),
+                Path.Combine(baseDir, "Samples", "tasks.sample.json"),
             };
             foreach (var p in candidates)
             {

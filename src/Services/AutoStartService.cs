@@ -11,11 +11,19 @@ namespace CarroDesk.Services
 
         /// <summary>
         /// 获取当前主可执行文件绝对路径。
-        /// 优先使用 Process.GetCurrentProcess().MainModule.FileName，
-        /// 避免 Assembly.GetExecutingAssembly() 在类库重构或单文件打包时指向 DLL 或空值。
+        /// 优先使用 Environment.ProcessPath 与 Process.GetCurrentProcess().MainModule.FileName，
+        /// 兼容单文件打包（PublishSingleFile），避免 Assembly.Location 在单文件时返回空值及引发 IL3000 警告。
         /// </summary>
         public static string GetCurrentExecutablePath()
         {
+            try
+            {
+                var processPath = Environment.ProcessPath;
+                if (!string.IsNullOrEmpty(processPath) && File.Exists(processPath))
+                    return processPath;
+            }
+            catch { }
+
             try
             {
                 using (var process = System.Diagnostics.Process.GetCurrentProcess())
@@ -24,14 +32,6 @@ namespace CarroDesk.Services
                     if (!string.IsNullOrEmpty(path) && File.Exists(path))
                         return path;
                 }
-            }
-            catch { }
-
-            try
-            {
-                var path = System.Reflection.Assembly.GetEntryAssembly()?.Location;
-                if (!string.IsNullOrEmpty(path) && File.Exists(path))
-                    return path;
             }
             catch { }
 

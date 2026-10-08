@@ -498,28 +498,34 @@ namespace CarroDesk.Tests
                 handler: req => { Thread.Sleep(300); return CommandResult.Success(); })));
 
             int peakThreads = 0;
-            var sampler = new Thread(() =>
+            int baseline = 0;
+            // 用信号事件结束采样线程：Thread.Interrupt 抛出的异常在现代 .NET
+            // 的测试主机上按未处理异常处理，会崩掉测试进程
+            using (var samplerStop = new ManualResetEvent(false))
             {
-                while (Volatile.Read(ref peakThreads) >= 0)
+                var sampler = new Thread(() =>
                 {
-                    try { peakThreads = Math.Max(peakThreads, Process.GetCurrentProcess().Threads.Count); }
-                    catch { return; }
-                    Thread.Sleep(15);
-                }
-            });
-            var baseline = Process.GetCurrentProcess().Threads.Count;
+                    while (!samplerStop.WaitOne(15))
+                    {
+                        try { peakThreads = Math.Max(peakThreads, Process.GetCurrentProcess().Threads.Count); }
+                        catch { return; }
+                    }
+                });
+                baseline = Process.GetCurrentProcess().Threads.Count;
 
-            var tasks = new List<Task<CommandResult>>();
-            for (int i = 0; i < concurrency; i++)
-                tasks.Add(host.InvokeAsync(CommandRequest.Create("test.echo", "src" + i)));
+                var tasks = new List<Task<CommandResult>>();
+                for (int i = 0; i < concurrency; i++)
+                    tasks.Add(host.InvokeAsync(CommandRequest.Create("test.echo", "src" + i)));
 
-            sampler.Start();
-            Task.WaitAll(tasks.ToArray(), TimeSpan.FromSeconds(60));
-            sampler.Interrupt();
+                sampler.Start();
+                Task.WaitAll(tasks.ToArray(), TimeSpan.FromSeconds(60));
+                samplerStop.Set();
+                sampler.Join(1000);
 
-            int succeeded = 0;
-            foreach (var t in tasks) if (t.Result != null && t.Result.Ok) succeeded++;
-            Assert.AreEqual(concurrency, succeeded, "所有慢命令都应正常完成");
+                int succeeded = 0;
+                foreach (var t in tasks) if (t.Result != null && t.Result.Ok) succeeded++;
+                Assert.AreEqual(concurrency, succeeded, "所有慢命令都应正常完成");
+            }
 
             // 60 条并发若每条占 2 个线程池线程会明显膨胀；给出宽松上界只抓回归
             int grew = peakThreads - baseline;
