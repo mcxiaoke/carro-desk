@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Interop;
 using CarroDesk.Common;
 using CarroDesk.Core;
 using CarroDesk.Core.Commands;
@@ -23,8 +24,6 @@ namespace CarroDesk
 {
     public partial class App : System.Windows.Application
     {
-        private const string MutexName = "Global\\CarroDesk_SingleInstance_2C7A4F10";
-
         /// <summary>宿主服务容器。仅供 App 内部装配与回调使用，不再对外暴露静态门面。</summary>
         private static ServiceContainer Services { get; set; }
 
@@ -38,7 +37,8 @@ namespace CarroDesk
         // 各 View 现在经构造函数注入 IConfigManager / ServiceContainer。
         public static bool IsShuttingDown { get; private set; }
 
-        private static Mutex _mutex;
+        private HwndSource _activationHelperHwnd;
+        private int _activateMessageId;
         private static TaskbarIcon _tbIcon;
         private static TrayContextMenu _trayMenu;
         private DynamicTrayController _trayController;
@@ -58,20 +58,6 @@ namespace CarroDesk
                 Environment.CurrentDirectory = AppDomain.CurrentDomain.BaseDirectory;
             }
             catch { /* intentionally ignored: environment directory reset */ }
-
-            bool createdNew;
-            _mutex = new Mutex(true, MutexName, out createdNew);
-            if (!createdNew)
-            {
-                // S3（IPC 设计 §5.3）：`ctl` 参数的二实例改为经管道转发并回显；其余保持原行为（静默退出）
-                if (ControlArgs.IsControlInvocation(e.Args))
-                {
-                    ForwardControlInvocation(e.Args);
-                    return; // ForwardControlInvocation 内部 Environment.Exit
-                }
-                Shutdown(0);
-                return;
-            }
 
             // 宿主顶级三层未捕获异常防御网
             DispatcherUnhandledException += OnDispatcherException;
@@ -142,8 +128,9 @@ namespace CarroDesk
 
             AutoStartService.Sync(_configManager.Current.AutoStart);
 
-            // 3. 构建托盘
+            // 3. 构建托盘与多实例激活监听器
             CreateTrayIcon();
+            InitActivationListener();
 
             // 4. 构建核心服务与基础设施，装配模块清单
             var audioService = new AudioService();
@@ -239,22 +226,43 @@ namespace CarroDesk
             MemoryOptimizer.ScheduleTrim(8000, force: true);
         }
 
-        /// <summary>二实例 `ctl` 转发（IPC 设计 §5.3）：挂接父控制台 → 管道调用 → 回显 → 按结果退出。</summary>
-        private static void ForwardControlInvocation(string[] args)
+        /// <summary>
+        /// 初始化第二实例定向唤醒监听器（轻量级消息辅助窗口）。
+        /// 无论当前是否有可见窗口，本 helper 窗口常驻接收对应数据目录的专属唤醒消息。
+        /// </summary>
+        private void InitActivationListener()
         {
-            ParentConsole.TryAttach();
-
-            ControlArgs parsed;
-            string parseError;
-            if (!ControlArgs.TryParse(args, out parsed, out parseError))
+            try
             {
-                Console.Error.WriteLine(parseError);
-                Console.Error.WriteLine("usage: CarroDesk.exe ctl <capability> [--json] [--pin <pin>] [--key <value> ...]");
-                Environment.Exit(1);
-            }
+                _activateMessageId = NativeMethods.RegisterWindowMessage(ConfigService.ActivateMessageName);
+                if (_activateMessageId == 0) return;
 
-            var client = new PipeRpcClient(parsed.PipeName, parsed.TimeoutMs > 0 ? parsed.TimeoutMs : 3000);
-            Environment.Exit(ControlForwarder.Forward(parsed, client, Console.Out, Console.Error));
+                var parameters = new HwndSourceParameters("CarroDesk_InstanceHelper")
+                {
+                    WindowStyle = 0,
+                    Width = 0,
+                    Height = 0
+                };
+                _activationHelperHwnd = new HwndSource(parameters);
+                _activationHelperHwnd.AddHook(ActivationHook);
+            }
+            catch (Exception ex)
+            {
+                Services?.GetService<ILoggerService>()?.LogWarning("App", "初始化单实例激活监听器异常: " + ex.Message);
+            }
+        }
+
+        private IntPtr ActivationHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+        {
+            if (msg == _activateMessageId && _activateMessageId != 0)
+            {
+                handled = true;
+                Dispatcher?.BeginInvoke(new Action(() =>
+                {
+                    ToggleFloatingPanel();
+                }));
+            }
+            return IntPtr.Zero;
         }
 
         public void ToggleFloatingPanel()
@@ -626,7 +634,7 @@ namespace CarroDesk
                 }
             }
             catch { /* intentionally ignored: tray icon cleanup */ }
-            try { _mutex?.ReleaseMutex(); } catch { /* intentionally ignored: single instance mutex release */ }
+            try { _activationHelperHwnd?.Dispose(); } catch { /* intentionally ignored: activation helper cleanup */ }
         }
     }
 }

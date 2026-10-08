@@ -6,6 +6,7 @@
     <UseWPF>true</UseWPF>
     <RootNamespace>CarroDesk</RootNamespace>
     <AssemblyName>CarroDesk</AssemblyName>
+    <StartupObject>CarroDesk.Program</StartupObject>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <Nullable>disable</Nullable>
@@ -53,6 +54,12 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <!-- <PackageReference Include="Costura.Fody" Version="6.0.0" PrivateAssets="all" /> -->
     <!-- <PackageReference Include="Fody" Version="6.9.2" PrivateAssets="all" /> -->
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>CarroDesk.Tests</_Parameter1>
+    </AssemblyAttribute>
   </ItemGroup>
 
 </Project>

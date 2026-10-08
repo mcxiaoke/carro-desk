@@ -74,6 +74,46 @@ namespace CarroDesk.Services
             get { return Path.Combine(DirPath, "config.json"); }
         }
 
+        /// <summary>
+        /// 计算基于当前数据目录的确定性哈希（8位大写十六进制），确保单实例 Mutex 与唤醒消息跨进程一致。
+        /// 避开 .NET string.GetHashCode() 默认启用的跨进程随机加盐机制。
+        /// </summary>
+        public static string GetDataDirectoryHash()
+        {
+            try
+            {
+                var full = Path.GetFullPath(DirPath ?? string.Empty);
+                var normalized = full.Trim().ToLowerInvariant();
+                var hashBytes = System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(normalized));
+                return Convert.ToHexString(hashBytes, 0, 4);
+            }
+            catch
+            {
+                // 若 DirPath 含有非法字符等导致 GetFullPath 异常，退化为使用程序基准目录派生哈希，
+                // 确保不同安装目录依然保持独立互斥，杜绝静态固定值导致的跨目录误判。
+                try
+                {
+                    var fallback = AppDomain.CurrentDomain.BaseDirectory.Trim().ToLowerInvariant();
+                    var hashBytes = System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(fallback));
+                    return Convert.ToHexString(hashBytes, 0, 4);
+                }
+                catch
+                {
+                    return "FALLBACK";
+                }
+            }
+        }
+
+        /// <summary>
+        /// 当前数据目录对应的单实例 Mutex 名称（会话内隔离，不同数据目录/便携实例独立互斥）
+        /// </summary>
+        public static string InstanceMutexName => $@"Local\CarroDesk_{GetDataDirectoryHash()}";
+
+        /// <summary>
+        /// 当前数据目录对应的第二实例唤醒 Windows 消息名称
+        /// </summary>
+        public static string ActivateMessageName => $@"CarroDesk_Activate_{GetDataDirectoryHash()}";
+
         public static string TaskFilePath
         {
             get { return Path.Combine(DirPath, "tasks.json"); }
