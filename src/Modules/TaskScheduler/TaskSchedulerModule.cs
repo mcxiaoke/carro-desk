@@ -46,6 +46,7 @@ namespace CarroDesk.Modules.TaskScheduler
                     Scheduler = new TaskSchedulerService(idle, cfgMgr, notif, msg => Context?.ShowNotification(msg), hotkeys, Context?.Dispatcher);
                 }
                 Scheduler?.Start();
+                Scheduler.StateChanged += (name, state, snap) => RequestRefreshSelf();
             }
             catch (Exception ex)
             {
@@ -138,7 +139,6 @@ namespace CarroDesk.Modules.TaskScheduler
 
         public override IEnumerable<TrayMenuItem> GetTrayMenuItems()
         {
-            // 任务子菜单全量并入本模块（规范 §4.1）
             var items = new List<TrayMenuItem>();
             var root = new TrayMenuItem
             {
@@ -147,6 +147,7 @@ namespace CarroDesk.Modules.TaskScheduler
             };
             _trayRoot = root;
 
+            // 1. 总开关
             root.Children.Add(new TrayMenuItem
             {
                 Id = "task_scheduler_toggle",
@@ -162,35 +163,95 @@ namespace CarroDesk.Modules.TaskScheduler
 
             root.Children.Add(TrayMenuItem.Separator());
 
-            // 手动运行：动态枚举任务（优先支持所有已启用的任务按需立即触发）
-            var manual = new TrayMenuItem
+            // 2. 主面板入口：任务管理...
+            root.Children.Add(new TrayMenuItem
             {
-                Id = "task_scheduler_manual",
-                Header = Loc.T("Tray.ManualRun", "手动运行")
-            };
-            var allTasks = Scheduler != null && Scheduler.Tasks != null
-                ? System.Linq.Enumerable.ToList(System.Linq.Enumerable.Where(Scheduler.Tasks, t => t.Enabled))
-                : new List<TaskDefinition>();
-
-            if (allTasks.Count == 0)
-            {
-                manual.Children.Add(new TrayMenuItem
+                Id = "task_scheduler_manager",
+                Header = Loc.T("Tray.TaskManager", "任务管理..."),
+                ClickAction = () =>
                 {
-                    Id = "task_scheduler_manual_empty",
-                    Header = Loc.T("Tray.NoManualTasks", "暂无可用任务"),
+                    try
+                    {
+                        var win = new TaskManagerWindow(Scheduler, () => RequestRefreshSelf())
+                        {
+                            WindowStartupLocation = System.Windows.WindowStartupLocation.CenterScreen
+                        };
+                        win.ShowDialog();
+                        RequestRefreshSelf();
+                    }
+                    catch { }
+                }
+            });
+
+            root.Children.Add(TrayMenuItem.Separator());
+
+            // 3. 运行中任务 (N) 动态分组
+            var runningList = Scheduler != null ? Scheduler.GetRunning() : null;
+            int runningCount = runningList != null ? runningList.Count : 0;
+            var runningGroup = new TrayMenuItem
+            {
+                Id = "task_scheduler_running_group",
+                Header = Loc.T("Tray.RunningTasks", "运行中任务 ({0})", runningCount)
+            };
+            if (runningCount == 0)
+            {
+                runningGroup.Children.Add(new TrayMenuItem
+                {
+                    Id = "task_scheduler_running_empty",
+                    Header = Loc.T("Tray.NoRunningTasks", "暂无运行中的任务"),
                     IsEnabled = false
                 });
             }
             else
             {
-                foreach (var t in allTasks)
+                foreach (var r in runningList)
+                {
+                    string rName = r.Name;
+                    int rPid = r.Pid;
+                    var item = new TrayMenuItem
+                    {
+                        Id = "task_scheduler_running_" + rName + "_" + rPid,
+                        Header = $"⏹ {rName} (PID {rPid}) · 点击停止",
+                        ClickAction = () =>
+                        {
+                            Scheduler?.TryStop(rName);
+                            LogInfo($"通过托盘停止任务 '{rName}' (PID {rPid})");
+                        }
+                    };
+                    runningGroup.Children.Add(item);
+                }
+            }
+            root.Children.Add(runningGroup);
+
+            // 4. 手动任务分组
+            var manual = new TrayMenuItem
+            {
+                Id = "task_scheduler_manual",
+                Header = Loc.T("Tray.ManualTasks", "手动任务")
+            };
+            var manualTasks = Scheduler != null && Scheduler.Tasks != null
+                ? System.Linq.Enumerable.ToList(System.Linq.Enumerable.Where(Scheduler.Tasks, t => t.Enabled && (t.Trigger.Type == TaskTriggerType.Manual || t.Trigger.Type == TaskTriggerType.Hotkey)))
+                : new List<TaskDefinition>();
+
+            if (manualTasks.Count == 0)
+            {
+                manual.Children.Add(new TrayMenuItem
+                {
+                    Id = "task_scheduler_manual_empty",
+                    Header = Loc.T("Tray.NoManualTasks", "暂无手动任务"),
+                    IsEnabled = false
+                });
+            }
+            else
+            {
+                foreach (var t in manualTasks)
                 {
                     string name = t.Name;
                     string badge = t.TriggerBadgeText;
                     var mi = new TrayMenuItem
                     {
                         Id = "task_scheduler_manual_" + name,
-                        Header = t.Trigger != null && t.Trigger.Type == TaskTriggerType.Manual ? name : $"{name} [{badge}]"
+                        Header = $"{name} [{badge}]"
                     };
                     if (t.Trigger != null && t.Trigger.Type == TaskTriggerType.Hotkey && !string.IsNullOrWhiteSpace(t.Trigger.Hotkey))
                     {
@@ -205,84 +266,6 @@ namespace CarroDesk.Modules.TaskScheduler
                 }
             }
             root.Children.Add(manual);
-
-            // 最近运行：动态枚举近期记录（只读）
-            var recent = new TrayMenuItem
-            {
-                Id = "task_scheduler_recent",
-                Header = Loc.T("Tray.RecentRun", "最近运行")
-            };
-            var recents = Scheduler != null ? Scheduler.GetRecent() : null;
-            if (recents == null || recents.Count == 0)
-            {
-                recent.Children.Add(new TrayMenuItem
-                {
-                    Id = "task_scheduler_recent_empty",
-                    Header = Loc.T("Tray.NoRecentTasks", "暂无运行记录"),
-                    IsEnabled = false
-                });
-            }
-            else
-            {
-                foreach (var r in recents)
-                {
-                    recent.Children.Add(new TrayMenuItem
-                    {
-                        Id = "task_scheduler_recent_" + r,
-                        Header = r,
-                        IsEnabled = false
-                    });
-                }
-            }
-            root.Children.Add(recent);
-
-            root.Children.Add(TrayMenuItem.Separator());
-
-            root.Children.Add(new TrayMenuItem
-            {
-                Id = "task_scheduler_editor",
-                Header = Loc.T("Tray.TaskEditor", "任务编辑器..."),
-                ClickAction = () =>
-                {
-                    try
-                    {
-                        var win = new TaskEditorWindow(Scheduler, () => RequestRefreshSelf())
-                        {
-                            WindowStartupLocation = System.Windows.WindowStartupLocation.CenterScreen
-                        };
-                        win.ShowDialog();
-                        RequestRefreshSelf();
-                    }
-                    catch { }
-                }
-            });
-
-            root.Children.Add(new TrayMenuItem
-            {
-                Id = "task_scheduler_logs",
-                Header = Loc.T("Tray.OpenTaskLogsDir", "打开任务日志目录..."),
-                ClickAction = () =>
-                {
-                    try
-                    {
-                        string dir = ConfigService.LogsDirPath;
-                        TaskLogger.EnsureLogDir();
-                        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                        {
-                            FileName = dir,
-                            UseShellExecute = true
-                        });
-                    }
-                    catch { }
-                }
-            });
-
-            root.Children.Add(new TrayMenuItem
-            {
-                Id = "task_scheduler_reload",
-                Header = Loc.T("Tray.ReloadTasks", "重载任务"),
-                ClickAction = () => Reload()
-            });
 
             items.Add(root);
             return items;

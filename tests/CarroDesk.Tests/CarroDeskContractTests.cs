@@ -162,10 +162,9 @@ namespace CarroDesk.Tests
             Assert.IsTrue(root.Header.Contains("自动化任务"), $"根项 Header 应包含模块名，实际: {root.Header}");
 
             Assert.IsTrue(root.Children.Any(c => c.Id == "task_scheduler_toggle"), "二级菜单应包含启用总开关");
-            Assert.IsTrue(root.Children.Any(c => c.Id == "task_scheduler_manual"), "二级菜单应包含手动运行");
-            Assert.IsTrue(root.Children.Any(c => c.Id == "task_scheduler_recent"), "二级菜单应包含最近运行");
-            Assert.IsTrue(root.Children.Any(c => c.Id == "task_scheduler_editor"), "二级菜单应包含任务编辑器");
-            Assert.IsTrue(root.Children.Any(c => c.Id == "task_scheduler_reload"), "二级菜单应包含重载任务");
+            Assert.IsTrue(root.Children.Any(c => c.Id == "task_scheduler_manager"), "二级菜单应包含任务管理主面板入口");
+            Assert.IsTrue(root.Children.Any(c => c.Id == "task_scheduler_running_group"), "二级菜单应包含运行中任务动态组");
+            Assert.IsTrue(root.Children.Any(c => c.Id == "task_scheduler_manual"), "二级菜单应包含手动任务");
         }
 
         [TestMethod]

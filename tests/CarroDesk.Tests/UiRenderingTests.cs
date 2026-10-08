@@ -6,9 +6,14 @@ using System.Threading;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Linq;
+using CarroDesk.Core;
+using CarroDesk.Models;
+using CarroDesk.Services.Tasks;
 using CarroDesk.Modules.ClipboardHistory.Models;
 using CarroDesk.Modules.ClipboardHistory.Services;
 using CarroDesk.Modules.ClipboardHistory.Views;
+using CarroDesk.Modules.TaskScheduler.Views;
 using CarroDesk.Views;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -30,6 +35,28 @@ namespace CarroDesk.Tests
             {
                 SavedItems = new List<ClipboardItem>(items);
             }
+        }
+
+        private class FakeTaskSchedulerService : ITaskSchedulerService
+        {
+            public bool IsGlobalEnabled { get; set; } = true;
+            public bool SetGlobalEnabled(bool enabled) { IsGlobalEnabled = enabled; return true; }
+            public TaskReloadResult Reload() => new TaskReloadResult();
+            public Dictionary<string, TaskStateSnapshot> States = new Dictionary<string, TaskStateSnapshot>(StringComparer.OrdinalIgnoreCase);
+
+            public IReadOnlyList<TaskRunInfo> GetRunning() => States.Values
+                .Where(s => s.State == TaskRuntimeState.Running && s.Pid.HasValue)
+                .Select(s => new TaskRunInfo { Name = s.TaskName, Pid = s.Pid.Value, StartedAt = s.StartedAt ?? DateTime.Now })
+                .ToList();
+
+            public bool IsRunning(string taskName) => States.TryGetValue(taskName, out var s) && s.IsRunning;
+            public bool TryStop(string taskName) => true;
+            public bool RunManual(string taskName) => true;
+            public bool RestartTask(string taskName) => true;
+            public TaskStateSnapshot GetState(string taskName) => States.TryGetValue(taskName, out var s) ? s : new TaskStateSnapshot { TaskName = taskName };
+            public IReadOnlyDictionary<string, TaskStateSnapshot> GetAllStates() => States;
+            public event Action<string, TaskRuntimeState, TaskStateSnapshot> StateChanged { add { } remove { } }
+            public TaskSupervisionInfo GetSupervision(string taskName) => new TaskSupervisionInfo();
         }
 
         private void RunInSta(Action action)
@@ -155,6 +182,123 @@ namespace CarroDesk.Tests
                 Assert.IsFalse(detail.IsTruncated, "普通长度文本不应显示截断提示");
 
                 detail.Close();
+            });
+        }
+
+        [TestMethod]
+        public void Render_TaskManagerWindow_SavesSnapshot()
+        {
+            RunInSta(() =>
+            {
+                var sampleTasks = new List<TaskDefinition>
+                {
+                    new TaskDefinition
+                    {
+                        Name = "db-backup-daily",
+                        Enabled = true,
+                        Trigger = new TaskTrigger { Type = TaskTriggerType.Daily, At = "03:00" },
+                        Action = new TaskAction { File = "backup.bat", Args = "--compress --target=D:\\Backups" },
+                        Options = new TaskOptions { Mode = "wait", TimeoutSec = 3600, CatchUpMissed = true }
+                    },
+                    new TaskDefinition
+                    {
+                        Name = "downloads-watcher",
+                        Enabled = true,
+                        Trigger = new TaskTrigger { Type = TaskTriggerType.Watch, WatchPath = @"D:\Downloads", WatchFilter = "*.zip;*.tar.gz" },
+                        Action = new TaskAction { File = "unpack.py", Args = "{{file}}" },
+                        Options = new TaskOptions { Mode = "wait" }
+                    },
+                    new TaskDefinition
+                    {
+                        Name = "cache-cleaner",
+                        Enabled = true,
+                        Trigger = new TaskTrigger { Type = TaskTriggerType.Interval, Every = "30m" },
+                        Action = new TaskAction { File = "clean-temp.ps1" },
+                        Options = new TaskOptions { Mode = "wait", Retry = 3 }
+                    },
+                    new TaskDefinition
+                    {
+                        Name = "nginx-daemon",
+                        Enabled = true,
+                        Trigger = new TaskTrigger { Type = TaskTriggerType.Startup, DelaySec = 5 },
+                        Action = new TaskAction { File = @"C:\nginx\nginx.exe" },
+                        Options = new TaskOptions { Mode = "detach", Restart = "on-failure", RestartDelaySec = 5, RestartLimit = 5 }
+                    },
+                    new TaskDefinition
+                    {
+                        Name = "compile-project",
+                        Enabled = true,
+                        Trigger = new TaskTrigger { Type = TaskTriggerType.Manual },
+                        Action = new TaskAction { File = "dotnet", Args = "build --configuration Release" },
+                        Options = new TaskOptions { Mode = "wait" }
+                    },
+                    new TaskDefinition
+                    {
+                        Name = "legacy-sync-agent",
+                        Enabled = false,
+                        Trigger = new TaskTrigger { Type = TaskTriggerType.Interval, Every = "1h" },
+                        Action = new TaskAction { File = "sync.cmd" }
+                    }
+                };
+
+                TaskConfigService.Save(sampleTasks);
+
+                var scheduler = new FakeTaskSchedulerService();
+                scheduler.States["nginx-daemon"] = new TaskStateSnapshot
+                {
+                    TaskName = "nginx-daemon",
+                    State = TaskRuntimeState.Running,
+                    Pid = 6214,
+                    StartedAt = DateTime.Now.AddSeconds(-382)
+                };
+                scheduler.States["cache-cleaner"] = new TaskStateSnapshot
+                {
+                    TaskName = "cache-cleaner",
+                    State = TaskRuntimeState.WaitingRetry,
+                    ConsecutiveFailures = 1,
+                    NextRetryDelaySec = 4,
+                    LastOutcome = "exit code 1 (timeout)"
+                };
+                scheduler.States["compile-project"] = new TaskStateSnapshot
+                {
+                    TaskName = "compile-project",
+                    State = TaskRuntimeState.MarkedFailed,
+                    ConsecutiveFailures = 5,
+                    LastExitCode = 2,
+                    LastOutcome = "error: build failed"
+                };
+
+                var win = new TaskManagerWindow(scheduler);
+                SaveWindowSnapshot(win, 980, 620, "TaskManagerWindow.png");
+            });
+        }
+
+        [TestMethod]
+        public void Render_TaskEditDialog_EditMode_SavesSnapshot()
+        {
+            RunInSta(() =>
+            {
+                var task = new TaskDefinition
+                {
+                    Name = "db-backup-daily",
+                    Enabled = true,
+                    Trigger = new TaskTrigger { Type = TaskTriggerType.Daily, At = "03:00" },
+                    Action = new TaskAction { File = "backup.bat", Args = "--compress --target=D:\\Backups" },
+                    Options = new TaskOptions { Mode = "wait", TimeoutSec = 3600, CatchUpMissed = true }
+                };
+
+                var win = new TaskEditDialog(task, isNew: false, new[] { "db-backup-daily", "nginx-daemon" });
+                SaveWindowSnapshot(win, 740, 680, "TaskEditDialog_EditMode.png");
+            });
+        }
+
+        [TestMethod]
+        public void Render_TaskEditDialog_NewMode_SavesSnapshot()
+        {
+            RunInSta(() =>
+            {
+                var win = new TaskEditDialog(null, isNew: true, new[] { "db-backup-daily", "nginx-daemon" });
+                SaveWindowSnapshot(win, 740, 680, "TaskEditDialog_NewMode.png");
             });
         }
 

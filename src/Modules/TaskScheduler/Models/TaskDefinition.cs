@@ -214,6 +214,12 @@ namespace CarroDesk.Models
             }
         }
 
+        public TaskDefinition Clone()
+        {
+            var json = JsonConvert.SerializeObject(this);
+            return JsonConvert.DeserializeObject<TaskDefinition>(json) ?? new TaskDefinition();
+        }
+
         public string Validate()
         {
             if (string.IsNullOrWhiteSpace(Name)) return "name required";
