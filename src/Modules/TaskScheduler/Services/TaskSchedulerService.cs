@@ -389,10 +389,10 @@ namespace CarroDesk.Services.Tasks
             if (task == null || !_globalEnabled || !task.Enabled) return false;
 
             TryStop(name);
-            Task.Run(async () =>
+            _ = Task.Run(async () =>
             {
                 await Task.Delay(300).ConfigureAwait(false);
-                ExecuteAsync(task, "restart");
+                await ExecuteAsync(task, "restart").ConfigureAwait(false);
             });
             return true;
         }
@@ -547,7 +547,7 @@ namespace CarroDesk.Services.Tasks
                         slot.Handle = null;
                         var t = task;
                         var s = slot;
-                        Task.Run(async () =>
+                        _ = Task.Run(async () =>
                         {
                             try
                             {
