@@ -88,5 +88,22 @@ namespace CarroDesk.Tests
             string result = TemplateExpander.Expand(input, null);
             Assert.AreEqual("Unknown: {{non_existent_token_xyz_123}}", result);
         }
+
+        [TestMethod]
+        public void Expand_WatchExtraVariables_ExpandsCorrectly()
+        {
+            var vars = new System.Collections.Generic.Dictionary<string, string>
+            {
+                ["file"] = @"C:\Data\report.pdf",
+                ["fileName"] = "report.pdf",
+                ["fileDir"] = @"C:\Data",
+                ["fileEvent"] = "created",
+                ["custom_tag"] = "important"
+            };
+
+            string template = "Process {{file}} in {{fileDir}} (name={{fileName}}, evt={{fileEvent}}, tag={{custom_tag}})";
+            string result = TemplateExpander.Expand(template, null, vars);
+            Assert.AreEqual(@"Process C:\Data\report.pdf in C:\Data (name=report.pdf, evt=created, tag=important)", result);
+        }
     }
 }

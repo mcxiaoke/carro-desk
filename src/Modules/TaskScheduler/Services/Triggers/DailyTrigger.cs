@@ -20,9 +20,10 @@ namespace CarroDesk.Services.Tasks.Triggers
                 t = new TimeSpan(2, 0, 0);
             _at = t;
             // 初始化检查：如果当前时刻已经晚于当天设定的 _at（例如设在 02:30，当前是 11:00），
-            // 将 _lastFiredDate 初始化为今天，避免启动或重载配置时被误触发！
+            // 除非显式配置了 CatchUpMissed（错过补跑），否则将 _lastFiredDate 初始化为今天，避免启动或重载配置时被误触发！
             var now = DateTime.Now;
-            if (now >= now.Date + _at)
+            bool catchUp = task.Options != null && task.Options.CatchUpMissed;
+            if (!catchUp && now >= now.Date + _at)
             {
                 _lastFiredDate = now.Date;
             }

@@ -58,6 +58,7 @@ namespace CarroDesk.Models
         public string File { get; set; } = "";
         public string Args { get; set; } = "";
         public string WorkDir { get; set; } = "";
+        public Dictionary<string, string> Env { get; set; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
     }
 
     public class TaskOptions
@@ -68,6 +69,9 @@ namespace CarroDesk.Models
         public int Retry { get; set; } = 0;
         public string WorkDir { get; set; } = "";
         public bool NotifyOnFailure { get; set; } = true;
+        public string Encoding { get; set; } = "";
+        public bool RunAtStartup { get; set; } = false;
+        public bool CatchUpMissed { get; set; } = false;
 
         /// <summary>
         /// 运行模式："wait"（默认，启动后等待退出，现状语义）| "detach"（启动即返回，进程后台常驻）。

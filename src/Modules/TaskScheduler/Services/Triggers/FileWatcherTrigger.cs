@@ -165,14 +165,48 @@ namespace CarroDesk.Services.Tasks.Triggers
             return debounced;
         }
 
+        private static void WaitForFileReady(string path, int maxWaitMs = 3000)
+        {
+            if (string.IsNullOrEmpty(path)) return;
+            try
+            {
+                if (!File.Exists(path)) return;
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                while (sw.ElapsedMilliseconds < maxWaitMs)
+                {
+                    try
+                    {
+                        using (var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                        {
+                            return;
+                        }
+                    }
+                    catch (IOException)
+                    {
+                        System.Threading.Thread.Sleep(150);
+                    }
+                }
+            }
+            catch { }
+        }
+
         private void OnEvent(object sender, FileSystemEventArgs e)
         {
             var now = DateTime.Now;
             string key = e.FullPath ?? e.Name;
             if (ShouldDebounce(key, now)) return;
 
-            var h = Fired;
-            if (h != null) h(Task, "watch:" + e.ChangeType + ":" + e.Name);
+            var fullPath = e.FullPath ?? "";
+            var changeType = e.ChangeType;
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                if (changeType == WatcherChangeTypes.Created || changeType == WatcherChangeTypes.Changed)
+                {
+                    WaitForFileReady(fullPath, 3000);
+                }
+                var h = Fired;
+                if (h != null) h(Task, "watch:" + changeType + "|" + fullPath);
+            });
         }
 
         private void OnRenamed(object sender, RenamedEventArgs e)
@@ -181,8 +215,13 @@ namespace CarroDesk.Services.Tasks.Triggers
             string key = e.FullPath ?? e.Name;
             if (ShouldDebounce(key, now)) return;
 
-            var h = Fired;
-            if (h != null) h(Task, "watch:renamed:" + e.Name);
+            var fullPath = e.FullPath ?? "";
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                WaitForFileReady(fullPath, 3000);
+                var h = Fired;
+                if (h != null) h(Task, "watch:renamed|" + fullPath);
+            });
         }
 
         public void Stop()

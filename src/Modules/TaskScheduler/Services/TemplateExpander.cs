@@ -10,12 +10,32 @@ namespace CarroDesk.Services.Tasks
 
         public static string Expand(string text, TaskDefinition task)
         {
+            return Expand(text, task, null);
+        }
+
+        public static string Expand(string text, TaskDefinition task, System.Collections.Generic.IDictionary<string, string> extraVariables)
+        {
             if (string.IsNullOrEmpty(text)) return text;
 
             var now = DateTime.Now;
             return TemplateRegex.Replace(text, match =>
             {
                 string key = match.Groups[1].Value.Trim();
+
+                if (extraVariables != null && extraVariables.TryGetValue(key, out var extraVal))
+                    return extraVal ?? "";
+
+                if (string.Equals(key, "file", StringComparison.OrdinalIgnoreCase))
+                    return (extraVariables != null && extraVariables.TryGetValue("file", out var f)) ? f : "";
+
+                if (string.Equals(key, "fileName", StringComparison.OrdinalIgnoreCase))
+                    return (extraVariables != null && extraVariables.TryGetValue("fileName", out var fn)) ? fn : "";
+
+                if (string.Equals(key, "fileDir", StringComparison.OrdinalIgnoreCase))
+                    return (extraVariables != null && extraVariables.TryGetValue("fileDir", out var fd)) ? fd : "";
+
+                if (string.Equals(key, "fileEvent", StringComparison.OrdinalIgnoreCase))
+                    return (extraVariables != null && extraVariables.TryGetValue("fileEvent", out var fe)) ? fe : "";
 
                 if (string.Equals(key, "date", StringComparison.OrdinalIgnoreCase))
                     return now.ToString("yyyy-MM-dd");

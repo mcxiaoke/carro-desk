@@ -24,6 +24,11 @@ namespace CarroDesk.Services.Tasks.Triggers
             _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(_intervalSec) };
             _timer.Tick += OnTick;
             _timer.Start();
+
+            if (Task.Options != null && Task.Options.RunAtStartup)
+            {
+                OnTick(this, EventArgs.Empty);
+            }
         }
 
         private void OnTick(object sender, EventArgs e)

@@ -30,6 +30,15 @@ namespace CarroDesk.Services.Tasks
     /// </summary>
     public static class TaskRunner
     {
+        static TaskRunner()
+        {
+            try
+            {
+                System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+            }
+            catch { }
+        }
+
         public static Task<int> RunAsync(TaskDefinition task, string reason)
         {
             return RunAsync(task, reason, CancellationToken.None, null);
@@ -119,6 +128,39 @@ namespace CarroDesk.Services.Tasks
             string args = task.Action != null ? task.Action.Args : "";
             bool hidden = task.Options != null ? task.Options.Hidden : true;
 
+            System.Collections.Generic.Dictionary<string, string> triggerVars = null;
+            if (!string.IsNullOrEmpty(reason) && reason.StartsWith("watch:", StringComparison.OrdinalIgnoreCase))
+            {
+                string payload = reason.Substring("watch:".Length);
+                string evt = "";
+                string path = payload;
+                int pipeIdx = payload.IndexOf('|');
+                if (pipeIdx >= 0)
+                {
+                    evt = payload.Substring(0, pipeIdx);
+                    path = payload.Substring(pipeIdx + 1);
+                }
+                else
+                {
+                    int colonIdx = payload.IndexOf(':');
+                    if (colonIdx >= 0)
+                    {
+                        evt = payload.Substring(0, colonIdx);
+                        path = payload.Substring(colonIdx + 1);
+                    }
+                }
+                if (!string.IsNullOrEmpty(path))
+                {
+                    triggerVars = new System.Collections.Generic.Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["file"] = path,
+                        ["fileName"] = Path.GetFileName(path),
+                        ["fileDir"] = Path.GetDirectoryName(path) ?? "",
+                        ["fileEvent"] = evt
+                    };
+                }
+            }
+
             // expand env vars + template vars {{date}} etc in file/args/workDir
             try
             {
@@ -126,9 +168,9 @@ namespace CarroDesk.Services.Tasks
                 if (!string.IsNullOrEmpty(args)) args = Environment.ExpandEnvironmentVariables(args);
                 if (!string.IsNullOrEmpty(workDir)) workDir = Environment.ExpandEnvironmentVariables(workDir);
                 // template expansion
-                file = TemplateExpander.Expand(file, task);
-                args = TemplateExpander.Expand(args, task);
-                workDir = TemplateExpander.Expand(workDir, task);
+                file = TemplateExpander.Expand(file, task, triggerVars);
+                args = TemplateExpander.Expand(args, task, triggerVars);
+                workDir = TemplateExpander.Expand(workDir, task, triggerVars);
             }
             catch { }
 
@@ -219,6 +261,25 @@ namespace CarroDesk.Services.Tasks
                 realArgs = CommandLine.AppendArgs(prefix + CommandLine.QuoteArgument(file), args);
             }
 
+            Encoding enc = Encoding.UTF8;
+            string encOpt = task.Options != null ? (task.Options.Encoding ?? "").Trim().ToLowerInvariant() : "";
+            if (encOpt == "gbk" || encOpt == "gb2312" || encOpt == "cp936")
+            {
+                try { enc = Encoding.GetEncoding(936); } catch { enc = Encoding.UTF8; }
+            }
+            else if (encOpt == "oem" || encOpt == "default")
+            {
+                try { enc = Encoding.GetEncoding(System.Globalization.CultureInfo.CurrentCulture.TextInfo.OEMCodePage); }
+                catch { enc = Encoding.UTF8; }
+            }
+            else if (encOpt == "ascii") enc = Encoding.ASCII;
+            else if (encOpt == "unicode" || encOpt == "utf16") enc = Encoding.Unicode;
+            else if (string.IsNullOrEmpty(encOpt) && (ext == ".bat" || ext == ".cmd"))
+            {
+                try { enc = Encoding.GetEncoding(System.Globalization.CultureInfo.CurrentCulture.TextInfo.OEMCodePage); }
+                catch { enc = Encoding.UTF8; }
+            }
+
             var psi = new ProcessStartInfo
             {
                 FileName = realFile,
@@ -229,9 +290,20 @@ namespace CarroDesk.Services.Tasks
                 WindowStyle = hidden ? ProcessWindowStyle.Hidden : ProcessWindowStyle.Normal,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
-                StandardOutputEncoding = Encoding.UTF8,
-                StandardErrorEncoding = Encoding.UTF8
+                StandardOutputEncoding = enc,
+                StandardErrorEncoding = enc
             };
+
+            if (task.Action != null && task.Action.Env != null)
+            {
+                foreach (var kv in task.Action.Env)
+                {
+                    if (!string.IsNullOrEmpty(kv.Key))
+                    {
+                        psi.EnvironmentVariables[kv.Key] = TemplateExpander.Expand(kv.Value ?? "", task, triggerVars);
+                    }
+                }
+            }
 
             TaskLogger.Info(task.Name, "triggered(" + reason + ") -> starting: " + psi.FileName + " " + psi.Arguments + " [workDir=" + workDir + "]");
 
