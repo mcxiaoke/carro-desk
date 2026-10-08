@@ -461,6 +461,7 @@ namespace CarroDesk.Tests
                 Assert.AreEqual(CommandErrorCodes.Timeout, result.Error.Code,
                     "不响应取消的 handler 不应让内核一直等下去");
                 Assert.IsTrue(finished.Wait(TimeSpan.FromSeconds(5)));
+                Thread.Sleep(100);
 
                 // 强制 GC 触发未观察异常的终结流程
                 for (int i = 0; i < 3; i++)

@@ -32,6 +32,11 @@ namespace CarroDesk.Services.Tasks
         private readonly Dictionary<string, List<RunSlot>> _running =
             new Dictionary<string, List<RunSlot>>(StringComparer.OrdinalIgnoreCase);
 
+        private readonly Dictionary<string, TaskStateMachine> _stateMachines =
+            new Dictionary<string, TaskStateMachine>(StringComparer.OrdinalIgnoreCase);
+
+        public event Action<string, TaskRuntimeState, TaskStateSnapshot> StateChanged;
+
         /// <summary>
         /// 单任务并发实例上限（仅对 allowConcurrent 生效）。
         /// 没有上限时"每分钟触发一次 + 任务跑一小时"会无界堆积进程。
@@ -52,6 +57,47 @@ namespace CarroDesk.Services.Tasks
         public IReadOnlyList<TaskDefinition> Tasks
         {
             get { lock (_lock) return _tasks.ToArray(); }
+        }
+
+        public TaskStateMachine GetOrCreateFsm(string taskName)
+        {
+            if (string.IsNullOrEmpty(taskName)) return new TaskStateMachine("");
+            lock (_lock)
+            {
+                if (!_stateMachines.TryGetValue(taskName, out var fsm))
+                {
+                    fsm = new TaskStateMachine(taskName);
+                    _stateMachines[taskName] = fsm;
+                }
+                return fsm;
+            }
+        }
+
+        public TaskStateSnapshot GetState(string taskName)
+        {
+            if (string.IsNullOrEmpty(taskName)) return new TaskStateSnapshot();
+            return GetOrCreateFsm(taskName).GetSnapshot();
+        }
+
+        public IReadOnlyDictionary<string, TaskStateSnapshot> GetAllStates()
+        {
+            lock (_lock)
+            {
+                var dict = new Dictionary<string, TaskStateSnapshot>(StringComparer.OrdinalIgnoreCase);
+                foreach (var t in _tasks)
+                {
+                    dict[t.Name] = GetOrCreateFsm(t.Name).GetSnapshot();
+                }
+                return dict;
+            }
+        }
+
+        public void NotifyStateChanged(string taskName)
+        {
+            if (string.IsNullOrEmpty(taskName)) return;
+            var fsm = GetOrCreateFsm(taskName);
+            var snapshot = fsm.GetSnapshot();
+            try { StateChanged?.Invoke(taskName, snapshot.State, snapshot); } catch { }
         }
 
         public TaskSchedulerService(
@@ -243,6 +289,10 @@ namespace CarroDesk.Services.Tasks
                 _tasks = result.Tasks ?? new List<TaskDefinition>();
                 // 配置变化 = 用户干预信号：清空守护计数与失败标记（同"保存任务即可重置"的语义）
                 _supervision.Clear();
+                foreach (var fsm in _stateMachines.Values)
+                {
+                    fsm.Reset();
+                }
             }
             if (!_globalEnabled)
             {
@@ -325,6 +375,25 @@ namespace CarroDesk.Services.Tasks
                 return false;
             }
             Task.Run(() => ExecuteAsync(task, "manual"));
+            return true;
+        }
+
+        public bool RestartTask(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return false;
+            TaskDefinition task = null;
+            lock (_lock)
+            {
+                foreach (var t in _tasks) if (string.Equals(t.Name, name, StringComparison.OrdinalIgnoreCase)) { task = t; break; }
+            }
+            if (task == null || !_globalEnabled || !task.Enabled) return false;
+
+            TryStop(name);
+            Task.Run(async () =>
+            {
+                await Task.Delay(300).ConfigureAwait(false);
+                ExecuteAsync(task, "restart");
+            });
             return true;
         }
 
@@ -416,10 +485,26 @@ namespace CarroDesk.Services.Tasks
             if (!_globalEnabled || !IsTaskStillEnabled(task))
                 return;
 
+            var fsm = GetOrCreateFsm(task.Name);
+            bool userDriven = string.Equals(reason, "manual", StringComparison.OrdinalIgnoreCase) ||
+                              string.Equals(reason, "restart", StringComparison.OrdinalIgnoreCase) ||
+                              string.Equals(reason, "hotkey", StringComparison.OrdinalIgnoreCase);
+
+            bool allowConcurrent = task.Options != null && task.Options.AllowConcurrent;
+            string refusal;
+            if (!fsm.TryBeginStarting(userDriven, allowConcurrent, out refusal))
+            {
+                TaskLogger.Warn(task.Name, "skipped(" + reason + ") " + refusal);
+                return;
+            }
+            NotifyStateChanged(task.Name);
+
             // condition check
             string skipReason;
             if (!TaskConditionEvaluator.ShouldRun(task, out skipReason))
             {
+                fsm.OnProcessExited(0, false, false, 0, 0, 0);
+                NotifyStateChanged(task.Name);
                 TaskLogger.Info(task.Name, "skipped(" + reason + ") condition not met: " + skipReason);
                 return;
             }
@@ -430,6 +515,8 @@ namespace CarroDesk.Services.Tasks
             string slotRefusal;
             if (!TryOccupySlot(task.Name, task.Options != null && task.Options.AllowConcurrent, slot, out slotRefusal))
             {
+                fsm.OnProcessExited(0, false, false, 0, 0, 0);
+                NotifyStateChanged(task.Name);
                 TaskLogger.Warn(task.Name, "skipped(" + reason + ") " + slotRefusal);
                 return;
             }
@@ -437,38 +524,38 @@ namespace CarroDesk.Services.Tasks
             // detach（常驻）模式：启动即返回，不等退出；配置校验已拒绝 detach+retry/timeout 组合
             if (task.Options != null && task.Options.IsDetach)
             {
-                // 熔断标记后：自动触发路径一律跳过，等待用户干预；手动/热键运行视为显式复位意图
-                SupervisionState sup = GetSupervisionState(task.Name);
-                bool userDriven = string.Equals(reason, "manual", StringComparison.OrdinalIgnoreCase) ||
-                                  string.Equals(reason, "hotkey", StringComparison.OrdinalIgnoreCase);
-                if (sup != null && sup.MarkedFailed)
-                {
-                    if (!userDriven)
-                    {
-                        RemoveSlot(task.Name, slot);
-                        TaskLogger.Warn(task.Name, "skipped(" + reason + ") marked failed after " + sup.ConsecutiveFailures +
-                            " consecutive failures; reset by editing+saving the task or a manual/hotkey run");
-                        return;
-                    }
-                    lock (_lock) _supervision.Remove(task.Name);
-                    TaskLogger.Info(task.Name, "failed mark reset by " + reason + " run");
-                }
-
                 TaskProcessHandle handle;
                 int code = TaskRunner.StartDetached(task, reason, out handle);
                 if (code == TaskRunner.StartSkippedSingleInstance)
                 {
                     // 单实例互斥：已有实例在运行（含跨宿主重启的旧实例），不算失败、不计数
                     RemoveSlot(task.Name, slot);
+                    fsm.OnProcessExited(0, false, false, 0, 0, 0);
+                    NotifyStateChanged(task.Name);
                     AddRecent(task.Name, "skipped");
                     return;
                 }
                 if (code != 0 || handle == null)
                 {
-                    if (task.Options.RestartOnFailure)
+                    int delay = task.Options.RestartDelaySec;
+                    int limit = task.Options.RestartLimit;
+                    var newState = fsm.OnStartFailed(task.Options.RestartOnFailure, delay, limit, "failed to start");
+                    NotifyStateChanged(task.Name);
+
+                    if (task.Options.RestartOnFailure && newState == TaskRuntimeState.WaitingRetry)
                     {
-                        // 启动失败同样进入守护决策（坏路径也是 crash loop 的一种）
-                        HandleDetachFailure(task, slot, "start", -1);
+                        slot.Handle = null;
+                        var t = task;
+                        var s = slot;
+                        Task.Run(async () =>
+                        {
+                            try
+                            {
+                                await Task.Delay(TimeSpan.FromSeconds(Math.Max(1, delay))).ConfigureAwait(false);
+                                RestartContinue(t, s);
+                            }
+                            catch { }
+                        });
                     }
                     else
                     {
@@ -508,7 +595,11 @@ namespace CarroDesk.Services.Tasks
                             task,
                             reason + (attempt > 1 ? " retry#" + attempt : ""),
                             CancellationToken.None, null,
-                            h => slot.Handle = h).ConfigureAwait(false);
+                            h => {
+                                slot.Handle = h;
+                                fsm.OnProcessStarted(h.Pid, h.StartedAt);
+                                NotifyStateChanged(task.Name);
+                            }).ConfigureAwait(false);
                     }
                     catch (Exception ex)
                     {
@@ -519,6 +610,8 @@ namespace CarroDesk.Services.Tasks
                     // 用户主动停止（TryStop 已杀进程树）：不得判为失败，也不得触发重试/守护重启。
                     if (slot.StopRequested)
                     {
+                        fsm.OnProcessExited(code, true, false, 0, 0, 0);
+                        NotifyStateChanged(task.Name);
                         TaskLogger.Info(task.Name, "stopped by user request (exit code " + code + "); not counted as failure");
                         AddRecent(task.Name, "skipped");
                         return; // finally 仍会移除运行槽
@@ -532,6 +625,8 @@ namespace CarroDesk.Services.Tasks
             }
             finally
             {
+                fsm.OnProcessExited(lastCode, slot.StopRequested, false, 0, 0, 0);
+                NotifyStateChanged(task.Name);
                 RemoveSlot(task.Name, slot);
             }
             // failure notify
@@ -641,6 +736,9 @@ namespace CarroDesk.Services.Tasks
         private void AttachDetached(TaskDefinition task, RunSlot slot, TaskProcessHandle handle)
         {
             slot.Handle = handle;
+            var fsm = GetOrCreateFsm(task.Name);
+            fsm.OnProcessStarted(handle.Pid, handle.StartedAt);
+            NotifyStateChanged(task.Name);
             AddRecent(task.Name, "started");
             TaskLogger.Info(task.Name, "detached: running in background pid=" + handle.Pid + " killWithHost=" + handle.KillWithHost);
             handle.Exited += (h, exitCode) => OnDetachedExited(task, slot, h, exitCode);
@@ -655,9 +753,12 @@ namespace CarroDesk.Services.Tasks
         {
             try
             {
+                var fsm = GetOrCreateFsm(task.Name);
                 if (handle.WasStopped || slot.StopRequested)
                 {
                     RemoveSlot(task.Name, slot);
+                    fsm.OnProcessExited(exitCode ?? 0, true, false, 0, 0, 0);
+                    NotifyStateChanged(task.Name);
                     AddRecent(task.Name, "stopped");
                     return;
                 }
@@ -677,6 +778,8 @@ namespace CarroDesk.Services.Tasks
                     // 成功退出同样复位计数：计数只反映"连续的异常失败"
                     lock (_lock) _supervision.Remove(task.Name);
                     RemoveSlot(task.Name, slot);
+                    fsm.OnProcessExited(0, false, false, 0, 0, stable);
+                    NotifyStateChanged(task.Name);
                     AddRecent(task.Name, "ok");
                     return;
                 }
@@ -689,6 +792,8 @@ namespace CarroDesk.Services.Tasks
                 }
 
                 RemoveSlot(task.Name, slot);
+                fsm.OnProcessExited(exitCode ?? -1, false, false, 0, 0, stable);
+                NotifyStateChanged(task.Name);
                 AddRecent(task.Name, exitCode.HasValue ? "fail:" + exitCode.Value : "fail");
                 RecordFailureNotify(task, exitCode ?? -1);
             }
@@ -704,6 +809,14 @@ namespace CarroDesk.Services.Tasks
             // 槽保留（重启延迟期内占住防重位），但活句柄清空：
             // TryStop 依此区分"杀实例"与"取消挂起重启"，GetRunning 也不会再报已死的 pid
             slot.Handle = null;
+            var fsm = GetOrCreateFsm(task.Name);
+            int stable = task.Options != null ? task.Options.StableUptimeSec : 60;
+            int limit = task.Options != null ? task.Options.RestartLimit : 3;
+            int delay = task.Options != null ? task.Options.RestartDelaySec : 5;
+
+            var newState = fsm.OnProcessExited(exitCode, false, true, delay, limit, stable);
+            NotifyStateChanged(task.Name);
+
             int failures;
             lock (_lock)
             {
@@ -713,15 +826,12 @@ namespace CarroDesk.Services.Tasks
                     sup = new SupervisionState();
                     _supervision[task.Name] = sup;
                 }
-                sup.ConsecutiveFailures++;
+                sup.ConsecutiveFailures = fsm.ConsecutiveFailures;
                 sup.LastExitCode = exitCode;
                 failures = sup.ConsecutiveFailures;
             }
 
-            int limit = task.Options != null ? task.Options.RestartLimit : 3;
-            int delay = task.Options != null ? task.Options.RestartDelaySec : 5;
-
-            if (failures > limit)
+            if (newState == TaskRuntimeState.MarkedFailed)
             {
                 bool notify;
                 lock (_lock)
@@ -763,6 +873,7 @@ namespace CarroDesk.Services.Tasks
         {
             try
             {
+                var fsm = GetOrCreateFsm(task.Name);
                 // 槽已不在册 = 用户停止 / 宿主退出 / 配置重载替换过：放弃重启
                 if (!IsSlotRegistered(task.Name, slot))
                 {
@@ -772,6 +883,8 @@ namespace CarroDesk.Services.Tasks
                 if (!_started || !_globalEnabled || !IsTaskStillEnabled(task) || slot.StopRequested)
                 {
                     RemoveSlot(task.Name, slot);
+                    fsm.OnStopCompleted();
+                    NotifyStateChanged(task.Name);
                     TaskLogger.Info(task.Name, "supervise: restart cancelled (task disabled/stopped or scheduler stopped)");
                     return;
                 }
@@ -781,6 +894,8 @@ namespace CarroDesk.Services.Tasks
                 if (code == TaskRunner.StartSkippedSingleInstance)
                 {
                     RemoveSlot(task.Name, slot);
+                    fsm.OnProcessExited(0, false, false, 0, 0, 0);
+                    NotifyStateChanged(task.Name);
                     AddRecent(task.Name, "skipped");
                     return;
                 }
@@ -863,31 +978,43 @@ namespace CarroDesk.Services.Tasks
         public bool TryStop(string taskName)
         {
             if (string.IsNullOrEmpty(taskName)) return false;
-            List<TaskProcessHandle> handles;
+            var fsm = GetOrCreateFsm(taskName);
+            bool cancelledPendingRetry;
+            bool stopRequested = fsm.RequestStop(out cancelledPendingRetry);
+            NotifyStateChanged(taskName);
+
+            List<TaskProcessHandle> handles = null;
             lock (_lock)
             {
                 List<RunSlot> slots;
-                if (!_running.TryGetValue(taskName, out slots) || slots.Count == 0) return false;
-
-                handles = new List<TaskProcessHandle>();
-                // 倒序遍历：延迟期内无活进程的槽要就地摘除，正序会破坏迭代器
-                for (int i = slots.Count - 1; i >= 0; i--)
+                if (_running.TryGetValue(taskName, out slots) && slots.Count > 0)
                 {
-                    var s = slots[i];
-                    if (s == null) { slots.RemoveAt(i); continue; }
-                    s.StopRequested = true;
-                    var h = s.Handle;
-                    if (h == null)
+                    handles = new List<TaskProcessHandle>();
+                    // 倒序遍历：延迟期内无活进程的槽要就地摘除，正序会破坏迭代器
+                    for (int i = slots.Count - 1; i >= 0; i--)
                     {
-                        // 重启延迟期/尚未启动：没有活进程可杀，取消挂起重启即可，立即出册
-                        slots.RemoveAt(i);
-                        continue;
+                        var s = slots[i];
+                        if (s == null) { slots.RemoveAt(i); continue; }
+                        s.StopRequested = true;
+                        var h = s.Handle;
+                        if (h == null)
+                        {
+                            // 重启延迟期/尚未启动：没有活进程可杀，取消挂起重启即可，立即出册
+                            slots.RemoveAt(i);
+                            continue;
+                        }
+                        handles.Add(h);
                     }
-                    handles.Add(h);
+                    if (slots.Count == 0) _running.Remove(taskName);
                 }
-                if (slots.Count == 0) _running.Remove(taskName);
             }
-            if (handles.Count == 0) return true;
+
+            if (cancelledPendingRetry || handles == null || handles.Count == 0)
+            {
+                fsm.OnStopCompleted();
+                NotifyStateChanged(taskName);
+                return cancelledPendingRetry || stopRequested;
+            }
 
             var ok = true;
             foreach (var h in handles)
@@ -895,6 +1022,8 @@ namespace CarroDesk.Services.Tasks
                 try { h.Stop(); }
                 catch { ok = false; }
             }
+            fsm.OnStopCompleted();
+            NotifyStateChanged(taskName);
             return ok;
         }
 

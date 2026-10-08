@@ -23,6 +23,7 @@
     <Compile Include="ScreenLockSecurityTests.cs" />
     <Compile Include="TaskRunnerTests.cs" />
     <Compile Include="TaskPersistentRunTests.cs" />
+    <Compile Include="TaskStateMachineTests.cs" />
     <Compile Include="CarroDeskContractTests.cs" />
     <Compile Include="MonitorProfileTests.cs" />
     <Compile Include="JsonMigrationTests.cs" />
