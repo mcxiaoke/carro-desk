@@ -102,5 +102,41 @@ namespace CarroDesk.Host.Services
             I18nService.Instance.SetLanguage(lang);
             onLanguageChanged?.Invoke();
         }
+
+        private static AboutWindow _activeAboutWindow;
+
+        public static void OpenAboutDialog(ServiceContainer services, Action onClosed = null)
+        {
+            try
+            {
+                if (_activeAboutWindow != null && _activeAboutWindow.IsLoaded)
+                {
+                    if (_activeAboutWindow.WindowState == WindowState.Minimized)
+                    {
+                        _activeAboutWindow.WindowState = WindowState.Normal;
+                    }
+                    _activeAboutWindow.Activate();
+                    return;
+                }
+
+                var modules = services?.GetService<ModuleManager>();
+                var win = new AboutWindow(modules)
+                {
+                    WindowStartupLocation = WindowStartupLocation.CenterScreen
+                };
+                _activeAboutWindow = win;
+                win.Closed += (s, e) =>
+                {
+                    _activeAboutWindow = null;
+                    onClosed?.Invoke();
+                };
+                win.Show();
+                win.Activate();
+            }
+            catch (Exception ex)
+            {
+                services?.GetService<ILoggerService>()?.LogError("HostMenu", "打开关于窗口失败", ex);
+            }
+        }
     }
 }

@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
+using CarroDesk.Common;
 using CarroDesk.Core;
 using CarroDesk.Host.Services;
 using CarroDesk.Services;
@@ -46,6 +47,10 @@ namespace CarroDesk.Views
             _promptExit = promptExit;
 
             InitializeComponent();
+            if (TitleVersionText != null)
+            {
+                TitleVersionText.Text = AppInfo.DisplayVersion;
+            }
             Opened += (s, e) =>
             {
                 RefreshTray();
@@ -65,7 +70,7 @@ namespace CarroDesk.Views
             DynamicController?.RefreshNow();
         }
 
-        /// <summary>宿主通用区的勾选态（开机自启/语言）。</summary>
+        /// <summary>宿主通用区的勾选态（开机自启）。</summary>
         private void RefreshHostChecks()
         {
             try
@@ -77,11 +82,6 @@ namespace CarroDesk.Views
                 {
                     AutoStartItem.IsChecked = config.AutoStart;
                 }
-
-                string currentLang = config.Language ?? "auto";
-                if (LangAutoItem != null) LangAutoItem.IsChecked = string.Equals(currentLang, "auto", StringComparison.OrdinalIgnoreCase);
-                if (LangZhItem != null) LangZhItem.IsChecked = string.Equals(currentLang, "zh-CN", StringComparison.OrdinalIgnoreCase);
-                if (LangEnItem != null) LangEnItem.IsChecked = string.Equals(currentLang, "en-US", StringComparison.OrdinalIgnoreCase);
             }
             catch { }
         }
@@ -111,16 +111,9 @@ namespace CarroDesk.Views
             _reloadConfig?.Invoke();
         }
 
-        private void OnLanguageSelectClick(object sender, RoutedEventArgs e)
+        private void OnAboutClick(object sender, RoutedEventArgs e)
         {
-            if (sender is MenuItem mi && mi.Tag != null)
-            {
-                HostMenuActions.SetLanguage(_configManager, _services, mi.Tag.ToString(), () =>
-                {
-                    RefreshTray();
-                    _updateTrayText?.Invoke();
-                });
-            }
+            HostMenuActions.OpenAboutDialog(_services);
         }
 
         private void OnExitClick(object sender, RoutedEventArgs e)

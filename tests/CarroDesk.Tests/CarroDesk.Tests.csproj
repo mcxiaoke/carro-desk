@@ -50,6 +50,7 @@
     <Compile Include="MemoryOptimizerTests.cs" />
     <Compile Include="AudioDeviceChangeTests.cs" />
     <Compile Include="SingleInstanceTests.cs" />
+    <Compile Include="AboutAndAppInfoTests.cs" />
   </ItemGroup>
 
   <ItemGroup>

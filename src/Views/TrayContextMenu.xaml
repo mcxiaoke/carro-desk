@@ -129,7 +129,10 @@
         </MenuItem.Template>
         <MenuItem.Header>
             <Border Background="#FFF8FAFC" BorderBrush="#FFE2E8F0" BorderThickness="1" CornerRadius="6" Padding="10,7" Margin="2,2,2,4">
-                <TextBlock Text="{loc:Loc Tray.Title, Default='CarroDesk'}" FontWeight="Bold" FontSize="12" Foreground="#FF1E293B"/>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="{loc:Loc Tray.Title, Default='CarroDesk'}" FontWeight="Bold" FontSize="12" Foreground="#FF1E293B" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="TitleVersionText" Margin="6,0,0,0" FontSize="11" Foreground="#FF64748B" VerticalAlignment="Center"/>
+                </StackPanel>
             </Border>
         </MenuItem.Header>
     </MenuItem>
@@ -138,20 +141,15 @@
     <Separator x:Name="PluginSlotAnchorTop"/>
     <Separator x:Name="PluginSlotAnchorBottom"/>
 
-    <!-- ③ 宿主通用区：桌面控制面板/开机自启/配置目录/语言/退出（仅真正宿主项，不含业务） -->
+    <!-- ③ 宿主通用区：桌面控制面板/开机自启/配置目录/关于/退出（仅真正宿主项，不含业务） -->
     <MenuItem Header="{loc:Loc Tray.FloatingPanel}" InputGestureText="Win+Alt+C" Click="OnFloatingPanelClick"/>
     <MenuItem x:Name="AutoStartItem" Header="{loc:Loc Tray.AutoStart}" Click="OnAutoStartClick"/>
     <MenuItem Header="{loc:Loc Tray.ConfigEditor}" Click="OnConfigEditorClick"/>
     <MenuItem Header="{loc:Loc Tray.OpenConfigDir}" Click="OnOpenConfigDirClick"/>
     <MenuItem Header="{loc:Loc Tray.ReloadConfig}" Click="OnReloadConfigClick"/>
 
-    <!-- 语言切换 -->
-    <MenuItem x:Name="LanguageMenu" Header="{loc:Loc Tray.Language}">
-        <MenuItem x:Name="LangAutoItem" Header="{loc:Loc Tray.LangAuto}" Tag="auto" Click="OnLanguageSelectClick"/>
-        <Separator/>
-        <MenuItem x:Name="LangZhItem" Header="{loc:Loc Tray.LangZh}" Tag="zh-CN" Click="OnLanguageSelectClick"/>
-        <MenuItem x:Name="LangEnItem" Header="{loc:Loc Tray.LangEn}" Tag="en-US" Click="OnLanguageSelectClick"/>
-    </MenuItem>
+    <!-- 关于 -->
+    <MenuItem Header="{loc:Loc Tray.About, Default='关于...'}" Click="OnAboutClick"/>
 
     <Separator/>
 
