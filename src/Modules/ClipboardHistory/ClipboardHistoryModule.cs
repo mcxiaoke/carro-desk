@@ -30,6 +30,14 @@ namespace CarroDesk.Modules.ClipboardHistory
         /// <summary>模块自建存储（测试注入 service 时为 null），仅用于退出前 Flush。</summary>
         private IClipboardHistoryStorage _ownedStorage;
 
+        /// <summary>
+        /// 过滤命中日志限流表（规则 Id → 上次记录时间）。
+        /// 复制是高频动作，同一条规则反复命中时不应逐条刷日志。
+        /// </summary>
+        private readonly Dictionary<string, DateTime> _filterHitLogAt = new Dictionary<string, DateTime>();
+        private readonly object _filterHitLogLock = new object();
+        private static readonly TimeSpan FilterHitLogInterval = TimeSpan.FromSeconds(30);
+
         public ClipboardHistoryModule()
         {
         }
@@ -63,6 +71,13 @@ namespace CarroDesk.Modules.ClipboardHistory
             }
 
             _listener.ClipboardUpdated += OnClipboardUpdated;
+
+            // 过滤命中只做日志留痕（限流见 OnContentFiltered），不弹通知：
+            // 复制是高频动作，逐条弹窗会干扰正常使用。
+            if (_service != null)
+            {
+                _service.ContentFiltered += OnContentFiltered;
+            }
         }
 
         protected override void OnStart()
@@ -222,6 +237,25 @@ namespace CarroDesk.Modules.ClipboardHistory
 
             root.Children.Add(new TrayMenuItem
             {
+                Id = "clipboard_filter_toggle",
+                Header = Loc.T("Clipboard.FilterToggle", "敏感信息过滤（命中即不保存）"),
+                ToolTip = Loc.T("Clipboard.FilterToggleTip",
+                    "开启后，复制内容命中过滤关键字时不会进入剪贴板历史（不影响系统剪贴板本身）"),
+                IsChecked = Config?.FilterEnabled ?? false,
+                ClickAction = ToggleFilterEnabled
+            });
+
+            root.Children.Add(new TrayMenuItem
+            {
+                Id = "clipboard_filter_settings",
+                Header = Loc.T("Clipboard.FilterSettings", "敏感信息过滤设置..."),
+                ClickAction = OpenFilterSettings
+            });
+
+            root.Children.Add(TrayMenuItem.Separator());
+
+            root.Children.Add(new TrayMenuItem
+            {
                 Id = "clipboard_settings",
                 Header = Loc.T("Clipboard.Settings", "剪贴板历史设置..."),
                 ClickAction = OpenSettings
@@ -252,6 +286,27 @@ namespace CarroDesk.Modules.ClipboardHistory
             catch (Exception ex)
             {
                 Context?.GetService<ILoggerService>()?.LogError(Id, "打开剪贴板历史设置窗口异常", ex);
+            }
+        }
+
+        /// <summary>
+        /// 打开独立的敏感信息过滤设置窗口（与历史设置窗口分开，避免把原窗口撑高）。
+        /// </summary>
+        public void OpenFilterSettings()
+        {
+            try
+            {
+                var cfgMgr = Context?.GetService<IConfigManager>();
+                var win = new ClipboardFilterSettingsWindow(this, cfgMgr)
+                {
+                    WindowStartupLocation = System.Windows.WindowStartupLocation.CenterScreen
+                };
+                win.ShowDialog();
+                Context?.RequestTrayRefresh();
+            }
+            catch (Exception ex)
+            {
+                Context?.GetService<ILoggerService>()?.LogError(Id, "打开敏感信息过滤设置窗口异常", ex);
             }
         }
 
@@ -301,6 +356,30 @@ namespace CarroDesk.Modules.ClipboardHistory
             Context?.RequestTrayRefresh();
         }
 
+        /// <summary>
+        /// 托盘快速开关敏感信息过滤。
+        /// 保存失败必须回滚内存态并刷新托盘，否则 UI 显示与 config.json 会不一致。
+        /// </summary>
+        private void ToggleFilterEnabled()
+        {
+            bool previous = Config.FilterEnabled;
+            Config.FilterEnabled = !previous;
+
+            var configMgr = Context?.GetService<IConfigManager>();
+            if (configMgr == null || !configMgr.SaveModuleConfig(Id, Config))
+            {
+                Config.FilterEnabled = previous;
+                Context?.RequestTrayRefresh();
+                return;
+            }
+
+            // 让服务立即重建规则集，无需等到下次配置重载
+            _service?.ApplyConfig(Config);
+
+            LogInfo("敏感信息过滤已" + (Config.FilterEnabled ? "开启" : "关闭"));
+            Context?.RequestTrayRefresh();
+        }
+
         private void ClearAllHistory()
         {
             int count = _service?.Count ?? 0;
@@ -332,6 +411,35 @@ namespace CarroDesk.Modules.ClipboardHistory
         }
 
         /// <summary>
+        /// 敏感内容被过滤丢弃时的日志留痕。
+        /// 只记录规则 Id 与字符数，绝不记录原文；同一规则 30 秒内只记一条。
+        /// </summary>
+        private void OnContentFiltered(ClipboardFilterRule rule, int textLength)
+        {
+            string ruleId = rule?.Id ?? "?";
+            if (!ShouldLogFilterHit(ruleId)) return;
+
+            LogInfo(string.Format(
+                "敏感信息过滤命中，该条内容（{0} 字符）未进入剪贴板历史（规则 {1}）", textLength, ruleId));
+        }
+
+        private bool ShouldLogFilterHit(string ruleId)
+        {
+            lock (_filterHitLogLock)
+            {
+                DateTime now = DateTime.Now;
+                DateTime last;
+                if (_filterHitLogAt.TryGetValue(ruleId, out last) && now - last < FilterHitLogInterval)
+                {
+                    return false;
+                }
+
+                _filterHitLogAt[ruleId] = now;
+                return true;
+            }
+        }
+
+        /// <summary>
         /// 将当前内存历史导出为明文 JSON 备份（与存储明文格式一致，可整文件读回）。
         /// 返回导出条数；无历史时返回 0 且不写文件。导出内容为明文，保管责任在用户。
         /// </summary>
@@ -350,6 +458,11 @@ namespace CarroDesk.Modules.ClipboardHistory
 
         public override void Dispose()
         {
+            if (_service != null)
+            {
+                _service.ContentFiltered -= OnContentFiltered;
+            }
+
             if (_listener != null)
             {
                 _listener.ClipboardUpdated -= OnClipboardUpdated;

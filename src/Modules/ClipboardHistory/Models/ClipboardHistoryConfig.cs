@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace CarroDesk.Modules.ClipboardHistory.Models
 {
@@ -34,9 +35,42 @@ namespace CarroDesk.Modules.ClipboardHistory.Models
         /// </summary>
         public bool EncryptStorage { get; set; }
 
+        /// <summary>
+        /// 敏感信息过滤总开关。默认关闭：新增功能不得改变既有用户的记录行为，
+        /// 必须由用户在托盘里显式开启。
+        /// </summary>
+        public bool FilterEnabled { get; set; }
+
+        /// <summary>
+        /// 敏感信息过滤规则（命中即整条丢弃）。规则本身以明文保存在 config.json：
+        /// 它只是匹配用的关键字，不含被拦截的内容。
+        /// </summary>
+        public List<ClipboardFilterRule> FilterRules { get; set; } = new List<ClipboardFilterRule>();
+
+        /// <summary>过滤规则条数上限（设置界面校验，防止误配置拖慢每次复制的匹配开销）</summary>
+        public const int MaxFilterRules = 200;
+
+        /// <summary>单个关键字长度上限</summary>
+        public const int MaxFilterPatternLength = 256;
+
+        /// <summary>
+        /// 深拷贝。
+        ///
+        /// 基类 MemberwiseClone 是浅拷贝，而本配置含 List&lt;ClipboardFilterRule&gt;：
+        /// 设置窗口依赖 Clone() 做"保存失败回滚"，若列表共享引用，回滚会连同新规则一起失效。
+        /// </summary>
         public ClipboardHistoryConfig Clone()
         {
-            return (ClipboardHistoryConfig)MemberwiseClone();
+            var copy = (ClipboardHistoryConfig)MemberwiseClone();
+            copy.FilterRules = new List<ClipboardFilterRule>();
+            if (FilterRules != null)
+            {
+                foreach (var rule in FilterRules)
+                {
+                    if (rule != null) copy.FilterRules.Add(rule.Clone());
+                }
+            }
+            return copy;
         }
 
         public static ClipboardHistoryConfig CreateDefault()

@@ -66,6 +66,7 @@ CarroDesk（标题）
 | AppAutoMute | 目标进程运行时自动静音、退出恢复 | `Mode`（Blacklist/Whitelist）、`TargetApps`、`Hotkey`（手动切换）、`MuteDelayMs/UnmuteDelayMs` |
 | MonitorProfile | DDC/CI 按时间表切换显示器亮度/对比度 | `AutoSchedule`、`ActiveProfile`、`Profiles`（Daily/Game/Night…）、6 个切换热键 |
 | ClipboardHistory | 剪贴板历史窗口 | `Hotkey`（默认 `Win+Alt+V`）、`MaxItems`、`RetentionDays`、`AutoRecord` |
+| ClipboardHistory（敏感过滤） | 命中关键字的复制内容整条丢弃 | 托盘「剪贴板历史 → 敏感信息过滤」开关 + 「敏感信息过滤设置...」；配置项 `FilterEnabled`、`FilterRules`（默认关闭，不清理已有历史） |
 
 ## 4. 任务系统（tasks.json）
 

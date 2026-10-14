@@ -1,0 +1,73 @@
+<Window x:Class="CarroDesk.Modules.ClipboardHistory.Views.ClipboardFilterSettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="clr-namespace:CarroDesk.Services.Localization"
+        Title="{loc:Loc Clipboard.FilterSettingsTitle, Default='敏感信息过滤'}"
+        Height="580" Width="600" MinHeight="460" MinWidth="520"
+        WindowStartupLocation="CenterScreen" ResizeMode="CanResize"
+        Background="White" FontFamily="Microsoft YaHei UI, Segoe UI">
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <TextBlock Grid.Row="0" Grid.ColumnSpan="4" TextWrapping="Wrap" Foreground="#666666" FontSize="12"
+                   Text="{loc:Loc Clipboard.FilterDesc, Default='复制内容只要包含下列关键字，就会被整条丢弃：不进入剪贴板历史，也不写入历史文件。\n此功能不修改系统剪贴板本身，也不会删除历史中已经存在的记录。'}"/>
+
+        <CheckBox x:Name="ChkFilterEnabled" Grid.Row="1" Grid.ColumnSpan="4" Margin="0,12,0,12" FontSize="13"
+                  Content="{loc:Loc Clipboard.FilterEnable, Default='启用敏感信息过滤'}"/>
+
+        <TextBlock Grid.Row="2" Grid.ColumnSpan="4" Margin="0,0,0,6" FontSize="13" FontWeight="SemiBold"
+                   Text="{loc:Loc Clipboard.FilterRuleListHeader, Default='过滤规则（按字面包含匹配）'}"/>
+
+        <ListBox x:Name="LstRules" Grid.Row="3" Grid.ColumnSpan="4" DisplayMemberPath="DisplayText"
+                 BorderBrush="#D0D0D0" BorderThickness="1"
+                 ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                 SelectionChanged="LstRules_SelectionChanged"/>
+
+        <Grid Grid.Row="4" Grid.ColumnSpan="4" Margin="0,10,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBox x:Name="TxtPattern" Grid.Row="0" Grid.Column="0" Height="28" Padding="4,0"
+                     VerticalContentAlignment="Center"
+                     ToolTip="{loc:Loc Clipboard.FilterPatternTip, Default='关键字，按字面包含匹配，不支持正则表达式'}"/>
+            <CheckBox x:Name="ChkIgnoreCase" Grid.Row="0" Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center"
+                      Content="{loc:Loc Clipboard.FilterIgnoreCase, Default='忽略大小写'}"/>
+            <CheckBox x:Name="ChkRuleEnabled" Grid.Row="0" Grid.Column="2" Margin="12,0,0,0" VerticalAlignment="Center"
+                      Content="{loc:Loc Clipboard.FilterRuleEnabled, Default='启用该规则'}"/>
+        </Grid>
+
+        <StackPanel Grid.Row="5" Grid.ColumnSpan="4" Orientation="Horizontal" Margin="0,8,0,0">
+            <Button x:Name="BtnAdd" Content="{loc:Loc Clipboard.FilterAdd, Default='添加'}"
+                    Width="96" Height="30" Click="OnAddClick"/>
+            <Button x:Name="BtnUpdate" Content="{loc:Loc Clipboard.FilterUpdate, Default='更新选中'}"
+                    Width="96" Height="30" Margin="10,0,0,0" Click="OnUpdateClick"/>
+            <Button x:Name="BtnDelete" Content="{loc:Loc Clipboard.FilterDelete, Default='删除选中'}"
+                    Width="96" Height="30" Margin="10,0,0,0" Click="OnDeleteClick"/>
+        </StackPanel>
+
+        <TextBlock x:Name="TxtRuleCount" Grid.Row="6" Grid.ColumnSpan="4" Margin="0,8,0,0" FontSize="12" Foreground="#666666"/>
+
+        <StackPanel Grid.Row="7" Grid.ColumnSpan="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+            <Button Content="{loc:Loc Common.Save, Default='保存'}" Width="80" Height="30" IsDefault="True" Margin="0,0,10,0" Click="OnSaveClick"/>
+            <Button Content="{loc:Loc Common.Cancel, Default='取消'}" Width="80" Height="30" IsCancel="True" Click="OnCancelClick"/>
+        </StackPanel>
+    </Grid>
+</Window>

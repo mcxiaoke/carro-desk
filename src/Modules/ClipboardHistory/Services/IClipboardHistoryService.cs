@@ -8,6 +8,12 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
     {
         event Action HistoryChanged;
 
+        /// <summary>
+        /// 敏感信息过滤命中事件（参数：命中的规则、被丢弃文本的字符数）。
+        /// 刻意不携带原文——敏感内容不应经日志或通知二次扩散。
+        /// </summary>
+        event Action<ClipboardFilterRule, int> ContentFiltered;
+
         int Count { get; }
 
         void Start(ClipboardHistoryConfig config);

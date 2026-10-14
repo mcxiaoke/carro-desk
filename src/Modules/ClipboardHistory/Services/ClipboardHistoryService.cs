@@ -16,7 +16,15 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
         private string _suppressedHash;
         private DateTime _suppressedUntil;
 
+        /// <summary>
+        /// 敏感信息过滤规则集，随配置重建（Start / ApplyConfig）。
+        /// RecordText 在锁外读取，故声明为 volatile 保证配置重载线程的写入可见。
+        /// </summary>
+        private volatile ClipboardTextFilter _filter = ClipboardTextFilter.Empty;
+
         public event Action HistoryChanged;
+
+        public event Action<ClipboardFilterRule, int> ContentFiltered;
 
         public int Count
         {
@@ -40,6 +48,8 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
 
             lock (_lock)
             {
+                _filter = ClipboardTextFilter.FromConfig(_config);
+
                 var loaded = _storage.Load();
                 _items.Clear();
                 if (loaded != null && loaded.Count > 0)
@@ -58,6 +68,9 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
 
             lock (_lock)
             {
+                // 规则集重建放在锁内，与配置应用保持同一次原子切换
+                _filter = ClipboardTextFilter.FromConfig(_config);
+
                 int maxChars = _config != null ? Math.Max(10, _config.MaxPreviewChars) : 100;
                 foreach (var item in _items)
                 {
@@ -75,6 +88,20 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
         {
             if (string.IsNullOrWhiteSpace(rawText)) return;
             if (_config != null && (!_config.Enabled || !_config.AutoRecord)) return;
+
+            // 敏感信息过滤：必须在 MaxTextLength 截断之前按原始文本匹配，
+            // 否则关键字落在被截掉的尾部会漏检。命中即整条丢弃：不入内存、不落盘、
+            // 也不改动历史中此前已存在的同内容条目（过滤只影响此后的记录）。
+            var filter = _filter;
+            if (filter.IsActive)
+            {
+                ClipboardFilterRule hitRule;
+                if (filter.TryMatch(rawText, out hitRule))
+                {
+                    RaiseContentFiltered(hitRule, rawText.Length);
+                    return;
+                }
+            }
 
             // 超大文本先截断再入库，避免几十 MB 内容常驻内存并反复全量落盘（0 = 不限制）
             if (_config != null && _config.MaxTextLength > 0 && rawText.Length > _config.MaxTextLength)
@@ -245,6 +272,25 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
                 {
                     _items.RemoveRange(_config.MaxItems, _items.Count - _config.MaxItems);
                 }
+            }
+        }
+
+        /// <summary>
+        /// 派发过滤命中事件。事件订阅方（模块层）只拿到规则与字符数，
+        /// 不会拿到被丢弃的原文；订阅方自身抛异常也不得影响记录主流程。
+        /// </summary>
+        private void RaiseContentFiltered(ClipboardFilterRule rule, int textLength)
+        {
+            var handler = ContentFiltered;
+            if (handler == null) return;
+
+            try
+            {
+                handler(rule, textLength);
+            }
+            catch
+            {
+                // 日志/通知失败不应让敏感内容退回记录路径
             }
         }
 
