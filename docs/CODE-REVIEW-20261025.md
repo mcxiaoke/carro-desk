@@ -381,6 +381,18 @@ LockController 内 `_logger?.LogError(...)` 全部空操作（LockController.cs:
 
 ---
 
-## 十、修复进展
+## 十、修复进展（2026-10-25，7 批提交）
 
-（待后续批次填写）
+全部严重/高危与主要中危问题已在本日修复并分批提交（分支 `bugfix`，测试基线从 391 推进到 405 通过 / 0 失败，每批 `dotnet build` 0 警告 0 错误）：
+
+| 批次 | 提交 | 修复项 | 关键改动 |
+|---|---|---|---|
+| 1 | f9f9cee | S1 + S2 | HostPinService stale pending 检测（配置更换后新 PIN 立即生效、旧 PIN 失效）；FirstRunWindow PIN 限定纯数字（`ValidatePin` 静态可测）+ 语言包 `FirstRun.ErrorDigitsOnly`；新增 `PinCredentialTests`（5 项） |
+| 2 | 34800a7 | S4 | `LookupPrivilegeValue` 传真实特权名 `SeShutdownPrivilege`；`SetSuspendState` 失败时合并特权原因记 Error 并经新 `notifyFailure` 回调顶到用户气泡 |
+| 3 | acd35c4 | S3 + M3 + H1 + M4 | TaskConfigService 补齐 encoding/runAtStartup/catchUpMissed/env 序列化与解析（env 兼容 `"K=V"` 数组）；encoding 枚举校验；补跑收口到 `ApplyCoreLocked` 会话集合（触发器重建不再自带补发）；TaskEditDialog 显示有效工作目录/透传 StableUptimeSec/清空 options.workDir；detach 测试句柄保存 + OnClosing 兜底；新增 `TaskBatch2FieldsTests`（4 项） |
+| 4 | 10fbc6f | H4 + AW-2 + AW-3 | AwakeService 两步写改为"先写时刻后写闸门字段"（x86-TSO 读方看到闸门翻转必已见新值）+ `_mode`/`_pendingAction` volatile（封送方案经实测会在测试/部分宿主下死锁，已回退为最小修复）；设置窗口"关闭"不再复位用户抑制；"保持至指定时刻"严格 HH:mm[:ss] 解析；新增 `AwakeMarshallingTests`（3 项） |
+| 5 | 94f1a88 | H2 + M1 + M2 + M5 | 新增 `TaskStateMachine.OnAbandon()`，四处放弃启动路径不再复用 `OnProcessExited(0)`；`TryBeginStarting` 拒绝延迟窗口内非人工触发（熔断预算不再被冲刷）；`AttachDetached`/wait 模式 onStarted 检查 `slot.StopRequested` 立即终止刚 spawn 的进程（停止竞态闭环）；`HandleDetachFailure` 熔断分支兜底重建 supervision 条目（死槽不再滞留）；新增 3 项状态机测试、修正 2 项按缺陷路径模拟的既有测试 |
+| 6 | 76d64bd | H3 | `TryStop` 的句柄终止（taskkill 每实例最长 5s）转后台：状态置位与槽出册同步完成即返回"已受理"，UI 不再被顽固进程树冻结；返回值语义不变，宿主退出路径保持同步 |
+| 7 | 05fc9ca | M6 + M9 + MP-2 + L3 + L12 + SL-3 + AM-1 + L25 | App.OnStartup 整体防线（fatal.log + 退出，不再留僵尸进程）；LockController 日志器惰性化；删除 `VerifyForExit`（绕过 PinGuard 的死代码）与空方法 `ApplyPinFromConfig`；MonitorProfile 时间输入严格 HH:mm[:ss]（与 AW-3 同根）；TaskSchedulerModule StateChanged 具名幂等订阅；AppAutoMute 托盘添加应用保存失败回滚 + 提示；README 构建说明更正 net10.0-windows |
+
+**未处理遗留**（与第五/六节编号对应）：M7（AppAutoMute 配置重载静音残留）、M8（剪贴板总量预算）、L1/L2/L4/L5/L6/L7（TaskScheduler 低危）、L8–L10（ScreenLock，需实测）、L13–L20、L21–L24。修复前请先阅读对应条目的触发条件与建议修法。
