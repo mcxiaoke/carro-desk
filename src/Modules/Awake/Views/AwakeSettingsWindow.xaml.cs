@@ -314,23 +314,29 @@ namespace CarroDesk.Modules.Awake.Views
             }
             else if (RadioUntilTime.IsChecked == true)
             {
-                if (!TimeSpan.TryParse(UntilTimeBox.Text.Trim(), out TimeSpan targetTimeSpan))
+                // 严格 HH:mm[:ss] 解析：TimeSpan.TryParse 会把纯数字 "18" 解析为 18 天（AW-3），
+                // 机器可能因此被保持唤醒数周
+                string timeText = UntilTimeBox.Text.Trim();
+                if (!DateTime.TryParseExact(timeText, new[] { "HH\\:mm", "HH\\:mm\\:ss" },
+                        System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out DateTime parsed))
                 {
                     MessageBox.Show(Loc.T("Awake.InvalidTime", "指定时刻格式无效，请输入有效时间如 18:00。"), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
-                DateTime target = DateTime.Today.Add(targetTimeSpan);
+                DateTime target = DateTime.Today.Add(parsed.TimeOfDay);
                 if (target <= DateTime.Now) target = target.AddDays(1);
                 candidate.Mode = AwakeMode.UntilTime;
                 candidate.ExpireAtLocal = target;
             }
 
+            // 用户在设置界面显式选择"关闭"：与托盘 SetPassiveByUser 同语义，必须保留用户抑制，
+            // 否则目标进程仍在运行时 5 秒内会被进程联动重新拉起（"关了又开"，AW-2）。
+            // 仅当进程联动由"关"变"开"时才复位抑制（该逻辑在 Service.UpdateConfig 内处理）。
             if (!_module.SaveAndApplyConfig(candidate))
             {
                 MessageBox.Show(Loc.T("Config.SaveFailed"), Loc.T("Common.Error", "错误"), MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
             }
-            if (candidate.Mode == AwakeMode.Passive) _module.Service?.ResetUserSuppression();
             _module.RequestRefreshTray();
             Close();
         }

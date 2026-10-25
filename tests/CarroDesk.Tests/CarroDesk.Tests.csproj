@@ -32,6 +32,7 @@
     <Compile Include="PinServiceTests.cs" />
     <Compile Include="PinCredentialTests.cs" />
     <Compile Include="TaskBatch2FieldsTests.cs" />
+    <Compile Include="AwakeMarshallingTests.cs" />
     <Compile Include="CronHelperTests.cs" />
     <Compile Include="TemplateExpanderTests.cs" />
     <Compile Include="ModuleManagerTests.cs" />

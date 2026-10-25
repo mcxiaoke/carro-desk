@@ -181,7 +181,10 @@ namespace CarroDesk.Modules.Awake.Services
         private readonly DispatcherTimer _timer;
 
         private AwakeConfig _config;
-        private AwakeMode _mode = AwakeMode.Passive;
+
+        // _mode / _pendingAction 由多线程写入（IPC 命令 handler 在线程池、tick 在 UI 线程），
+        // 声明为 volatile 防止编译器重排与跨线程读旧值（H4）。
+        private volatile AwakeMode _mode = AwakeMode.Passive;
         private bool _keepDisplayOn = true;
         private DateTime _expireTime = DateTime.MinValue;
         private bool _isBatteryPaused = false;
@@ -189,7 +192,7 @@ namespace CarroDesk.Modules.Awake.Services
         private string _activeProcessTrigger = string.Empty;
         private int _processExitPendingSeconds = 0;
         private int _tickCount = 0;
-        private PendingPowerAction _pendingAction = PendingPowerAction.None;
+        private volatile PendingPowerAction _pendingAction = PendingPowerAction.None;
         private DateTime _pendingFireAt = DateTime.MinValue;
 
         /// <summary>
@@ -412,8 +415,12 @@ namespace CarroDesk.Modules.Awake.Services
             }
 
             _userSuppressedProcessLink = false;
+            DateTime newExpire = DateTime.Now.AddMinutes(minutes);
+            // 写序（H4）：先写 _expireTime 再写 _mode。tick（UI 线程）以 _mode 为闸门进入
+            // 倒计时判定；x86-TSO 保证读方看到 _mode==Timed 时必已看到新 _expireTime，
+            // 否则可能读到"Timed + 旧 MinValue"被误判立即过期、刚下达的 awake.on 被立即撤销。
+            _expireTime = newExpire;
             _mode = AwakeMode.Timed;
-            _expireTime = DateTime.Now.AddMinutes(minutes);
             if (_config != null)
             {
                 _config.Mode = _mode;
@@ -438,8 +445,10 @@ namespace CarroDesk.Modules.Awake.Services
             }
 
             _userSuppressedProcessLink = false;
+            DateTime newTarget = target;
+            // 写序（H4）：先写 _expireTime 再写 _mode，理由同 SetTimed
+            _expireTime = newTarget;
             _mode = AwakeMode.UntilTime;
-            _expireTime = target;
             if (_config != null)
             {
                 _config.Mode = _mode;
@@ -467,11 +476,15 @@ namespace CarroDesk.Modules.Awake.Services
             }
 
             delaySeconds = Math.Max(0, Math.Min(MaxPowerDelaySeconds, delaySeconds));
-            _pendingAction = action;
-            _pendingFireAt = delaySeconds == 0
+            DateTime newFireAt = delaySeconds == 0
                 ? DateTime.Now.AddSeconds(1) // 0 秒也保留 1 个 tick，确保命令响应先送达再执行
                 : DateTime.Now.AddSeconds(delaySeconds);
-            _logger?.LogInfo("Awake", $"已调度电源动作 {action}，将于 {_pendingFireAt:yyyy-MM-dd HH:mm:ss} 执行 (延迟 {delaySeconds} 秒)");
+            // 写序（H4）：先写 _pendingFireAt 再写 _pendingAction。tick 以 _pendingAction != None
+            // 为闸门；若先写 action 后写时刻，tick 可能读到"新 action + 旧 MinValue"并立即执行
+            // 电源动作（本应延迟 30 秒给 agent 回复的契约被跳过）。
+            _pendingFireAt = newFireAt;
+            _pendingAction = action;
+            _logger?.LogInfo("Awake", $"已调度电源动作 {action}，将于 {newFireAt:yyyy-MM-dd HH:mm:ss} 执行 (延迟 {delaySeconds} 秒)");
             StateChanged?.Invoke();
         }
 
