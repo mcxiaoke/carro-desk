@@ -333,7 +333,15 @@ namespace CarroDesk.Modules.AppAutoMute
                     if (!Config.TargetApps.Any(x => ProcessHelper.IsMatch(x, norm)))
                     {
                         Config.TargetApps.Add(norm);
-                        SaveConfig();
+                        if (!SaveConfig())
+                        {
+                            // 保存失败回滚内存态并提示（AM-1，与 ToggleEnabled 同法），
+                            // 否则重启后条目消失而用户以为已添加成功
+                            Config.TargetApps.Remove(norm);
+                            ShowNotify(Loc.T("Config.SaveFailed"), Loc.T("Common.Error", "错误"));
+                            LogWarning($"添加【{norm}】到静音列表失败：配置保存失败");
+                            return;
+                        }
                         LogInfo($"已将【{norm}】添加到后台静音列表");
                     }
                     else

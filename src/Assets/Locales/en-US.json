@@ -638,6 +638,7 @@
     "TrayAction": "Tray action",
     "TrayActionFailed": "failed",
     "UnexpectedError": "An unexpected error occurred. See the log for details.",
+    "StartupFailed": "CarroDesk failed to start and will exit.\nSee fatal.log in the data directory for details.\n\n{0}",
     "ClearExcludeList": "Clear the excluded-process list?",
     "ClearTargetList": "Clear the managed-process list?",
     "RestoreDefaultsConfirm": "Restore settings to their default configuration?",

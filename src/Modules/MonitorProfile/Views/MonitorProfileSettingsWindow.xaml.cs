@@ -358,7 +358,9 @@ namespace CarroDesk.Modules.MonitorProfile.Views
             if (selected == null || !_modeSettings.ContainsKey(selected.Name)) return;
 
             string timeStr = TxtNewTime.Text.Trim();
-            if (!TimeSpan.TryParse(timeStr, out _))
+            // 严格 HH:mm[:ss] 解析（MP-2）：TimeSpan.TryParse 会把 "1830" 放行为 1830 天
+            if (!DateTime.TryParseExact(timeStr, new[] { "HH\\:mm", "HH\\:mm\\:ss" },
+                    System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out _))
             {
                 MessageBox.Show(Loc.T("Monitor.InvalidTime", "请输入正确的时间格式 (HH:mm)，例如 18:30"), Loc.T("Msg.FormatError", "格式错误"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
@@ -446,7 +448,9 @@ namespace CarroDesk.Modules.MonitorProfile.Views
             }
 
             string timeStr = TxtNewTime.Text.Trim();
-            if (!TimeSpan.TryParse(timeStr, out _))
+            // 严格 HH:mm[:ss] 解析（MP-2）：TimeSpan.TryParse 会把 "1830" 放行为 1830 天
+            if (!DateTime.TryParseExact(timeStr, new[] { "HH\\:mm", "HH\\:mm\\:ss" },
+                    System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out _))
             {
                 MessageBox.Show(Loc.T("Monitor.InvalidTime", "请输入正确的时间格式 (HH:mm)，例如 18:30"), Loc.T("Msg.FormatError", "格式错误"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;

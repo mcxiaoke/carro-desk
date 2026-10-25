@@ -275,14 +275,8 @@ namespace CarroDesk.Tests
             }
         }
 
-        [TestMethod]
-        public void VerifyForExit_WithoutPinService_ReturnsFalse()
-        {
-            using (var controller = new LockController(() => null, () => null))
-            {
-                Assert.IsFalse(controller.VerifyForExit("1234"));
-            }
-        }
+        // VerifyForExit_WithoutPinService_ReturnsFalse 已随 VerifyForExit 删除（SL-3）：
+        // 该方法是唯一绕过 PinGuard 限流的校验入口且无调用方，已从 LockController 移除。
 
         [TestMethod]
         public void GetBlockRemaining_WhenNotLocked_IsZero()

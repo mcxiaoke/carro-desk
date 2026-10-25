@@ -53,6 +53,35 @@ namespace CarroDesk
         {
             base.OnStartup(e);
 
+            // 启动期整体防线（M9）：装配中途抛出的异常原本会落进 DispatcherUnhandledException
+            // 被 Handled=true 吞掉，留下"无托盘、无模块、无 IPC"的僵尸进程。此阶段唯一安全的
+            // 处置是留痕（fatal.log）并退出。
+            try
+            {
+                StartupCore(e);
+            }
+            catch (Exception ex)
+            {
+                LogError(ex);
+                try
+                {
+                    var path = Path.Combine(ConfigService.DirPath, "fatal.log");
+                    File.AppendAllText(path, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [FATAL startup] {ex}{Environment.NewLine}");
+                }
+                catch { /* 紧急落盘失败不再处理 */ }
+                try
+                {
+                    MessageBox.Show(
+                        Loc.T("Msg.StartupFailed", "CarroDesk 启动失败，即将退出。\n详情见数据目录 fatal.log\n\n{0}", ex.Message),
+                        "CarroDesk", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+                catch { /* 无桌面会话时弹窗失败，直接退出 */ }
+                Environment.Exit(1);
+            }
+        }
+
+        private void StartupCore(StartupEventArgs e)
+        {
             try
             {
                 Environment.CurrentDirectory = AppDomain.CurrentDomain.BaseDirectory;

@@ -46,13 +46,26 @@ namespace CarroDesk.Modules.TaskScheduler
                     Scheduler = new TaskSchedulerService(idle, cfgMgr, notif, msg => Context?.ShowNotification(msg), hotkeys, Context?.Dispatcher);
                 }
                 Scheduler?.Start();
-                Scheduler.StateChanged += (name, state, snap) => RequestRefreshSelf();
+                // 具名处理器 + 幂等订阅（L3）：OnStart 每次启停循环都会执行，
+                // 匿名 lambda 无法退订，会累积 N 个处理器让托盘刷新请求成倍放大
+                if (!_stateChangedHooked)
+                {
+                    Scheduler.StateChanged += OnSchedulerStateChanged;
+                    _stateChangedHooked = true;
+                }
             }
             catch (Exception ex)
             {
                 Context?.GetService<ILoggerService>()?.LogError(Id, "启动任务调度器失败", ex);
                 throw;
             }
+        }
+
+        private bool _stateChangedHooked;
+
+        private void OnSchedulerStateChanged(string name, TaskRuntimeState state, TaskStateSnapshot snap)
+        {
+            RequestRefreshSelf();
         }
 
         public override void Dispose()

@@ -638,6 +638,7 @@
     "TrayAction": "托盘操作",
     "TrayActionFailed": "执行失败",
     "UnexpectedError": "操作发生异常，详情请查看日志",
+    "StartupFailed": "CarroDesk 启动失败，即将退出。\n详情见数据目录 fatal.log\n\n{0}",
     "ClearExcludeList": "确定要清空排除进程列表吗？",
     "ClearTargetList": "确定要清空受控程序列表吗？",
     "RestoreDefaultsConfirm": "确定要将设置恢复为默认配置吗？",

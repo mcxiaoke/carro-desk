@@ -14,7 +14,7 @@ namespace CarroDesk.Services
         private readonly Func<ScreenLockConfig> _configProvider;
         private PinGuard _pinGuard;
         private readonly KeyboardBlocker _blocker;
-        private readonly ILoggerService _logger;
+        private readonly Func<ILoggerService> _loggerProvider;
 
         private const string LogModuleId = "ScreenLock";
 
@@ -23,11 +23,13 @@ namespace CarroDesk.Services
 
         public event Action Unlocked;
 
-        public LockController(Func<IPinService> pinServiceProvider, Func<ScreenLockConfig> configProvider, ILoggerService logger = null)
+        public LockController(Func<IPinService> pinServiceProvider, Func<ScreenLockConfig> configProvider, Func<ILoggerService> loggerProvider = null)
         {
             _pinServiceProvider = pinServiceProvider;
             _configProvider = configProvider;
-            _logger = logger;
+            // 日志器必须惰性解析（M6）：模块构造早于 Initialize/Context 注入，
+            // 构造期立即求值恒为 null，锁定回滚等安全关键路径的日志全部丢失。
+            _loggerProvider = loggerProvider;
             _blocker = new KeyboardBlocker();
             _pinGuard = new PinGuard(() => _pinServiceProvider?.Invoke());
             try { Microsoft.Win32.SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged; } catch { }
@@ -35,7 +37,7 @@ namespace CarroDesk.Services
 
         private void LogError(string message, Exception ex)
         {
-            _logger?.LogError(LogModuleId, message, ex);
+            _loggerProvider?.Invoke()?.LogError(LogModuleId, message, ex);
         }
 
         private void OnDisplaySettingsChanged(object sender, EventArgs e)
@@ -93,10 +95,6 @@ namespace CarroDesk.Services
         }
 
         public IPinService Pins { get { return _pinServiceProvider?.Invoke(); } }
-
-        public void ApplyPinFromConfig()
-        {
-        }
 
         /// <summary>注入宿主共享的 PIN 限流器，使锁屏、退出和修改 PIN 共用失败状态。</summary>
         public void SetPinGuard(PinGuard pinGuard)
@@ -294,11 +292,8 @@ namespace CarroDesk.Services
             if (handler != null) handler();
         }
 
-        public bool VerifyForExit(string pin)
-        {
-            var pinService = _pinServiceProvider?.Invoke();
-            return pinService != null && pinService.Verify(pin);
-        }
+        // VerifyForExit 已删除（SL-3）：它是全仓唯一绕过 PinGuard 失败限流的 PIN 校验入口，
+        // 当前无调用方（退出确认走 VerifyPinWindow 的 pinGuard），留着极易被误接回打开暴力破解通道。
 
         public void Dispose()
         {

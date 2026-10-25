@@ -48,7 +48,8 @@ namespace CarroDesk.Modules.ScreenLock
             Controller = new LockController(
                 () => Context?.GetService<IPinService>(),
                 () => Config,
-                Context?.GetService<ILoggerService>());
+                // 惰性解析（M6）：构造早于 Context 注入，构造期求值恒为 null
+                () => Context?.GetService<ILoggerService>());
         }
 
         protected override void OnStart()
@@ -106,10 +107,6 @@ namespace CarroDesk.Modules.ScreenLock
             base.OnConfigReloaded();
             ResetIdleMachine();
             if (Config != null && !Config.Enabled) Controller?.Unlock();
-            if (Controller != null)
-            {
-                Controller.ApplyPinFromConfig();
-            }
             UpdateTrayHeaderAndToolTip();
         }
 
