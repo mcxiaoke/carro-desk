@@ -47,15 +47,15 @@ namespace CarroDesk.Tests
             Assert.AreEqual(1, fsm.ConsecutiveFailures);
             Assert.AreEqual(5, fsm.NextRetryDelaySec);
 
-            // Attempt 2: fails
-            Assert.IsTrue(fsm.TryBeginStarting(false, out _));
+            // Attempt 2: fails. 守护重启链（RestartContinue）不经 TryBeginStarting 直接
+            // OnProcessStarted——延迟窗口内的非人工 TryBeginStarting 已被拒绝（M2 修复），
+            // 此处按真实序列模拟。
             fsm.OnProcessStarted(2002, DateTime.Now);
             state = fsm.OnProcessExited(1, false, true, 5, 2, 60);
             Assert.AreEqual(TaskRuntimeState.WaitingRetry, state);
             Assert.AreEqual(2, fsm.ConsecutiveFailures);
 
             // Attempt 3: failures reach 3 > limit (2) -> MarkedFailed
-            Assert.IsTrue(fsm.TryBeginStarting(false, out _));
             fsm.OnProcessStarted(2003, DateTime.Now);
             state = fsm.OnProcessExited(1, false, true, 5, 2, 60);
             Assert.AreEqual(TaskRuntimeState.MarkedFailed, state);
@@ -116,8 +116,8 @@ namespace CarroDesk.Tests
             fsm.OnProcessExited(1, false, true, 5, 5, 60);
             Assert.AreEqual(1, fsm.ConsecutiveFailures);
 
-            // Second run ran for 100 seconds (stable >= 60)
-            Assert.IsTrue(fsm.TryBeginStarting(false, out _));
+            // Second run ran for 100 seconds (stable >= 60). 守护重启链不经 TryBeginStarting
+            //（延迟窗口内的非人工 TryBeginStarting 已被 M2 修复拒绝），按真实序列直接 OnProcessStarted。
             fsm.OnProcessStarted(5002, DateTime.Now.AddSeconds(-100));
             // Exited with error, but because duration >= 60s, history failures reset
             fsm.OnProcessExited(1, false, true, 5, 5, 60);
@@ -140,6 +140,68 @@ namespace CarroDesk.Tests
             Assert.AreEqual(TaskRuntimeState.Running, snap2.State);
             Assert.AreEqual(6001, snap2.Pid);
             Assert.IsTrue(snap2.IsRunning);
+        }
+
+        // ===== M1/M2（docs/CODE-REVIEW-20261025.md）回归 =====
+
+        /// <summary>
+        /// 放弃启动不得复用 OnProcessExited(0)：会把并发实例计数减掉、状态谎报为空闲。
+        /// </summary>
+        [TestMethod]
+        public void OnAbandon_KeepsRunningInstanceCountAndState()
+        {
+            var fsm = new TaskStateMachine("abandon-task");
+            // 第一实例真正运行中
+            Assert.IsTrue(fsm.TryBeginStarting(false, allowConcurrent: true, out _));
+            fsm.OnProcessStarted(7001, DateTime.Now);
+            Assert.AreEqual(TaskRuntimeState.Running, fsm.CurrentState);
+
+            // 第二次触发（allowConcurrent）进入 Starting 语义后被放弃：
+            // TryBeginStarting 在既有 Running 时保持 Running，放弃路径不应改动状态与计数
+            Assert.IsTrue(fsm.TryBeginStarting(true, allowConcurrent: true, out _));
+            fsm.OnAbandon();
+
+            var snap = fsm.GetSnapshot();
+            Assert.AreEqual(TaskRuntimeState.Running, snap.State, "既有实例仍在运行，放弃启动不得改变状态");
+            Assert.AreEqual(1, snap.ActiveInstances, "放弃启动不得递减 ActiveInstances");
+            Assert.AreEqual(0, snap.ConsecutiveFailures);
+        }
+
+        [TestMethod]
+        public void OnAbandon_FromStarting_ReturnsToIdle()
+        {
+            var fsm = new TaskStateMachine("abandon-starting");
+            Assert.IsTrue(fsm.TryBeginStarting(false, out _));
+            Assert.AreEqual(TaskRuntimeState.Starting, fsm.CurrentState);
+
+            fsm.OnAbandon();
+            Assert.AreEqual(TaskRuntimeState.Idle, fsm.CurrentState);
+            Assert.AreEqual(0, fsm.GetSnapshot().ActiveInstances);
+        }
+
+        /// <summary>
+        /// WaitingRetry 延迟窗口内的非人工触发必须被拒绝：否则随后的放弃启动路径
+        /// 会清零连续失败计数，架空 RestartLimit 熔断预算。
+        /// </summary>
+        [TestMethod]
+        public void TryBeginStarting_RejectsNonUserDrivenWhileWaitingRetry()
+        {
+            var fsm = new TaskStateMachine("waiting-retry-task");
+            // 制造 WaitingRetry：失败 1 次（预算 2）
+            Assert.IsTrue(fsm.TryBeginStarting(false, out _));
+            fsm.OnProcessStarted(8001, DateTime.Now);
+            var state = fsm.OnProcessExited(1, false, true, 5, 2, 0);
+            Assert.AreEqual(TaskRuntimeState.WaitingRetry, state);
+
+            // 非人工触发在延迟窗口内被拒
+            Assert.IsFalse(fsm.TryBeginStarting(false, out var refusal));
+            StringAssert.Contains(refusal, "延迟", "拒绝理由应说明处于守护重启延迟期");
+
+            // 计数未被冲刷
+            Assert.AreEqual(1, fsm.ConsecutiveFailures, "被拒触发不得清零连续失败计数");
+
+            // 人工触发仍可放行（显式意图）
+            Assert.IsTrue(fsm.TryBeginStarting(true, out _));
         }
     }
 }

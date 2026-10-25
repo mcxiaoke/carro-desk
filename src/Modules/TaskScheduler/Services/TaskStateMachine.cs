@@ -62,6 +62,14 @@ namespace CarroDesk.Services.Tasks
                     ConsecutiveFailures = 0;
                     MarkedFailedAt = null;
                 }
+                if (CurrentState == TaskRuntimeState.WaitingRetry && !userDriven)
+                {
+                    // 守护重启延迟期内的触发器命中一律跳过：若放行，随后的放弃启动路径
+                    // 会把连续失败计数清零，RestartLimit 熔断预算变成"每个延迟窗口的新预算"（M2）。
+                    // 人工触发仍放行（显式意图，且允许人工复位计数）。
+                    refusalReason = $"守护重启延迟中（约 {NextRetryDelaySec}s 后自动重试），非人工触发跳过";
+                    return false;
+                }
 
                 CurrentState = (CurrentState == TaskRuntimeState.Running) ? TaskRuntimeState.Running : TaskRuntimeState.Starting;
                 refusalReason = null;
@@ -125,6 +133,25 @@ namespace CarroDesk.Services.Tasks
                 }
 
                 return CurrentState;
+            }
+        }
+
+        /// <summary>
+        /// 放弃启动（条件不满足 / 运行槽被拒 / 单实例互斥跳过）：没有产生任何进程，
+        /// 仅把 Starting 归位 Idle。绝不能复用 <see cref="OnProcessExited"/> 复位——
+        /// 那会把并发运行中的实例计数减掉（状态谎报为空闲）、把连续失败计数清零
+        /// （架空 RestartLimit 熔断预算），见 M1/M2。
+        /// </summary>
+        public void OnAbandon()
+        {
+            lock (_lock)
+            {
+                if (CurrentState == TaskRuntimeState.Starting)
+                {
+                    CurrentState = TaskRuntimeState.Idle;
+                    LastOutcome = "未启动";
+                }
+                // 其它状态（如 allowConcurrent 下既有实例的 Running）一律不动
             }
         }
 

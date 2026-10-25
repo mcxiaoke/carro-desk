@@ -532,7 +532,7 @@ namespace CarroDesk.Services.Tasks
             string skipReason;
             if (!TaskConditionEvaluator.ShouldRun(task, out skipReason))
             {
-                fsm.OnProcessExited(0, false, false, 0, 0, 0);
+                fsm.OnAbandon();
                 NotifyStateChanged(task.Name);
                 TaskLogger.Info(task.Name, "skipped(" + reason + ") condition not met: " + skipReason);
                 return;
@@ -544,7 +544,7 @@ namespace CarroDesk.Services.Tasks
             string slotRefusal;
             if (!TryOccupySlot(task.Name, task.Options != null && task.Options.AllowConcurrent, slot, out slotRefusal))
             {
-                fsm.OnProcessExited(0, false, false, 0, 0, 0);
+                fsm.OnAbandon();
                 NotifyStateChanged(task.Name);
                 TaskLogger.Warn(task.Name, "skipped(" + reason + ") " + slotRefusal);
                 return;
@@ -559,7 +559,7 @@ namespace CarroDesk.Services.Tasks
                 {
                     // 单实例互斥：已有实例在运行（含跨宿主重启的旧实例），不算失败、不计数
                     RemoveSlot(task.Name, slot);
-                    fsm.OnProcessExited(0, false, false, 0, 0, 0);
+                    fsm.OnAbandon();
                     NotifyStateChanged(task.Name);
                     AddRecent(task.Name, "skipped");
                     return;
@@ -625,6 +625,19 @@ namespace CarroDesk.Services.Tasks
                             reason + (attempt > 1 ? " retry#" + attempt : ""),
                             CancellationToken.None, null,
                             h => {
+                                // 启动窗口期停止竞态（H2）：TryStop 可能在进程 spawn 完成前
+                                // 摘除槽并置位 StopRequested——此时必须立即终止刚启动的进程，
+                                // 不得登记回运行表（否则脱离注册：GetRunning 看不到、TryStop
+                                // 永远找不到、守护链也被取消）。
+                                if (slot.StopRequested)
+                                {
+                                    TaskLogger.Info(task.Name, "process " + h.Pid + " spawned after user stop request; terminating immediately");
+                                    try { h.Stop(); } catch { }
+                                    RemoveSlot(task.Name, slot);
+                                    fsm.OnStopCompleted();
+                                    NotifyStateChanged(task.Name);
+                                    return;
+                                }
                                 slot.Handle = h;
                                 fsm.OnProcessStarted(h.Pid, h.StartedAt);
                                 NotifyStateChanged(task.Name);
@@ -764,6 +777,19 @@ namespace CarroDesk.Services.Tasks
 
         private void AttachDetached(TaskDefinition task, RunSlot slot, TaskProcessHandle handle)
         {
+            // 启动窗口期停止竞态（H2）：TryStop 可能在 StartDetached 与本调用之间摘除槽并置位
+            // StopRequested——刚 spawn 的常驻进程必须立即终止，不得登记（否则脱离注册表不可停）。
+            if (slot.StopRequested)
+            {
+                TaskLogger.Info(task.Name, "detached process " + handle.Pid + " spawned after user stop request; terminating immediately");
+                try { handle.Stop(); } catch { }
+                RemoveSlot(task.Name, slot);
+                GetOrCreateFsm(task.Name).OnStopCompleted();
+                NotifyStateChanged(task.Name);
+                AddRecent(task.Name, "stopped");
+                return;
+            }
+
             slot.Handle = handle;
             var fsm = GetOrCreateFsm(task.Name);
             fsm.OnProcessStarted(handle.Pid, handle.StartedAt);
@@ -866,7 +892,15 @@ namespace CarroDesk.Services.Tasks
                 lock (_lock)
                 {
                     SupervisionState sup;
-                    if (!_supervision.TryGetValue(task.Name, out sup)) return;
+                    if (!_supervision.TryGetValue(task.Name, out sup))
+                    {
+                        // 熔断时必须落标记并继续 RemoveSlot：此前的提前 return 会让槽永久滞留
+                        // 在 _running（非并发任务从此每次触发都被拒），任务静默瘫痪（M5）。
+                        // 两段临界区之间并发 ApplyCoreLocked 清空 _supervision 的窗口内，
+                        // 这里兜底重建条目而不是放弃收尾。
+                        sup = new SupervisionState();
+                        _supervision[task.Name] = sup;
+                    }
                     sup.MarkedFailed = true;
                     sup.MarkedAt = DateTime.Now;
                     notify = true;
@@ -923,7 +957,8 @@ namespace CarroDesk.Services.Tasks
                 if (code == TaskRunner.StartSkippedSingleInstance)
                 {
                     RemoveSlot(task.Name, slot);
-                    fsm.OnProcessExited(0, false, false, 0, 0, 0);
+                    // 放弃启动不走 OnProcessExited(0)：那会清零刚累计的连续失败计数（M1）
+                    fsm.OnAbandon();
                     NotifyStateChanged(task.Name);
                     AddRecent(task.Name, "skipped");
                     return;
