@@ -1,3 +1,4 @@
+using System;
 using CarroDesk.Models;
 
 namespace CarroDesk.Services
@@ -46,6 +47,12 @@ namespace CarroDesk.Services
 
         private bool VerifyCore(string pin)
         {
+            // pending 只代表"已生成但尚未落盘"的凭据。一旦配置中的凭据与 pending 不一致，
+            // 说明配置已被外部更新（典型：配置编辑器修改 PIN 后保存）——此时必须以配置为准，
+            // 否则旧 pending 会永远压过新配置：新 PIN 验证失败、旧 PIN 继续有效，直到重启。
+            // 此前 pending 一经 SetNewPin 置位便再无清除路径，正是该缺陷的根源。
+            DiscardStalePendingNoLock();
+
             // 与 Salt/Hash/IsConfigured 保持同一优先级：有未落盘的 pending 就以 pending 为准。
             //
             // 此前 Verify 无条件 BuildFromCurrent()，而 Salt/Hash/IsConfigured 却优先读 pending，
@@ -97,6 +104,25 @@ namespace CarroDesk.Services
         private AppSettings Current()
         {
             return _config != null ? _config.Current : null;
+        }
+
+        /// <summary>
+        /// 配置持有有效凭据且与 pending 不一致时丢弃 pending（调用方须持有 _verifyLock 或处于单线程初始化路径）。
+        /// 配置无有效凭据时保留 pending——它仍是唯一凭据来源（SetNewPin 后尚未落盘的窗口期）。
+        /// </summary>
+        private void DiscardStalePendingNoLock()
+        {
+            if (string.IsNullOrEmpty(_pendingSalt) && string.IsNullOrEmpty(_pendingHash)) return;
+
+            var c = Current();
+            if (c == null || !c.HasPin()) return;
+
+            if (!string.Equals(_pendingSalt, c.PinSalt, StringComparison.Ordinal) ||
+                !string.Equals(_pendingHash, c.PinHash, StringComparison.Ordinal))
+            {
+                _pendingSalt = null;
+                _pendingHash = null;
+            }
         }
 
         private void BuildFromCurrent()

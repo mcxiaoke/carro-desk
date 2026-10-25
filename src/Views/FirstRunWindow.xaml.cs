@@ -58,9 +58,10 @@ namespace CarroDesk.Views
         {
             var pin1 = PinBox1.Password;
             var pin2 = PinBox2.Password;
-            if (string.IsNullOrEmpty(pin1) || pin1.Length < 4)
+            string errorKey;
+            if (!ValidatePin(pin1, out errorKey))
             {
-                MessageText.Text = Loc.T("FirstRun.ErrorMinLength");
+                MessageText.Text = Loc.T(errorKey);
                 ShakeCard();
                 PinBox1.Focus();
                 return;
@@ -76,6 +77,32 @@ namespace CarroDesk.Views
             NewPin = pin1;
             DialogResult = true;
             Close();
+        }
+
+        /// <summary>
+        /// PIN 设置校验（纯函数，供单元测试）。
+        ///
+        /// 必须限定纯数字：锁屏期间的低级键盘钩子（KeyboardBlocker.IsAllowedKey）只放行
+        /// 数字/NumPad/Backspace/Enter/Shift，含字母或符号的 PIN 在锁屏后根本无法输入，
+        /// 会把"忘记 PIN"放大为永久锁死（见 docs/CODE-REVIEW-20261025.md S2）。
+        /// </summary>
+        public static bool ValidatePin(string pin, out string errorKey)
+        {
+            errorKey = null;
+            if (string.IsNullOrEmpty(pin) || pin.Length < 4)
+            {
+                errorKey = "FirstRun.ErrorMinLength";
+                return false;
+            }
+            for (int i = 0; i < pin.Length; i++)
+            {
+                if (pin[i] < '0' || pin[i] > '9')
+                {
+                    errorKey = "FirstRun.ErrorDigitsOnly";
+                    return false;
+                }
+            }
+            return true;
         }
 
         private void ShakeCard()

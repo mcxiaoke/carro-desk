@@ -217,9 +217,10 @@
     "Heading": "欢迎使用 CarroDesk",
     "HeadingChangePin": "修改解锁 PIN",
     "Subheading": "请设置初始安全 PIN（用于锁屏解锁及退出验证）",
-    "PinPrompt": "输入 PIN (至少 4 位) *",
+    "PinPrompt": "输入数字 PIN (至少 4 位) *",
     "PinConfirmPrompt": "再次输入以确认 *",
     "ErrorMinLength": "PIN 长度至少需要 4 位",
+    "ErrorDigitsOnly": "PIN 只能包含数字 0-9（锁屏期间仅能输入数字）",
     "ErrorMismatch": "两次输入的 PIN 不一致",
     "ConfirmButton": "确认设置",
     "CancelButton": "取消"

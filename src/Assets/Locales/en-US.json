@@ -217,9 +217,10 @@
     "Heading": "Welcome to CarroDesk",
     "HeadingChangePin": "Change Unlock PIN",
     "Subheading": "Please set an initial security PIN for unlocking and exiting",
-    "PinPrompt": "Enter PIN (at least 4 digits) *",
+    "PinPrompt": "Enter numeric PIN (at least 4 digits) *",
     "PinConfirmPrompt": "Confirm PIN *",
     "ErrorMinLength": "PIN must be at least 4 digits long",
+    "ErrorDigitsOnly": "PIN must contain digits 0-9 only (lock screen accepts digits only)",
     "ErrorMismatch": "The PINs you entered do not match",
     "ConfirmButton": "Save PIN",
     "CancelButton": "Cancel"
