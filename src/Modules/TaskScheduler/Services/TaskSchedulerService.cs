@@ -1038,6 +1038,12 @@ namespace CarroDesk.Services.Tasks
         /// 停止该任务当前在册的**全部**实例（allowConcurrent 下可能不止一个）。
         /// 用户点一次"停止任务"的语义是"这个任务停下来"，不是"停掉其中一个"。
         /// 同时对每个槽置StopRequested，取消各自挂起中的自动重启（systemctl stop 语义）。
+        ///
+        /// 杀进程（taskkill /T 每实例最长等 5s）转后台执行（H3）：本方法从 UI 事件
+        /// （管理窗口停止/删除/重启按钮、托盘"点击停止"、编辑器停止）同步调用，
+        /// 进程树顽固时同步 taskkill 会冻结界面数秒；状态置位与槽出册在本线程完成后，
+        /// 句柄终止与 FSM 收尾交给线程池，UI 立即得到"已受理"。返回值语义保持
+        /// "是否受理了停止请求"（与既有调用方判断一致），不代表进程已终结。
         /// </summary>
         public bool TryStop(string taskName)
         {
@@ -1080,15 +1086,25 @@ namespace CarroDesk.Services.Tasks
                 return cancelledPendingRetry || stopRequested;
             }
 
-            var ok = true;
-            foreach (var h in handles)
+            var toKill = handles;
+            var fsmToFinish = fsm;
+            var name = taskName;
+            _ = System.Threading.Tasks.Task.Run(() =>
             {
-                try { h.Stop(); }
-                catch { ok = false; }
-            }
-            fsm.OnStopCompleted();
-            NotifyStateChanged(taskName);
-            return ok;
+                var okAll = true;
+                foreach (var h in toKill)
+                {
+                    try { h.Stop(); }
+                    catch { okAll = false; }
+                }
+                fsmToFinish.OnStopCompleted();
+                NotifyStateChanged(name);
+                if (!okAll)
+                {
+                    try { TaskLogger.Warn(name, "stop: one or more process handles failed to terminate"); } catch { }
+                }
+            });
+            return true;
         }
 
         /// <summary>detach 任务的守护状态快照：连续失败计数与熔断标记（供 UI 展示"已标记失败"）。</summary>
