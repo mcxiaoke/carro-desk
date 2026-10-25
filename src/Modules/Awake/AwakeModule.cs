@@ -35,7 +35,7 @@ namespace CarroDesk.Modules.Awake
             base.Initialize(context);
 
             var logger = context.GetService<ILoggerService>();
-            Service = new AwakeService(context.Dispatcher, logger);
+            Service = new AwakeService(context.Dispatcher, logger, msg => ShowNotify(msg));
             Service.Initialize(Config);
 
             Service.StateChanged += OnServiceStateChanged;

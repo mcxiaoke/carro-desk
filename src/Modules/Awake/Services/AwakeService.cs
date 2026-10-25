@@ -49,7 +49,11 @@ namespace CarroDesk.Modules.Awake.Services
         private const uint TOKEN_ADJUST_PRIVILEGES = 0x0020;
         private const uint TOKEN_QUERY = 0x0008;
         private const uint SE_PRIVILEGE_ENABLED = 0x0002;
-        private static readonly Guid SeShutdownName = new Guid("6d43ee9d-ce70-11cf-b7d7-00aa004bd83b");
+
+        // LookupPrivilegeValue 只接受特权名（如 "SeShutdownPrivilege"），不接受 GUID 字符串；
+        // 此前误传 GUID 常量字符串，恒返回 ERROR_NO_SUCH_PRIVILEGE(1313)，
+        // 导致 SE_SHUTDOWN_NAME 从未启用成功、延迟睡眠在受限账户下静默失效（S4）。
+        private const string SeShutdownPrivilegeName = "SeShutdownPrivilege";
 
         [StructLayout(LayoutKind.Sequential)]
         private struct LUID
@@ -116,9 +120,9 @@ namespace CarroDesk.Modules.Awake.Services
                 }
 
                 LUID luid;
-                if (!LookupPrivilegeValue(null, SeShutdownName.ToString(), out luid))
+                if (!LookupPrivilegeValue(null, SeShutdownPrivilegeName, out luid))
                 {
-                    error = "LookupPrivilegeValue(SE_SHUTDOWN_NAME) failed: " + Marshal.GetLastWin32Error();
+                    error = "LookupPrivilegeValue(SeShutdownPrivilege) failed: " + Marshal.GetLastWin32Error();
                     return false;
                 }
 
@@ -170,6 +174,10 @@ namespace CarroDesk.Modules.Awake.Services
 
         private readonly Dispatcher _dispatcher;
         private readonly ILoggerService _logger;
+
+        /// <summary>电源动作执行失败时的用户可见通知回调（由模块注入 ShowNotify）；null 时只记日志。</summary>
+        private readonly Action<string> _notifyFailure;
+
         private readonly DispatcherTimer _timer;
 
         private AwakeConfig _config;
@@ -237,10 +245,11 @@ namespace CarroDesk.Modules.Awake.Services
         public event Action<bool, string> ProcessTriggered;   // (isTriggered, procName)
         public event Action Tick;
 
-        public AwakeService(Dispatcher dispatcher, ILoggerService logger)
+        public AwakeService(Dispatcher dispatcher, ILoggerService logger, Action<string> notifyFailure = null)
         {
             _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
             _logger = logger;
+            _notifyFailure = notifyFailure;
 
             _timer = new DispatcherTimer(DispatcherPriority.Normal, _dispatcher);
             _timer.Interval = TimeSpan.FromSeconds(1);
@@ -509,14 +518,22 @@ namespace CarroDesk.Modules.Awake.Services
                     // SetSuspendState 需要 SE_SHUTDOWN_NAME，默认登录进程并不持有；
                     // 不显式启用时受限账户会静默失败（返回 FALSE/1314），而此时 IPC 早已回"已调度"。
                     string privErr;
-                    if (!TryEnableShutdownPrivilege(out privErr))
+                    bool privileged = TryEnableShutdownPrivilege(out privErr);
+                    if (!privileged)
                     {
                         _logger?.LogWarning("Awake", "启用 SE_SHUTDOWN_NAME 失败，睡眠可能被系统拒绝: " + privErr);
                     }
 
                     if (!SetSuspendState(false, false, false))
                     {
-                        _logger?.LogError("Awake", $"SetSuspendState 调用失败 (Win32Error={Marshal.GetLastWin32Error()})");
+                        int win32 = Marshal.GetLastWin32Error();
+                        _logger?.LogError("Awake",
+                            "SetSuspendState 调用失败 (Win32Error=" + win32 + ")" +
+                            (privileged ? "" : "；前置特权启用失败: " + privErr));
+                        // IPC 调用方早已拿到"已调度"，日志是唯一留痕；再把失败顶到用户可见层，
+                        // 避免"以为会睡，到点没睡"完全无感知。
+                        try { _notifyFailure?.Invoke("CarroDesk 睡眠请求失败 (Win32Error=" + win32 + ")，详见日志"); }
+                        catch { /* 通知失败不影响主流程 */ }
                     }
                 }
                 else if (action == PendingPowerAction.Shutdown)
