@@ -19,11 +19,12 @@ namespace CarroDesk.Services.Tasks.Triggers
             if (!TaskDefinition.TryParseTime(task.Trigger.At, out t))
                 t = new TimeSpan(2, 0, 0);
             _at = t;
-            // 初始化检查：如果当前时刻已经晚于当天设定的 _at（例如设在 02:30，当前是 11:00），
-            // 除非显式配置了 CatchUpMissed（错过补跑），否则将 _lastFiredDate 初始化为今天，避免启动或重载配置时被误触发！
+            // 防误触初始化：启动/重载时刻已晚于当天触发点时记为"今天已触发"。
+            // CatchUpMissed（错过补跑）改由 TaskSchedulerService 在 Apply 时按会话集合投递一次：
+            // 此前这里按 catchUp 跳过初始化、Start 立即补发，而触发器每次配置重载都会整体重建，
+            // 导致"错过补跑"退化为"每次重载都补跑"（docs/CODE-REVIEW-20261025.md M3）。
             var now = DateTime.Now;
-            bool catchUp = task.Options != null && task.Options.CatchUpMissed;
-            if (!catchUp && now >= now.Date + _at)
+            if (now >= now.Date + _at)
             {
                 _lastFiredDate = now.Date;
             }

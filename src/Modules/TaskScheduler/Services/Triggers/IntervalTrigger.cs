@@ -25,10 +25,9 @@ namespace CarroDesk.Services.Tasks.Triggers
             _timer.Tick += OnTick;
             _timer.Start();
 
-            if (Task.Options != null && Task.Options.RunAtStartup)
-            {
-                OnTick(this, EventArgs.Empty);
-            }
+            // RunAtStartup（启动即跑一次）改由 TaskSchedulerService 在 Apply 时按会话集合投递：
+            // 此前在这里无条件立即触发，而触发器每次配置重载都会整体重建，
+            // 导致"启动即跑"退化为"每次重载都跑"（docs/CODE-REVIEW-20261025.md M3）。
         }
 
         private void OnTick(object sender, EventArgs e)

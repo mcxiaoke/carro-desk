@@ -315,6 +315,35 @@ namespace CarroDesk.Services.Tasks
                 try { t.Start(); } catch (Exception ex) { TaskLogger.Error(t.Task.Name, "trigger start failed: " + ex.Message); }
             }
             lock (_lock) _triggers = newTriggers;
+
+            // CatchUpMissed / RunAtStartup 的"启动补跑"由此统一投递（M3）：
+            // 以 _firedStartupTasks 作会话级集合（reason 以 "startup" 开头即记录，Apply 不清除），
+            // 保证每次宿主会话只补一发；触发器重建（任何重载）不再自带立即触发。
+            foreach (var task in _tasks)
+            {
+                if (!task.Enabled || task.Options == null) continue;
+                string reason = null;
+                if (task.Options.RunAtStartup && task.Trigger != null && task.Trigger.Type == TaskTriggerType.Interval)
+                {
+                    reason = "startup:runAtStartup";
+                }
+                else if (task.Options.CatchUpMissed && task.Trigger != null && task.Trigger.Type == TaskTriggerType.Daily)
+                {
+                    TimeSpan at;
+                    if (TaskDefinition.TryParseTime(task.Trigger.At, out at) && DateTime.Now >= DateTime.Now.Date + at)
+                    {
+                        reason = "startup:catchup";
+                    }
+                }
+                if (reason == null) continue;
+
+                bool alreadyFired;
+                lock (_lock) alreadyFired = _firedStartupTasks.Contains(task.Name);
+                if (alreadyFired) continue;
+
+                TaskLogger.Info(task.Name, "dispatching one-time startup catch-up (" + reason + ")");
+                OnTriggerFired(task, reason);
+            }
         }
 
         private ITrigger CreateTrigger(TaskDefinition task)

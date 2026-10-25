@@ -20,9 +20,11 @@ namespace CarroDesk.Modules.TaskScheduler.Views
     {
         private readonly bool _isNew;
         private readonly HashSet<string> _existingNames;
+        private readonly TaskDefinition _sourceTask;
         private bool _isDirty;
         private bool _isLoading = true;
         private CancellationTokenSource _testCts;
+        private TaskProcessHandle _testRunHandle;
 
         public TaskDefinition ResultTask { get; private set; }
 
@@ -51,6 +53,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             var workingTask = taskToEdit != null
                 ? JsonConvert.DeserializeObject<TaskDefinition>(JsonConvert.SerializeObject(taskToEdit))
                 : new TaskDefinition { Name = "NewTask", Trigger = new TaskTrigger { Type = TaskTriggerType.Startup } };
+            _sourceTask = workingTask;
 
             PopulateForm(workingTask);
             _isLoading = false;
@@ -102,9 +105,14 @@ namespace CarroDesk.Modules.TaskScheduler.Views
 
             // Action
             var act = task.Action ?? new TaskAction();
+            var optForDisplay = task.Options ?? new TaskOptions();
             FileBox.Text = act.File ?? "";
             ArgsBox.Text = act.Args ?? "";
-            WorkDirBox.Text = act.WorkDir ?? "";
+            // EffectiveWorkDir 是 options.workDir 优先：显示当前"有效工作目录"，
+            // 否则只配了 options.workDir 的任务在编辑器里显示为空、保存后目录丢失（H1）
+            WorkDirBox.Text = !string.IsNullOrWhiteSpace(optForDisplay.WorkDir)
+                ? optForDisplay.WorkDir
+                : (act.WorkDir ?? "");
             if (act.Env != null && act.Env.Count > 0)
             {
                 EnvBox.Text = string.Join(Environment.NewLine, act.Env.Select(kv => $"{kv.Key}={kv.Value}"));
@@ -363,6 +371,8 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                     }
                     else if (code == 0 && handle != null)
                     {
+                        // 保存句柄供"停止"按钮与关窗清理使用；否则测试进程脱管，无法停止（M4）
+                        _testRunHandle = handle;
                         TestStatusText.Text = $"🟢 常驻测试已启动 PID: {handle.Pid}";
                     }
                     else
@@ -400,7 +410,31 @@ namespace CarroDesk.Modules.TaskScheduler.Views
         private void OnTestStopClick(object sender, RoutedEventArgs e)
         {
             try { _testCts?.Cancel(); } catch { }
+            // detach 测试运行没有可取消的等待循环，直接终止进程（句柄在启动成功时保存）
+            var handle = _testRunHandle;
+            if (handle != null && handle.HasExited != true)
+            {
+                try { handle.Stop(); } catch { }
+                _testRunHandle = null;
+            }
             TestStatusText.Text = "正在停止测试进程...";
+        }
+
+        protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+        {
+            // 关窗兜底：detach 测试进程不能因对话框关闭而变成脱管常驻进程（M4）
+            try
+            {
+                if (_testRunHandle != null && _testRunHandle.HasExited != true)
+                {
+                    try { _testRunHandle.Stop(); } catch { }
+                }
+                _testRunHandle = null;
+                _testCts?.Dispose();
+                _testCts = null;
+            }
+            catch { }
+            base.OnClosing(e);
         }
 
         private void OnSaveClick(object sender, RoutedEventArgs e)
@@ -519,6 +553,15 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                 RestartDelaySec = int.TryParse(RestartDelayBox.Text.Trim(), out var rdelay) ? rdelay : 5,
                 RestartLimit = int.TryParse(RestartLimitBox.Text.Trim(), out var rlimit) ? rlimit : 3
             };
+            // 编辑既有任务时保留 UI 未暴露的选项字段，否则会被上面的默认值静默覆盖（H1，同旧编辑器 TaskEditorWindow 的防线）：
+            // stableUptimeSec（守护计数复位阈值，0=永不复位）没有对应控件，必须从源任务透传。
+            if (_sourceTask?.Options != null)
+            {
+                task.Options.StableUptimeSec = _sourceTask.Options.StableUptimeSec;
+            }
+            // 工作目录统一由 action.workDir 承载（表单只有一个输入框，显示的是原 options.workDir 优先的有效值）；
+            // 清空 options.workDir，避免旧值继续以更高优先级压过用户在表单里改的新工作目录。
+            task.Options.WorkDir = "";
 
             // When
             task.When = new TaskCondition

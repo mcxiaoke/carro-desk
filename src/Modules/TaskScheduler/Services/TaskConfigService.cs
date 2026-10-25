@@ -359,6 +359,16 @@ namespace CarroDesk.Services.Tasks
             o["file"] = ac.File ?? "";
             if (!string.IsNullOrWhiteSpace(ac.Args)) o["args"] = ac.Args;
             if (!string.IsNullOrWhiteSpace(ac.WorkDir)) o["workDir"] = ac.WorkDir;
+            if (ac.Env != null && ac.Env.Count > 0)
+            {
+                var envObj = new JObject();
+                foreach (var kv in ac.Env)
+                {
+                    if (string.IsNullOrWhiteSpace(kv.Key)) continue;
+                    envObj[kv.Key.Trim()] = kv.Value ?? "";
+                }
+                if (envObj.Count > 0) o["env"] = envObj;
+            }
             return o;
         }
 
@@ -380,6 +390,10 @@ namespace CarroDesk.Services.Tasks
             if (op.RestartDelaySec != 5) o["restartDelaySec"] = op.RestartDelaySec;
             if (op.RestartLimit != 3) o["restartLimit"] = op.RestartLimit;
             if (op.StableUptimeSec != 60) o["stableUptimeSec"] = op.StableUptimeSec;
+            // Batch-2 新增选项（S3 修复：此前未落盘，UI 设置保存即丢）
+            if (!string.IsNullOrWhiteSpace(op.Encoding)) o["encoding"] = op.Encoding.Trim().ToLowerInvariant();
+            if (op.RunAtStartup) o["runAtStartup"] = true;
+            if (op.CatchUpMissed) o["catchUpMissed"] = true;
             return o;
         }
 
@@ -511,6 +525,7 @@ namespace CarroDesk.Services.Tasks
                     act.File = GetStr(ad, "file", "path", "command");
                     act.Args = GetStr(ad, "args", "arguments");
                     act.WorkDir = GetStr(ad, "workDir", "workingDirectory", "cwd");
+                    ParseEnvInto(ad["env"], act.Env, task.Name, errors);
                     task.Action = act;
                 }
                 else if (obj["file"] != null)
@@ -519,6 +534,7 @@ namespace CarroDesk.Services.Tasks
                     act.File = GetStr(obj, "file", "path", "command");
                     act.Args = GetStr(obj, "args", "arguments");
                     act.WorkDir = GetStr(obj, "workDir", "workingDirectory", "cwd");
+                    ParseEnvInto(obj["env"], act.Env, task.Name, errors);
                     task.Action = act;
                 }
 
@@ -541,6 +557,10 @@ namespace CarroDesk.Services.Tasks
                     opt.RestartDelaySec = GetInt(od, 5, "restartDelaySec", "restartDelay");
                     opt.RestartLimit = GetInt(od, 3, "restartLimit", "maxRestarts");
                     opt.StableUptimeSec = GetInt(od, 60, "stableUptimeSec", "minUptimeSec");
+                    // Batch-2 新增选项（S3 修复：此前不读取，手改 JSON 无效）
+                    opt.Encoding = GetStr(od, "encoding", "outputEncoding");
+                    opt.RunAtStartup = GetBool(od, false, "runAtStartup", "runOnStart");
+                    opt.CatchUpMissed = GetBool(od, false, "catchUpMissed", "catchUp");
                 }
                 if (obj["hidden"] != null) opt.Hidden = GetBool(obj, opt.Hidden, "hidden");
                 if (obj["timeoutSec"] != null) opt.TimeoutSec = GetInt(obj, opt.TimeoutSec, "timeoutSec", "timeout");
@@ -583,6 +603,46 @@ namespace CarroDesk.Services.Tasks
                 }
             }
             return "";
+        }
+
+        /// <summary>
+        /// 解析 action.env 为字典。支持对象形式 {"KEY":"VALUE"}（编辑器写出）与
+        /// 字符串数组形式 ["KEY=VALUE", ...]（手改友好）；两者皆空时保持传入字典不变。
+        /// </summary>
+        private static void ParseEnvInto(JToken token, Dictionary<string, string> target, string taskName, List<string> errors)
+        {
+            if (token == null || token.Type == JTokenType.Null || target == null) return;
+
+            try
+            {
+                if (token is JObject envObj)
+                {
+                    foreach (var prop in envObj.Properties())
+                    {
+                        if (string.IsNullOrWhiteSpace(prop.Name)) continue;
+                        target[prop.Name.Trim()] = prop.Value != null && prop.Value.Type != JTokenType.Null ? prop.Value.ToString() : "";
+                    }
+                }
+                else if (token is JArray envArr)
+                {
+                    foreach (var item in envArr)
+                    {
+                        string line = item?.ToString();
+                        if (string.IsNullOrWhiteSpace(line)) continue;
+                        int eq = line.IndexOf('=');
+                        if (eq <= 0)
+                        {
+                            errors.Add("task [" + (taskName ?? "?") + "] action.env entry missing '=': " + line);
+                            continue;
+                        }
+                        target[line.Substring(0, eq).Trim()] = line.Substring(eq + 1);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                errors.Add("task [" + (taskName ?? "?") + "] action.env parse error: " + ex.Message);
+            }
         }
 
         private static int GetInt(JObject obj, int def, params string[] keys)

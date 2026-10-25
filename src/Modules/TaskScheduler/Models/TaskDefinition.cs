@@ -269,6 +269,14 @@ namespace CarroDesk.Models
             }
             if (Options != null && Options.TimeoutSec < 0) return "timeoutSec invalid";
             if (Options != null && Options.Retry < 0) return "retry invalid";
+            if (Options != null && !string.IsNullOrWhiteSpace(Options.Encoding))
+            {
+                // 与 TaskRunner 的消费集合保持一致（未知值会静默按 UTF-8 处理，配置期就拒绝更友好）
+                string e = Options.Encoding.Trim().ToLowerInvariant();
+                if (e != "utf8" && e != "utf-8" && e != "gbk" && e != "gb2312" && e != "cp936"
+                    && e != "oem" && e != "default" && e != "ascii" && e != "unicode" && e != "utf16")
+                    return "options.encoding invalid (utf8|gbk|oem|ascii|unicode)";
+            }
             if (Options != null && !string.IsNullOrWhiteSpace(Options.Mode))
             {
                 string m = Options.Mode.Trim().ToLowerInvariant();
