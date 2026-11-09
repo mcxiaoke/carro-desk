@@ -1,5 +1,7 @@
 # AutoRun 计划任务模块设计方案
 
+> 历史归档：本文描述早期 AutoRun/ScreenLock 时代的任务编辑器 `TaskEditorWindow`；当前任务管理入口为 `TaskManagerWindow` + `TaskEditDialog`（旧编辑器已删除）。调度/运行模式的设计仍具参考价值。
+
 > 版本：v0.4（2026-08-29）
 > 归属：`ScreenLock` 宿主复用，仅借壳常驻，不侵入锁屏核心
 > 目标：替代 Windows 计划任务的常用轻量场景 + 替代原 `AutoHotkeyV2/AutoRun*` 脚本 + 轻量自动化箱

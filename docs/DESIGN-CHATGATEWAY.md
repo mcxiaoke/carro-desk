@@ -1,5 +1,7 @@
 # 设计方案：ChatGateway 模块（企微聊天入口 → opencode 执行）
 
+> 历史归档（2026-09/10，基于 net48 + C# 7.3 + Costura.Fody 的技术方案）；当前实现为 net10.0-windows + PublishSingleFile，见 DESIGN.md 与 PLAN-UPGRADE-DOTNET10.md，勿据此排障。
+
 > 状态：设计稿 v1（2026-10-07）
 > 目标：以 CarroDesk 常驻宿主为载体，新增一个企微（WeCom 智能机器人）出站 WebSocket 通道模块，
 > 把聊天消息转发给 `opencode run` 执行并回传结果，替代 PicoClaw 的全部在线职责。

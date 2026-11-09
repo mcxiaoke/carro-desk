@@ -9,7 +9,7 @@ Windows 常驻托盘工作机管家：模块化的桌面自动化宿主，集空
 | 模块 | 功能 |
 |---|---|
 | **ScreenLock** | 空闲/热键触发的全屏 PIN 锁屏（多显示器、防暴力破解、排除进程挂机） |
-| **TaskScheduler** | 计划任务：11 种触发器（startup/interval/daily/cron/hotkey/watch/idle/…），支持 `wait`（等待退出）与 `detach`（常驻后台）两种运行模式，detach 任务支持单实例互斥与失败自动守护重启 |
+| **TaskScheduler** | 计划任务：10 种触发器（startup/interval/daily/cron/hotkey/watch/idle/…），支持 `wait`（等待退出）与 `detach`（常驻后台）两种运行模式，detach 任务支持单实例互斥与失败自动守护重启 |
 | **Awake** | 保持唤醒：无限期/定时/到点/进程联动四种模式，防止机器睡眠导致远程失联 |
 | **ServiceControl** | 经授权清单启停 Windows 服务（如 UUYC 远控、RDP），按服务配置口令策略，内核级服务 DACL 兜底 |
 | **AudioSwitch** | 热键一键切换默认音频设备（扬声器/耳机） |

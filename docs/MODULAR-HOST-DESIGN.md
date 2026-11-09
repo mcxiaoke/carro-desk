@@ -1,5 +1,7 @@
 # 桌面工具箱宿主架构与模块化重构设计方案 (DeskKit / TrayTools)
 
+> 历史归档（2026-09/10，基于 net48 + C# 7.3 + Costura.Fody 的技术方案）；当前实现为 net10.0-windows + PublishSingleFile，见 DESIGN.md 与 PLAN-UPGRADE-DOTNET10.md，勿据此排障。
+
 > **版本**：v2.0 (工业级标准演进版)  
 > **更新时间**：2026-09-16  
 > **适用平台**：Windows 10 / 11 (x86 / x64)  

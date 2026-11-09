@@ -43,7 +43,7 @@
 }
 ```
 
-- exe 是单文件（依赖已内嵌），放 PATH 或任意目录均可
+- exe 是单文件（.NET `PublishSingleFile`，托管程序集已打包），放 PATH 或任意目录均可；为框架依赖，目标机需 .NET 10 桌面运行时
 - stdio 传输；stdout 只有协议 JSON，日志在 stderr
 - 客户端每条消息等一行 JSON 回应
 

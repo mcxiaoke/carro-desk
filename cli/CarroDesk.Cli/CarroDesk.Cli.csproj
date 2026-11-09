@@ -20,8 +20,7 @@
        构建阶段清理 ProjectReference 流入的样例文件，避免污染 Debug 输出目录。 -->
   <Target Name="CleanCliOutputJunk" AfterTargets="Build">
     <ItemGroup>
-      <CliJunk Include="$(OutDir)CarroDesk.exe.config;
-                        $(OutDir)config.sample.json;
+      <CliJunk Include="$(OutDir)config.sample.json;
                         $(OutDir)tasks.sample.json;
                         $(OutDir)portable.sample.ini" />
     </ItemGroup>

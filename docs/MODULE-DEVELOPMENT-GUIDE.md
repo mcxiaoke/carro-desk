@@ -355,12 +355,10 @@ namespace CarroDesk.Modules.MyFeature.Models
 3. **实现核心服务**：编写 `Services/{ModuleName}Service.cs`，保持无 UI 状态、独立可测。
 4. **实现模块入口**：编写 `{ModuleName}Module.cs`，继承 `ModuleBase<{ModuleName}Config>`，实现核心声明周期与 `GetTrayMenuItems()`。
 5. **添加本地化文案**：在 `src/Assets/Locales/zh-CN.json` 和 `en-US.json` 中追加模块使用的语言键值。
-6. **宿主注册**：
-   在 `src/App.xaml.cs` 的 `OnStartup` 方法中注册新模块：
-   ```csharp
-   var myModule = new MyFeatureModule();
-   Modules.RegisterModule(myModule);
-   ```
+6. **宿主注册**：在 `src/Host/Modules/ModuleRegistry.cs` 的 `RegisterStandardModules()` 中
+   增加一行 `manager.RegisterModule(new MyFeatureModule());`（`App` 只在启动时调用该方法一次）。
+   新增模块检查清单：实现 `ModuleBase<TConfig>` → 在 `ModuleRegistry` 注册 → 语言包补键 →
+   样例配置补默认节 → 需要 IPC 能力时实现 `ICommandProvider` 并验证 `host.capabilities.list` 可见。
 7. **补充示例配置**：在 `src/Samples/config.sample.json` 中追加该模块的默认注释样例。
 
 ---

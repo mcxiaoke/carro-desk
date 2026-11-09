@@ -11,23 +11,17 @@ namespace CarroDesk.Services
         private const int WM_SYSKEYDOWN = 0x0104;
         private const int WM_SYSKEYUP = 0x0105;
 
-        private const int VK_TAB = 0x09;
         private const int VK_RETURN = 0x0D;
         private const int VK_SHIFT = 0x10;
         private const int VK_CONTROL = 0x11;
         private const int VK_MENU = 0x12;
         private const int VK_ESCAPE = 0x1B;
-        private const int VK_SPACE = 0x20;
         private const int VK_BACK = 0x08;
         private const int VK_LWIN = 0x5B;
         private const int VK_RWIN = 0x5C;
         private const int VK_APPS = 0x5D;
-        private const int VK_F4 = 0x73;
         private const int VK_NUMPAD0 = 0x60;
         private const int VK_NUMPAD9 = 0x69;
-        private const int VK_LBUTTON = 0x01;
-        private const int VK_RBUTTON = 0x02;
-        private const int VK_CANCEL = 0x03;
 
         [StructLayout(LayoutKind.Sequential)]
         private struct KBDLLHOOKSTRUCT

@@ -1,5 +1,7 @@
 # ScreenLock — 中英文双语国际化 (i18n) 最佳设计与实施方案
 
+> 历史归档（2026-09/10，基于 net48 + C# 7.3 + Costura.Fody 的技术方案）；当前实现为 net10.0-windows + PublishSingleFile，见 DESIGN.md 与 PLAN-UPGRADE-DOTNET10.md，勿据此排障。
+
 > 日期：2026-09-16  
 > 目标：为 ScreenLock 增加优雅、免重启即时刷新、零依赖且可自由扩展的中英文多语言体系。
 

@@ -1,5 +1,7 @@
 # CarroDesk 宿主与内置模块解耦设计规范（修订版 v3.0 Draft）
 
+> 历史归档（2026-09/10，基于 net48 + C# 7.3 + Costura.Fody 的技术方案）；当前实现为 net10.0-windows + PublishSingleFile，见 DESIGN.md 与 PLAN-UPGRADE-DOTNET10.md，勿据此排障。
+
 > **版本**：v3.0 Draft（可执行修订版，未定稿）
 > **日期**：2026-09-16
 > **状态**：Draft，替代 `docs/HOST-PLUGIN-DECOUPLING-SPEC.md` v2.0（降级为草案）与 `docs/MODULAR-HOST-DESIGN.md` 的实施部分

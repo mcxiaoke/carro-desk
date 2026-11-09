@@ -990,15 +990,6 @@ namespace CarroDesk.Services.Tasks
             catch { }
         }
 
-        private SupervisionState GetSupervisionState(string taskName)
-        {
-            lock (_lock)
-            {
-                SupervisionState s;
-                return _supervision.TryGetValue(taskName ?? "", out s) ? s : null;
-            }
-        }
-
         public IReadOnlyList<TaskRunInfo> GetRunning()
         {
             var list = new List<TaskRunInfo>();

@@ -38,7 +38,7 @@ CarroDesk.slnx
 │   ├── Modules/              功能模块（见 §3）
 │   ├── Services/             ConfigService、PinService(+PinGuard)、
 │   │                         ProcessExclusionService、Tasks 运行时…
-│   └── Views/                LockWindow、TaskEditorWindow、TrayContextMenu 等
+│   └── Views/                LockWindow、TaskManagerWindow、TrayContextMenu 等
 ├── cli/CarroDesk.Cli/        CarroDesk.Cli.exe（PublishSingleFile 单文件；ctl / --mcp）
 ├── tests/CarroDesk.Tests/    单元测试（dotnet test CarroDesk.slnx；用例数随迭代变化）
 ├── skills/carrodesk/         AI agent 技能（CLI 直控，MCP 无关）
@@ -54,10 +54,10 @@ CarroDesk.slnx
 ```
 Created → Initialized → Running → Stopped
                             └────→ Faulted（Start 异常时逆序清理后标记）
-                                    Disabled（config.Enabled=false，跳过启动）
+                                    Disabled（枚举保留，当前无代码把模块置为该状态；config.Enabled 是模块内部开关）
 ```
 
-`ModuleBase` 提供的公共服务：配置节泛型加载、幂等 Start/Stop、托管热键注册（`RegisterManagedHotkey`，停止自动注销）、配置热重载回调 `OnConfigReloaded`、语言切换回调 `OnLanguageChanged`、托盘菜单项 `GetTrayMenuItems()`、能力暴露 `GetCommands()`（`ICommandProvider`，与托盘菜单同构的 pull 模式）。
+`ModuleBase` 提供的公共服务：配置节泛型加载、幂等 Start/Stop、托管热键注册（`RegisterManagedHotkey`，停止自动注销）、配置热重载回调 `OnConfigReloaded`、语言切换回调 `OnLanguageChanged`、托盘菜单项 `GetTrayMenuItems()`、能力暴露通过实现 `ICommandProvider` 交由 `CommandRegistry` 收集（`ModuleBase` 本身没有 `GetCommands()` 方法）。
 
 模块清单（`src/Host/Modules/ModuleRegistry.cs` 一次注册）：
 
@@ -65,7 +65,7 @@ Created → Initialized → Running → Stopped
 |---|---|---|---|
 | ScreenLock | — | 空闲/热键 PIN 锁屏 | — |
 | TaskScheduler | — | 计划任务调度与执行 | —（B4 二期） |
-| Awake | 15 | 保持唤醒 | awake.status / awake.on / awake.off |
+| Awake | 15 | 保持唤醒 | awake.status / awake.on / awake.off / awake.sleep / awake.sleep.cancel / awake.shutdown / awake.shutdown.cancel |
 | AudioSwitch | — | 热键切默认音频设备 | — |
 | AppAutoMute | — | 目标进程自动静音 | — |
 | MonitorProfile | 30 | DDC 显示器配置档定时切换 | — |
@@ -78,7 +78,7 @@ Created → Initialized → Running → Stopped
 
 - **ModuleManager**：按 Order 装配/启停，`CollectCommands()` 汇总各模块能力（逐模块 try/catch 隔离故障），`GetModuleStatus()` 输出状态快照
 - **ServiceContainer**：手写 DI；模块可 `GetService<T>()` 取共享服务（PinService、HotkeyService、日志、通知等）
-- **DynamicTrayController + MenuProjectionEngine**：`TrayContextMenu.xaml` 预留 `PluginSlotAnchorTop/Bottom` 双锚点，各模块菜单项按 Order 注入（250ms 防抖）；顶层静态项：桌面控制面板、开机自启、配置编辑器、打开配置目录、重载配置、语言、退出（需验 PIN）
+- **DynamicTrayController + MenuProjectionEngine**：`TrayContextMenu.xaml` 预留 `PluginSlotAnchorTop/Bottom` 双锚点，各模块菜单项按 Order 注入（150ms 防抖）；顶层静态项：桌面控制面板、开机自启、配置编辑器、打开配置目录、重载配置、关于、退出（退出仅在模块 guard 阻止时验 PIN；语言切换位于浮窗菜单）
 - **ConfigManager/ConfigService**：JSON 配置 + 热重载；数据目录优先级 `CARRODESK_DATA_DIR` > 便携模式（exe 旁 `portable.ini` → `app_data\`）> `%AppData%\CarroDesk\`
 
 ## 4. IPC 层（S1–S4 已实现，S5 预留）

@@ -1,5 +1,7 @@
 # CarroDesk 引入 Newtonsoft.Json 迁移与重构实施方案
 
+> 历史归档（2026-09/10，基于 net48 + C# 7.3 + Costura.Fody 的技术方案）；当前实现为 net10.0-windows + PublishSingleFile，见 DESIGN.md 与 PLAN-UPGRADE-DOTNET10.md，勿据此排障。
+
 > **文档状态**：方案拟定 / 待评审  
 > **制定时间**：2026-09-17  
 > **目标框架**：.NET Framework 4.8 (`net48`) / C# 7.3  
