@@ -25,6 +25,16 @@ namespace CarroDesk.Services.Tasks
         /// <summary>识别到的 schema 版本；字段缺失视为 1（历史数组格式）。</summary>
         public int SchemaVersion { get; set; } = TaskConfigService.CurrentSchemaVersion;
 
+        /// <summary>
+        /// 只读标记：出现"不能安全覆盖磁盘文件"的情况（IO/权限异常、更高 schema 版本、
+        /// 空文件、部分任务被跳过）时为 true。UI 应显示原因并拒绝整表覆盖保存。
+        /// </summary>
+        public bool ReadOnly { get; set; }
+
+        /// <summary>只读/告警原因（用于窗口横幅，已是可读中文短句）。</summary>
+        public string ReadOnlyReason { get; set; }
+
+        /// <summary>本次加载读到的文件原文，作为保存前的外部修改检测基线。</summary>
         public string RawJson { get; set; }
     }
 
@@ -134,6 +144,11 @@ namespace CarroDesk.Services.Tasks
         private static TaskLoadResult LoadLocked()
         {
             var result = new TaskLoadResult();
+            string json;
+
+            // 读文件单独成段：IO/权限/占用类异常绝不能当成"文件损坏"。
+            // 旧实现把它们一并交给 RecoverFromCorruptFile，会把完好的 tasks.json
+            // 备份后重写成 []——一次瞬时 IO 错误就抹掉全部任务。
             try
             {
                 if (!File.Exists(FilePath))
@@ -141,12 +156,23 @@ namespace CarroDesk.Services.Tasks
                     result.Errors.Add("tasks.json not found: " + FilePath);
                     return result;
                 }
-                string json = File.ReadAllText(FilePath, Encoding.UTF8);
-                result.RawJson = json;
+                json = File.ReadAllText(FilePath, Encoding.UTF8);
+            }
+            catch (Exception ex)
+            {
+                result.Errors.Add("load io exception: " + ex.Message);
+                MarkReadOnly(result, "读取 tasks.json 失败（" + ex.Message + "），已只读打开，磁盘文件未改动");
+                return result;
+            }
+
+            result.RawJson = json;
+            try
+            {
                 if (string.IsNullOrWhiteSpace(json))
                 {
                     // 空文件此前被静默当作"零任务"接受，用户看到的是"任务全没了"却毫无提示
                     result.Errors.Add("tasks.json is empty: " + FilePath);
+                    MarkReadOnly(result, "tasks.json 是空文件，已只读打开以防覆盖，请检查文件后点刷新");
                     return result;
                 }
 
@@ -167,6 +193,8 @@ namespace CarroDesk.Services.Tasks
                                       " is newer than supported " + CurrentSchemaVersion + " (read-only; file preserved)");
                     // 未来版本可能改变根结构，不能按 v1 解析失败后当作“损坏”重建，
                     // 否则一次旧版启动就可能把新版任务文件重写为空数组。
+                    MarkReadOnly(result, "tasks.json 由更高版本（v" + result.SchemaVersion +
+                                         "）写入，当前版本已只读打开，拒绝覆盖保存");
                     return result;
                 }
 
@@ -194,13 +222,48 @@ namespace CarroDesk.Services.Tasks
                     seen.Add(t.Name);
                     result.Tasks.Add(t);
                 }
+
+                // 有任务被跳过时，UI 看到的列表已不是磁盘全量；此时整表保存会永久删除被跳过的条目。
+                if (result.Errors.Count > 0)
+                {
+                    MarkReadOnly(result, "tasks.json 有 " + result.Errors.Count +
+                                         " 处问题（部分任务被跳过），已只读打开以防覆盖，请修复文件后点刷新");
+                }
             }
             catch (Exception ex)
             {
                 result.Errors.Add("load exception: " + ex.Message);
+                if (!ShouldRecoverFromCorruptFile(ex))
+                {
+                    MarkReadOnly(result, "读取/解析 tasks.json 异常（" + ex.Message + "），已只读打开，磁盘文件未改动");
+                    return result;
+                }
                 RecoverFromCorruptFile(result);
             }
             return result;
+        }
+
+        private static void MarkReadOnly(TaskLoadResult result, string reason)
+        {
+            result.ReadOnly = true;
+            result.ReadOnlyReason = reason;
+        }
+
+        /// <summary>
+        /// 只有"内容本身损坏"才允许备份后重建；IO/权限/文件占用等瞬时异常必须保持文件原样。
+        /// 独立成方法便于单元测试覆盖该分支，无需构造真实的文件占用环境。
+        /// </summary>
+        internal static bool ShouldRecoverFromCorruptFile(Exception ex)
+        {
+            for (Exception cur = ex; cur != null; cur = cur.InnerException)
+            {
+                if (cur is IOException || cur is UnauthorizedAccessException ||
+                    cur is System.Security.SecurityException || cur is NotSupportedException)
+                {
+                    return false;
+                }
+            }
+            return true;
         }
 
         /// <summary>
@@ -285,6 +348,56 @@ namespace CarroDesk.Services.Tasks
             lock (FileIoLock)
             {
                 SaveLocked(tasks);
+            }
+        }
+
+        /// <summary>
+        /// UI 保存入口：带加载基线，防止把"只读/外部已修改"的 tasks.json 整表覆盖。
+        /// 返回 false 时 error 是可直接展示的原因，且磁盘内容保持不变。
+        /// 其它调用方（调度器、旧编辑器、测试）继续使用 <see cref="Save(List{TaskDefinition})"/>。
+        /// </summary>
+        public static bool Save(List<TaskDefinition> tasks, TaskLoadResult baseline, out string error)
+        {
+            error = null;
+            lock (FileIoLock)
+            {
+                if (baseline != null)
+                {
+                    if (baseline.ReadOnly)
+                    {
+                        error = baseline.ReadOnlyReason ?? "当前任务配置已只读打开，拒绝覆盖保存";
+                        return false;
+                    }
+
+                    // 保存前核对磁盘内容：本次打开之后被手工编辑/远程下发/其它实例改过，
+                    // 直接整表覆盖会静默吞掉那些改动。
+                    if (!string.IsNullOrEmpty(baseline.RawJson))
+                    {
+                        string current;
+                        try { current = File.ReadAllText(FilePath, Encoding.UTF8); }
+                        catch (Exception ex)
+                        {
+                            error = "保存前核对 tasks.json 失败（" + ex.Message + "），磁盘文件未改动";
+                            return false;
+                        }
+                        if (!string.Equals(current, baseline.RawJson, StringComparison.Ordinal))
+                        {
+                            error = "tasks.json 在本次打开后被外部修改，为避免覆盖已拒绝保存；请点【刷新】重新加载后再操作";
+                            return false;
+                        }
+                    }
+                }
+
+                try
+                {
+                    SaveLocked(tasks);
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    error = "写入 tasks.json 失败：" + ex.Message;
+                    return false;
+                }
             }
         }
 

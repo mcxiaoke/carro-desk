@@ -156,6 +156,13 @@
 
         <!-- 顶部工具栏卡片 -->
         <Border Grid.Row="0" Background="White" BorderBrush="#FFE2E8F0" BorderThickness="0,0,0,1" Padding="16,10">
+            <StackPanel>
+            <!-- 加载异常横幅：只在 tasks.json 有问题时出现，防止整表覆盖用户数据 -->
+            <Border x:Name="LoadIssueBanner" Visibility="Collapsed" Background="#FFFEF3C7"
+                    BorderBrush="#FFF59E0B" BorderThickness="1" CornerRadius="4" Padding="10,6" Margin="0,0,0,8">
+                <TextBlock x:Name="LoadIssueText" Text="" Foreground="#FF92400E" FontSize="12"
+                           TextWrapping="Wrap" VerticalAlignment="Center"/>
+            </Border>
             <DockPanel LastChildFill="True">
                 <!-- 左侧动作按钮组 -->
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
@@ -177,6 +184,7 @@
                     <Button Content="⟳ 刷新" Height="30" Padding="10,0" Click="OnRefreshClick" ToolTip="重新加载任务配置与运行时状态"/>
                 </StackPanel>
             </DockPanel>
+            </StackPanel>
         </Border>
 
         <!-- 中部任务大盘列表卡片 -->

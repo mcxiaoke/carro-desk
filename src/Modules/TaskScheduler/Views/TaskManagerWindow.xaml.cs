@@ -27,6 +27,8 @@ namespace CarroDesk.Modules.TaskScheduler.Views
         private readonly Action _onTasksChanged;
         private readonly ObservableCollection<TaskRowViewModel> _items = new ObservableCollection<TaskRowViewModel>();
         private List<TaskDefinition> _tasks = new List<TaskDefinition>();
+        /// <summary>本次加载的基线：记录磁盘原文与只读标记，保存前用于拒绝覆盖。</summary>
+        private TaskLoadResult _loadResult;
         private readonly DispatcherTimer _ticker;
         private readonly DispatcherTimer _perfTicker;
         private int _perfSampling;   // 0/1：性能采样进行中（防止重叠）
@@ -198,12 +200,52 @@ namespace CarroDesk.Modules.TaskScheduler.Views
         public void LoadTasks()
         {
             TaskLoadResult result = null;
-            try { result = TaskConfigService.Load(); } catch { }
-            _tasks = result?.Tasks ?? new List<TaskDefinition>();
+            try { result = TaskConfigService.Load(); }
+            catch (Exception ex)
+            {
+                result = new TaskLoadResult
+                {
+                    ReadOnly = true,
+                    ReadOnlyReason = "加载 tasks.json 异常（" + ex.Message + "），已只读打开，磁盘文件未改动"
+                };
+            }
+            if (result == null)
+            {
+                result = new TaskLoadResult { ReadOnly = true, ReadOnlyReason = "加载任务配置失败，已只读打开" };
+            }
+
+            _loadResult = result;
+            _tasks = result.Tasks ?? new List<TaskDefinition>();
+            UpdateLoadIssueBanner(result);
 
             ApplyFilterAndRefreshList();
             UpdateStatsSummary();
             UpdateToolbarButtons();
+        }
+
+        /// <summary>
+        /// 只在配置有问题时显示一条非模态横幅（不弹窗打扰）；正常加载时完全隐藏。
+        /// </summary>
+        private void UpdateLoadIssueBanner(TaskLoadResult result)
+        {
+            if (LoadIssueBanner == null) return;
+
+            string reason = result?.ReadOnlyReason;
+            if (string.IsNullOrEmpty(reason) && result != null && result.FileRecovered)
+            {
+                reason = "tasks.json 已损坏并备份重建：" + result.RecoveredBackupPath +
+                         "（当前列表为空，请检查备份文件）";
+            }
+
+            if (string.IsNullOrEmpty(reason))
+            {
+                LoadIssueBanner.Visibility = Visibility.Collapsed;
+                LoadIssueText.Text = "";
+                return;
+            }
+
+            LoadIssueText.Text = reason;
+            LoadIssueBanner.Visibility = Visibility.Visible;
         }
 
         private void ApplyFilterAndRefreshList()
@@ -491,9 +533,29 @@ namespace CarroDesk.Modules.TaskScheduler.Views
 
         private void SaveTasksAndNotify(string selectName)
         {
+            string error;
+            bool saved;
             try
             {
-                TaskConfigService.Save(_tasks);
+                saved = TaskConfigService.Save(_tasks, _loadResult, out error);
+            }
+            catch (Exception ex)
+            {
+                saved = false;
+                error = "保存任务配置文件失败：" + ex.Message;
+            }
+
+            if (!saved)
+            {
+                // 只在这次用户主动保存被拒绝时给提示，不打扰后台运行。
+                MessageBox.Show(this, error ?? "保存任务配置文件失败", "保存被拒绝",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                // 不 Reload、不 LoadTasks：保留用户本次编辑，修好文件后可重试。
+                return;
+            }
+
+            try
+            {
                 _scheduler?.Reload();
                 _onTasksChanged?.Invoke();
                 LoadTasks();
@@ -506,7 +568,8 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             }
             catch (Exception ex)
             {
-                MessageBox.Show(this, $"保存任务配置文件失败:\n{ex.Message}", "保存失败", MessageBoxButton.OK, MessageBoxImage.Error);
+                // 落盘已成功，后续刷新失败只记日志，不误报"保存失败"。
+                TaskLogger.Warn("system", "post-save reload failed: " + ex.Message);
             }
         }
     }

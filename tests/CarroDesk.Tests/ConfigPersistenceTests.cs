@@ -277,5 +277,76 @@ namespace CarroDesk.Tests
             Assert.IsTrue(service.Verify("4321"), "未落盘的 pending PIN 必须可校验");
             Assert.IsFalse(service.Verify("0000"));
         }
+
+        // ---------- 任务配置数据保护（2026-11-09 review 第一批） ----------
+
+        [TestMethod]
+        public void TaskConfig_IoFailure_IsNotTreatedAsCorruptFile()
+        {
+            // 瞬时 IO / 权限异常绝不能触发"备份后重写 []"，否则一次读失败就抹掉全部任务。
+            Assert.IsFalse(TaskConfigService.ShouldRecoverFromCorruptFile(new IOException("locked by antivirus")));
+            Assert.IsFalse(TaskConfigService.ShouldRecoverFromCorruptFile(new UnauthorizedAccessException()));
+            Assert.IsFalse(TaskConfigService.ShouldRecoverFromCorruptFile(
+                new Exception("wrapper", new IOException("inner"))));
+            Assert.IsTrue(TaskConfigService.ShouldRecoverFromCorruptFile(
+                new Newtonsoft.Json.JsonException("bad json")));
+        }
+
+        [TestMethod]
+        public void TaskConfig_Save_RejectsReadOnlyBaseline_AndKeepsFile()
+        {
+            string futureJson = "{\"version\":99,\"items\":[{\"name\":\"future-task\"}]}";
+            File.WriteAllText(TaskConfigService.FilePath, futureJson, Encoding.UTF8);
+
+            var baseline = TaskConfigService.Load();
+            Assert.IsTrue(baseline.ReadOnly, "更高 schema 版本必须标记为只读");
+
+            string error;
+            bool saved = TaskConfigService.Save(new List<TaskDefinition>(), baseline, out error);
+
+            Assert.IsFalse(saved, "只读基线必须拒绝整表覆盖保存");
+            Assert.IsFalse(string.IsNullOrEmpty(error), "必须给出可展示的拒绝原因");
+            Assert.AreEqual(futureJson, File.ReadAllText(TaskConfigService.FilePath, Encoding.UTF8),
+                "拒绝保存后磁盘内容必须一字不变");
+        }
+
+        [TestMethod]
+        public void TaskConfig_Save_RejectsExternalModification_AndKeepsFile()
+        {
+            string initial = "[{\"name\":\"t1\",\"enabled\":true,\"trigger\":{\"type\":\"manual\"},\"action\":{\"file\":\"cmd.exe\"}}]";
+            File.WriteAllText(TaskConfigService.FilePath, initial, Encoding.UTF8);
+            var baseline = TaskConfigService.Load();
+            Assert.IsFalse(baseline.ReadOnly);
+            Assert.AreEqual(1, baseline.Tasks.Count);
+
+            // 模拟本次打开后，用户手工编辑 / 远程下发 / 其它实例改动了同一个文件
+            string external = initial + "\n// edited outside";
+            File.WriteAllText(TaskConfigService.FilePath, external, Encoding.UTF8);
+
+            string error;
+            bool saved = TaskConfigService.Save(baseline.Tasks, baseline, out error);
+
+            Assert.IsFalse(saved, "外部修改后必须拒绝覆盖");
+            Assert.IsTrue(error != null && error.Contains("外部修改"), "原因应说明是外部修改，实际: " + error);
+            Assert.AreEqual(external, File.ReadAllText(TaskConfigService.FilePath, Encoding.UTF8),
+                "拒绝保存后必须保留外部改动");
+        }
+
+        [TestMethod]
+        public void TaskConfig_Save_AcceptsUnchangedBaseline()
+        {
+            string initial = "[{\"name\":\"t1\",\"enabled\":true,\"trigger\":{\"type\":\"manual\"},\"action\":{\"file\":\"cmd.exe\"}}]";
+            File.WriteAllText(TaskConfigService.FilePath, initial, Encoding.UTF8);
+            var baseline = TaskConfigService.Load();
+            Assert.IsFalse(baseline.ReadOnly);
+
+            string error;
+            bool saved = TaskConfigService.Save(baseline.Tasks, baseline, out error);
+
+            Assert.IsTrue(saved, "无异常的正常保存必须成功，实际: " + error);
+            var reloaded = TaskConfigService.Load();
+            Assert.AreEqual(1, reloaded.Tasks.Count);
+            Assert.AreEqual(0, reloaded.Errors.Count, "实际: " + string.Join("; ", reloaded.Errors));
+        }
     }
 }
