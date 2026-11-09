@@ -324,12 +324,20 @@ namespace CarroDesk
             }
 
             int newId = 0;
+            string hotkeyError = null;
             try
             {
-                newId = hotkeys.Register("Host.FloatingPanel", newKey, () => ToggleFloatingPanel(), out _);
+                newId = hotkeys.Register("Host.FloatingPanel", newKey, () => ToggleFloatingPanel(), out hotkeyError);
             }
-            catch { }
-            if (newId <= 0) return; // 注册失败时保留旧热键
+            catch (Exception ex) { hotkeyError = ex.Message; }
+            if (newId <= 0)
+            {
+                // 注册失败此前静默丢弃错误；只记日志，不弹气泡打扰用户。
+                Services?.GetService<ILoggerService>()?.LogWarning("App",
+                    "浮窗热键 " + newKey + " 注册失败，保留原热键：" +
+                    (string.IsNullOrEmpty(hotkeyError) ? "未知原因（可能被其它程序占用）" : hotkeyError));
+                return;
+            }
 
             int oldId = _floatingPanelHotkeyId;
             _floatingPanelHotkeyId = newId;

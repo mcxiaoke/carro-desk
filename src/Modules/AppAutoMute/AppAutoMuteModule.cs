@@ -166,8 +166,9 @@ namespace CarroDesk.Modules.AppAutoMute
 
             bool isWhitelist = string.Equals(Config.Mode, "Whitelist", StringComparison.OrdinalIgnoreCase);
 
-            // 黑名单模式下，若 TargetApps 为空则无需静音任何应用
-            if (!isWhitelist && (Config.TargetApps == null || Config.TargetApps.Count == 0))
+            // 空清单两种模式都不静音：白名单为空表示"尚未配置目标"，
+            // 旧实现只保护黑名单，白名单分支会把除前台外所有发声进程静音（表现像声卡坏了）。
+            if (Config.TargetApps == null || Config.TargetApps.Count == 0)
                 return;
 
             if (isWhitelist)
@@ -207,6 +208,8 @@ namespace CarroDesk.Modules.AppAutoMute
         {
             _muteTimer.Stop();
             if (!IsEnabledUser || Config == null) return;
+            // 与 EvaluateForeground 同源保护：定时兜底路径同样不得在空清单时全量静音。
+            if (Config.TargetApps == null || Config.TargetApps.Count == 0) return;
 
             string currentFore = _foregroundTracker?.CurrentProcessName;
             bool isWhitelist = string.Equals(Config.Mode, "Whitelist", StringComparison.OrdinalIgnoreCase);

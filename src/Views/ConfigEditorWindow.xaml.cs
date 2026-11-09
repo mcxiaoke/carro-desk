@@ -223,11 +223,46 @@ namespace CarroDesk.Views
                 byte[] salt = PinService.GenerateSalt();
                 string saltStr = Convert.ToBase64String(salt);
                 string hashStr = PinService.ComputeHash(salt, newPin);
+
+                // PIN 是安全凭据，不能像语言/自启那样留在草稿里等"保存并应用"：
+                // 旧实现弹"新 PIN 已生成"后关窗即丢，用户以为已换掉泄露的旧 PIN。
+                if (!PersistPinImmediately(saltStr, hashStr)) return;
+
                 _editing.PinSalt = saltStr;
                 _editing.PinHash = hashStr;
-                PinStatusText.Text = Loc.T("Config.PinConfigured") + " (" + MaskHash(_editing.PinHash) + ") *" + Loc.T("Config.PinModifiedHint");
-                ValidateText.Text = Loc.T("Config.PinModifiedHint");
-                MessageBox.Show(Loc.T("Config.NewPinGenerated"), Loc.T("Common.Prompt"), MessageBoxButton.OK, MessageBoxImage.Information);
+                RefreshDynamicTexts();
+                ValidateText.Text = Loc.T("Config.NewPinGenerated");
+                MessageBox.Show(Loc.T("Config.NewPinGenerated"), Loc.T("Common.Success"),
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+        }
+
+        /// <summary>
+        /// 只持久化 PIN 两个字段并让 PIN 服务立即重建凭据；其它草稿字段（语言/自启）
+        /// 仍由"保存并应用"统一提交，不因改 PIN 被顺带写盘。
+        /// 失败时回滚内存配置并提示，绝不显示"已生效"。
+        /// </summary>
+        private bool PersistPinImmediately(string salt, string hash)
+        {
+            var target = _configManager?.Current;
+            if (target == null) return false;
+
+            var previous = target.Clone();
+            try
+            {
+                target.PinSalt = salt;
+                target.PinHash = hash;
+                _configManager.Save();
+                _pinService?.SetFromConfig(salt, hash);   // 清 pending、重建校验凭据
+                return true;
+            }
+            catch (Exception ex)
+            {
+                previous.CopyTo(target);
+                try { _configManager.Save(); } catch { }
+                MessageBox.Show(Loc.T("Config.SaveFailed", "保存配置失败") + ": " + ex.Message,
+                    Loc.T("Common.Error"), MessageBoxButton.OK, MessageBoxImage.Error);
+                return false;
             }
         }
 

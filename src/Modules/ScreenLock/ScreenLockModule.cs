@@ -305,12 +305,24 @@ namespace CarroDesk.Modules.ScreenLock
 
         public bool LockSafe()
         {
-            if (Config == null || !Config.Enabled) return false;
+            if (Config == null || !Config.Enabled)
+            {
+                LogWarning("锁定请求被忽略：锁屏模块未启用");
+                return false;
+            }
             var controller = Controller;
-            if (controller == null) return false;
+            if (controller == null)
+            {
+                LogWarning("锁定请求被忽略：锁屏控制器尚未就绪");
+                return false;
+            }
             if (controller.LockSafe()) return true;
 
-            // 锁定失败（LockController 内部已回滚，不会留下"键盘被钩住但无 PIN 界面"的半锁定态）。
+            // 失败最常见原因是未配置 PIN（LockController.LockSafe 直接返回 false），
+            // 其次是锁屏窗口/键盘钩子创建失败。这里只记日志：自动空闲触发不打扰用户，
+            // 用户主动点菜单的反馈由托盘 ClickAction 负责。
+            LogWarning("锁定失败：未配置 PIN，或锁屏窗口/键盘钩子创建失败（已回滚）");
+
             // 必须重置空闲状态机：否则 _idleFired 已置位会让后续空闲周期不再重试，锁屏彻底失效。
             ResetIdleMachine();
             return false;
@@ -462,7 +474,15 @@ namespace CarroDesk.Modules.ScreenLock
                 Id = "screenlock_lock_now",
                 Header = Loc.T("Tray.LockNow", "立即锁定"),
                 InputGestureText = Config?.Hotkey ?? "Ctrl+Alt+L",
-                ClickAction = () => LockSafe()
+                ClickAction = () =>
+                {
+                    // 仅对用户主动点击给一次反馈；自动空闲锁定失败只记日志，避免反复打扰。
+                    if (!LockSafe())
+                    {
+                        Context?.ShowNotification(Loc.T("Tray.LockFailed",
+                            "未能锁定：请先设置 PIN，或查看日志了解失败原因"));
+                    }
+                }
             };
             root.Children.Add(lockItem);
 

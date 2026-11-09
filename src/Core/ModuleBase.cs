@@ -257,12 +257,20 @@ namespace CarroDesk.Core
             // 先注册新键，成功后再注销旧键。新键被外部程序占用时保留原工作热键，
             // 避免一次配置重载让模块彻底失去快捷操作。
             int newId = 0;
+            string hotkeyError = null;
             try
             {
-                newId = hotkeys.Register(Id, newKey, binding.Action, out _);
+                newId = hotkeys.Register(Id, newKey, binding.Action, out hotkeyError);
             }
-            catch { }
-            if (newId <= 0) return;
+            catch (Exception ex) { hotkeyError = ex.Message; }
+            if (newId <= 0)
+            {
+                // 注册失败（被占用/冲突）此前完全静默，用户以为热键已生效。
+                // 只写日志，不弹气泡：托盘工具不应因后台注册失败打扰用户。
+                LogWarning("热键 " + newKey + " 注册失败，保留原热键：" +
+                    (string.IsNullOrEmpty(hotkeyError) ? "未知原因（可能被其它程序占用）" : hotkeyError));
+                return;
+            }
 
             int oldId = binding.CurrentHotkeyId;
             binding.CurrentHotkeyId = newId;

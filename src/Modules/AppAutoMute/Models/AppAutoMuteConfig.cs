@@ -9,7 +9,9 @@ namespace CarroDesk.Modules.AppAutoMute.Models
         public int MuteDelayMs { get; set; } = 1000;
         public int UnmuteDelayMs { get; set; } = 500;
         public string Mode { get; set; } = "Blacklist"; // "Blacklist" or "Whitelist"
-        public List<string> TargetApps { get; set; } = new List<string> { "chrome.exe", "QQMusic.exe", "cloudmusic.exe" };
+        // 默认空清单：装完即用就静音 Chrome / QQ 音乐会让不知情的用户以为"声音坏了"。
+        // 用户需要在设置窗口显式添加目标应用后才生效。
+        public List<string> TargetApps { get; set; } = new List<string>();
 
         public AppAutoMuteConfig Clone()
         {
