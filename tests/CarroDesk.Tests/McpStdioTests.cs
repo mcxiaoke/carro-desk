@@ -30,6 +30,12 @@ namespace CarroDesk.Tests
 
         private static NamedPipeCommandServer StartTestServer(out string pipeName)
         {
+            pipeName = "CarroDesk.mcp-test." + Guid.NewGuid().ToString("N");
+            return StartTestServerOn(pipeName);
+        }
+
+        private static NamedPipeCommandServer StartTestServerOn(string pipeName)
+        {
             var registry = new CommandRegistry();
             registry.Register("test", new CommandDescriptor
             {
@@ -57,7 +63,6 @@ namespace CarroDesk.Tests
                 id => ModuleStatus.Running,
                 new PinGuard(new FakePinService()),
                 new NullCommandAuditSink());
-            pipeName = "CarroDesk.mcp-test." + Guid.NewGuid().ToString("N");
             var server = new NamedPipeCommandServer(host, pipeName, null, useAcl: false);
             server.Start();
             return server;
@@ -89,6 +94,68 @@ namespace CarroDesk.Tests
                     return response;
             }
             return null;
+        }
+
+        /// <summary>按行喂入请求，并可在返回指定行之前触发副作用（如"宿主这时才启动"）。</summary>
+        private sealed class ScriptedReader : TextReader
+        {
+            private readonly string[] _lines;
+            private readonly Action<int> _beforeLine;
+            private int _index;
+
+            public ScriptedReader(string[] lines, Action<int> beforeLine)
+            {
+                _lines = lines;
+                _beforeLine = beforeLine;
+            }
+
+            public override string ReadLine()
+            {
+                if (_index >= _lines.Length) return null;
+                int i = _index++;
+                if (_beforeLine != null) _beforeLine(i);
+                return _lines[i];
+            }
+        }
+
+        [TestMethod]
+        public void Run_ToolsList_RecoversAfterHostStartsInSameSession()
+        {
+            // 回归：旧实现在宿主未启动时把"空能力表"缓存进 _capabilities，
+            // 导致整个 MCP 会话永远 0 个工具，只能重启客户端。
+            string pipeName = "CarroDesk.mcp-recover." + Guid.NewGuid().ToString("N");
+            NamedPipeCommandServer server = null;
+            var reader = new ScriptedReader(new[]
+            {
+                "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}",
+                "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}"
+            }, i =>
+            {
+                if (i == 1)
+                {
+                    server = StartTestServerOn(pipeName);
+                    System.Threading.Thread.Sleep(150);   // 等 accept loop 进入监听
+                }
+            });
+
+            try
+            {
+                var output = new StringWriter();
+                int exit = McpStdioServer.Run(reader, output, new StringWriter(),
+                    () => new PipeRpcClient(pipeName, 400));
+                Assert.AreEqual(0, exit);
+
+                var lines = output.ToString().Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                Assert.AreEqual(2, lines.Length, "应有两条 tools/list 响应");
+                var first = (JArray)JObject.Parse(lines[0])["result"]["tools"];
+                var second = (JArray)JObject.Parse(lines[1])["result"]["tools"];
+                Assert.AreEqual(0, first.Count, "宿主未启动时工具表应为空");
+                Assert.IsTrue(second.Count > 0, "宿主启动后同一会话再次 tools/list 必须恢复工具表");
+            }
+            finally
+            {
+                if (server != null) server.Dispose();
+            }
         }
 
         [TestMethod]

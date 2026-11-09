@@ -188,6 +188,9 @@ namespace CarroDesk.Host.Commands
                 summary = c.Summary,
                 risk = c.Risk.ToString(),
                 requiresPin = c.RequiresPin,
+                // 能力表必须反映动态 PIN 策略：services.* 声明 requiresPin=false，
+                // 但实际按服务策略要求 PIN，模型/CLI 只看 requiresPin 会被 -32002 拒绝。
+                pinPolicy = c.RequiresPin ? "always" : (c.RequiresPinFor != null ? "per-request" : "none"),
                 timeoutMs = c.TimeoutMs,
                 parameters = parameters.Select(p => new
                 {

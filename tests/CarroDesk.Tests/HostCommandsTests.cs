@@ -140,5 +140,42 @@ namespace CarroDesk.Tests
 
             Assert.AreNotEqual(before, after);
         }
+
+        [TestMethod]
+        public void CapabilitiesList_ExposesPinPolicyMetadata()
+        {
+            // services.* 声明 requiresPin=false 但按服务策略动态要 PIN；
+            // 能力表必须下发 pinPolicy，否则模型会盲目重试直到触发 PinGuard 封锁。
+            var registry = new CommandRegistry();
+            registry.Register("test", new CommandDescriptor
+            {
+                Name = "test.always", Summary = "always", Risk = CommandRisk.ReadOnly,
+                RequiresPin = true, Handler = r => CommandResult.Success()
+            });
+            registry.Register("test", new CommandDescriptor
+            {
+                Name = "test.dynamic", Summary = "dynamic", Risk = CommandRisk.Privileged,
+                RequiresPin = false, RequiresPinFor = r => true,
+                Handler = r => CommandResult.Success()
+            });
+            registry.Register("test", new CommandDescriptor
+            {
+                Name = "test.none", Summary = "none", Risk = CommandRisk.ReadOnly,
+                Handler = r => CommandResult.Success()
+            });
+            HostCommands.Install(registry, null);
+
+            var host = new CommandHost(registry, id => ModuleStatus.Running, null, new NullCommandAuditSink());
+            var result = host.Invoke(CommandRequest.Create("host.capabilities.list"));
+            Assert.IsTrue(result.Ok, result.Error != null ? result.Error.Message : "");
+
+            var caps = (JArray)JToken.FromObject(result.Data)["capabilities"];
+            Func<string, JObject> find = name => caps.Children<JObject>()
+                .First(c => string.Equals((string)c["name"], name, StringComparison.Ordinal));
+
+            Assert.AreEqual("always", (string)find("test.always")["pinPolicy"]);
+            Assert.AreEqual("per-request", (string)find("test.dynamic")["pinPolicy"]);
+            Assert.AreEqual("none", (string)find("test.none")["pinPolicy"]);
+        }
     }
 }

@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using CarroDesk.Core.Commands;
 using CarroDesk.Host.Commands;
+using Newtonsoft.Json;
 
 namespace CarroDesk.Host.Ipc
 {
@@ -34,8 +35,24 @@ namespace CarroDesk.Host.Ipc
                 return 0;
             }
 
-            error.WriteLine("error " + result.Error.Code + ": " + result.Error.Message);
-            return result.Error.Code == CommandErrorCodes.TransportError ? 3 : 2;
+            int code = result.Error != null ? result.Error.Code : CommandErrorCodes.Internal;
+            string message = result.Error != null ? result.Error.Message : "unknown error";
+
+            if (args.Json)
+            {
+                // --json 的错误路径也必须可程序化读取：固定 {"ok":false,"code":...,"message":...}。
+                error.WriteLine("{\"ok\":false,\"code\":" + code +
+                                ",\"message\":" + JsonConvert.ToString(message ?? "") + "}");
+            }
+            else
+            {
+                if (code == CommandErrorCodes.TransportError)
+                {
+                    message += "（宿主未运行？请先启动 CarroDesk 托盘程序）";
+                }
+                error.WriteLine("error " + code + ": " + message);
+            }
+            return code == CommandErrorCodes.TransportError ? 3 : 2;
         }
     }
 }

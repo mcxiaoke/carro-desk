@@ -109,9 +109,10 @@ namespace CarroDesk.Host.Ipc
                         ["version"] = HostVersion()
                     },
                     ["instructions"] =
-                        "CarroDesk：Windows 本机工具集（锁屏/音频/唤醒/任务/服务）的 MCP 服务器。" +
+                        "CarroDesk：Windows 本机工具集的 MCP 服务器（实际能力以 tools/list 实时输出为准）。" +
                         "唯一状态在宿主进程 CarroDesk.exe；宿主未运行时所有调用报 -32020。\n" +
-                        "工具清单经 tools/list 动态获取，随宿主升级自动变化，不要凭记忆猜工具名。\n" +
+                        "工具清单经 tools/list 动态获取，随宿主升级自动变化，不要凭记忆猜工具名；" +
+                        "若首次 tools/list 为空，说明宿主当时未启动，稍后重新请求即可（无需重启本会话）。\n" +
                         "约定：\n" +
                         "1) 需要口令的工具（描述里有标注）先向用户询问 PIN，放入 arguments.pin；" +
                         "不要猜测或盲目重试——连错 5 次会触发口令封锁（-32002 blocked）。\n" +
@@ -144,12 +145,15 @@ namespace CarroDesk.Host.Ipc
                 var result = _clientFactory().Call(CommandRequest.Create("host.capabilities.list", "mcp"));
                 if (!result.Ok)
                 {
-                    _log.WriteLine("mcp: capabilities fetch failed: "
+                    _log.WriteLine("mcp: capabilities fetch failed (will retry on next tools/list): "
                         + (result.Error != null ? result.Error.Code + " " + result.Error.Message : "unknown"));
-                    _capabilities = new JObject { ["capabilities"] = new JArray() };
+                    // 关键：失败时不缓存空工具表。MCP 客户端常先于宿主启动，
+                    // 旧实现会让整个会话永远看到 0 个工具，只能重启客户端。
+                    _capabilities = null;
                     return;
                 }
-                _capabilities = result.Data as JObject ?? new JObject { ["capabilities"] = new JArray() };
+                // 解析不出 JObject 也保持 null，下次 tools/list 继续重试。
+                _capabilities = result.Data as JObject;
             }
 
             private string CallTool(object id, JObject request)
@@ -209,9 +213,33 @@ namespace CarroDesk.Host.Ipc
                     }
                 }
 
-                var requiresPin = (bool?)capability["requiresPin"] == true;
+                // 优先读能力表下发的 pinPolicy；兼容旧宿主（无此字段时退回 requiresPin）。
+                var pinPolicy = (string)capability["pinPolicy"];
+                if (string.IsNullOrEmpty(pinPolicy))
+                {
+                    pinPolicy = (bool?)capability["requiresPin"] == true ? "always" : "none";
+                }
+                bool alwaysPin = string.Equals(pinPolicy, "always", StringComparison.OrdinalIgnoreCase);
+                bool dynamicPin = string.Equals(pinPolicy, "per-request", StringComparison.OrdinalIgnoreCase);
+
+                // 把 pin 声明进 inputSchema：部分 MCP 客户端会丢弃未声明的 arguments 字段。
+                if (alwaysPin || dynamicPin)
+                {
+                    properties["pin"] = new JObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = alwaysPin
+                            ? "本能力需要 PIN，请在 arguments 中传入"
+                            : "按参数动态判定是否需要 PIN；若返回 -32002 请向用户索取后重试"
+                    };
+                }
+
                 var summary = (string)capability["summary"] ?? (string)capability["name"];
-                var descriptionText = requiresPin ? summary + "（需口令：arguments 中传 pin）" : summary;
+                var descriptionText = alwaysPin
+                    ? summary + "（需口令：arguments 中传 pin）"
+                    : dynamicPin
+                        ? summary + "（部分参数按策略需要口令，arguments.pin 可选）"
+                        : summary;
 
                 return new JObject
                 {

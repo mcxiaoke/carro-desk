@@ -1,5 +1,7 @@
 using System;
+using System.IO;
 using CarroDesk;
+using CarroDesk.Common;
 using CarroDesk.Host.Ipc;
 
 namespace CarroDesk.Cli
@@ -29,12 +31,30 @@ namespace CarroDesk.Cli
                     return McpStdioServer.Run(Console.In, Console.Out, Console.Error, () => new PipeRpcClient());
                 }
 
+                // 人肉 / AI 自助发现入口：--help / -h / help / ctl help / --version / -v
+                string first = args != null && args.Length > 0 ? args[0] : null;
+                string second = args != null && args.Length > 1 ? args[1] : null;
+                bool ctlHelp = string.Equals(first, "ctl", StringComparison.OrdinalIgnoreCase) && IsHelp(second);
+                if (IsHelp(first) || ctlHelp)
+                {
+                    PrintUsage(Console.Out);
+                    return 0;
+                }
+                if (string.Equals(first, "--version", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(first, "-v", StringComparison.OrdinalIgnoreCase))
+                {
+                    Console.Out.WriteLine("CarroDesk.Cli " + AppInfo.DisplayVersion);
+                    Console.Out.WriteLine("informational: " + AppInfo.InformationalVersion);
+                    Console.Out.WriteLine("runtime: " + AppInfo.DotNetRuntime);
+                    return 0;
+                }
+
                 ControlArgs parsed;
                 string parseError;
                 if (!ControlArgs.TryParse(args, out parsed, out parseError))
                 {
                     Console.Error.WriteLine(parseError ?? "not a ctl invocation");
-                    PrintUsage();
+                    PrintUsage(Console.Error);
                     return 1;
                 }
 
@@ -48,14 +68,35 @@ namespace CarroDesk.Cli
             }
         }
 
-        private static void PrintUsage()
+        private static bool IsHelp(string token)
         {
-            Console.Error.WriteLine("usage:");
-            Console.Error.WriteLine("  CarroDesk.Cli ctl <capability> [--json] [--pin <pin>] [--pipe <name>] [--timeout <ms>] [--<param> <value> ...]");
-            Console.Error.WriteLine("  CarroDesk.Cli --mcp");
-            Console.Error.WriteLine("examples:");
-            Console.Error.WriteLine("  CarroDesk.Cli ctl host.status --json");
-            Console.Error.WriteLine("  CarroDesk.Cli ctl host.capabilities.list");
+            return string.Equals(token, "--help", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(token, "-h", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(token, "help", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static void PrintUsage(TextWriter w)
+        {
+            w.WriteLine("CarroDesk.Cli - Windows tray host control client");
+            w.WriteLine("");
+            w.WriteLine("usage:");
+            w.WriteLine("  CarroDesk.Cli ctl <capability> [--json] [--pin <pin>] [--pipe <name>] [--timeout <ms>] [--<param> <value> ...]");
+            w.WriteLine("  CarroDesk.Cli --mcp                 (MCP stdio adapter; stdout is protocol JSON only)");
+            w.WriteLine("  CarroDesk.Cli --help | -h | help | ctl help");
+            w.WriteLine("  CarroDesk.Cli --version | -v");
+            w.WriteLine("");
+            w.WriteLine("discover capabilities (host must be running):");
+            w.WriteLine("  CarroDesk.Cli ctl host.capabilities.list --json");
+            w.WriteLine("  CarroDesk.Cli ctl host.guide           (full AI-agent manual)");
+            w.WriteLine("");
+            w.WriteLine("examples:");
+            w.WriteLine("  CarroDesk.Cli ctl host.status --json");
+            w.WriteLine("  CarroDesk.Cli ctl awake.on --minutes 120");
+            w.WriteLine("  CarroDesk.Cli ctl services.start --name GameViewerService");
+            w.WriteLine("");
+            w.WriteLine("exit codes: 0 ok | 1 usage | 2 capability/business error | 3 host unreachable");
+            w.WriteLine("errors: -32001 module unavailable | -32002 PIN | -32003 rate limited | -32004 timeout | -32020 host not running");
+            w.WriteLine("with --json, failures are written to stderr as {\"ok\":false,\"code\":<int>,\"message\":\"...\"}");
         }
     }
 }

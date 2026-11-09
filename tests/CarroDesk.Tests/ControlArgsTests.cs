@@ -1,6 +1,9 @@
 using System;
+using System.IO;
 using CarroDesk;
+using CarroDesk.Host.Ipc;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Newtonsoft.Json.Linq;
 
 namespace CarroDesk.Tests
 {
@@ -101,6 +104,24 @@ namespace CarroDesk.Tests
             Assert.IsFalse(ControlArgs.IsControlInvocation(new[] { "--mcp" }));
             Assert.IsFalse(ControlArgs.IsControlInvocation(new[] { "somethingelse" }));
             Assert.IsTrue(ControlArgs.IsControlInvocation(new[] { "CTL", "host.status" }));
+        }
+
+        [TestMethod]
+        public void Forward_JsonFailure_EmitsStructuredErrorObject()
+        {
+            var args = new ControlArgs { Method = "host.status", Json = true };
+            var client = new PipeRpcClient("CarroDesk.no-such-pipe." + Guid.NewGuid().ToString("N"), 200);
+            var stdout = new StringWriter();
+            var stderr = new StringWriter();
+
+            int exit = ControlForwarder.Forward(args, client, stdout, stderr);
+
+            Assert.AreEqual(3, exit);
+            Assert.AreEqual("", stdout.ToString().Trim(), "--json 失败时 stdout 应为空");
+            var obj = JObject.Parse(stderr.ToString().Trim());
+            Assert.AreEqual(false, (bool)obj["ok"]);
+            Assert.AreEqual(-32020, (int)obj["code"]);
+            Assert.IsFalse(string.IsNullOrEmpty((string)obj["message"]));
         }
     }
 }
