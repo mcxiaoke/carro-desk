@@ -46,6 +46,13 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
                 {
                     // 空关键字与停用规则直接剔除：手工编辑过的坏配置不得让模块异常
                     if (rule == null || !rule.Enabled || string.IsNullOrWhiteSpace(rule.Pattern)) continue;
+
+                    // 服务层裁剪：设置窗口之外的路径（手改 config.json / 远程下发）也必须受限，
+                    // 否则数千条规则或超长关键字会让每次复制的 IndexOf 匹配拖住 UI 线程。
+                    // 上限与 ClipboardHistoryConfig 的 UI 校验保持同源。
+                    if (accepted.Count >= ClipboardHistoryConfig.MaxFilterRules) break;
+                    if (rule.Pattern.Length > ClipboardHistoryConfig.MaxFilterPatternLength) continue;
+
                     accepted.Add(rule);
                 }
             }

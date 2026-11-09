@@ -16,6 +16,7 @@ namespace CarroDesk.Tests
     /// 约定（与设计一致，改动前务必确认用户是否仍然要这个语义）：
     ///   · 命中即整条丢弃：不入内存、不落盘；
     ///   · 只影响此后的记录，不回溯删除历史中已存在的同内容条目；
+    ///     历史中已存在的命中项由用户显式调用 PurgeSensitiveHistory() 清理；
     ///   · 匹配发生在 MaxTextLength 截断之前，关键字落在被截掉的尾部同样会拦截；
     ///   · 总开关默认关闭。
     /// </summary>
@@ -300,6 +301,51 @@ namespace CarroDesk.Tests
                 win.Show();
                 win.Close();
             });
+        }
+
+        [TestMethod]
+        public void ClipboardFilter_ClampsRuleCountAndPatternLength_AtServiceLayer()
+        {
+            // 非 UI 路径（手改 config.json / 远程下发）也必须受限：
+            // 规则数量与关键字长度只靠设置窗口校验是不够的。
+            var config = new ClipboardHistoryConfig { FilterEnabled = true };
+            for (int i = 0; i < ClipboardHistoryConfig.MaxFilterRules + 50; i++)
+            {
+                config.FilterRules.Add(new ClipboardFilterRule { Pattern = "kw" + i });
+            }
+            config.FilterRules.Add(new ClipboardFilterRule
+            {
+                Pattern = new string('x', ClipboardHistoryConfig.MaxFilterPatternLength + 1)
+            });
+
+            var filter = ClipboardTextFilter.FromConfig(config);
+            Assert.AreEqual(ClipboardHistoryConfig.MaxFilterRules, filter.RuleCount,
+                "规则数必须被服务层裁剪到上限");
+
+            ClipboardFilterRule hit;
+            Assert.IsFalse(filter.TryMatch(
+                    new string('x', ClipboardHistoryConfig.MaxFilterPatternLength + 1), out hit),
+                "超长关键字不得进入规则集");
+        }
+
+        [TestMethod]
+        public void PurgeSensitiveHistory_RemovesExistingHitsOnlyOnExplicitCall()
+        {
+            var storage = new MemoryClipboardStorage();
+            var service = new ClipboardHistoryService(storage);
+            service.Start(new ClipboardHistoryConfig());   // 过滤默认关闭
+            service.RecordText("api_key=SECRET-123");
+            service.RecordText("ordinary text");
+            Assert.AreEqual(2, service.Count);
+
+            service.ApplyConfig(ConfigWith("SECRET-123"));
+            Assert.AreEqual(2, service.Count, "配置变更本身不得自动回溯删除历史");
+
+            int removed = service.PurgeSensitiveHistory();
+            Assert.AreEqual(1, removed);
+            Assert.AreEqual(1, service.Count);
+            Assert.AreEqual("ordinary text", service.GetItems()[0].FullText);
+            Assert.AreEqual(1, storage.SavedItems.Count, "显式清理结果必须立即落盘");
         }
     }
 }

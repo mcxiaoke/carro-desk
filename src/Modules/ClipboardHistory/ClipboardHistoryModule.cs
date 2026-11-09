@@ -59,10 +59,13 @@ namespace CarroDesk.Modules.ClipboardHistory
                 _crypto = new ClipboardStorageCrypto { Enabled = Config != null && Config.EncryptStorage };
                 var storage = new JsonClipboardHistoryStorage(storagePath, _crypto);
                 storage.DecryptionFailed += OnHistoryDecryptionFailed;
+                // 写盘 / Flush 失败只记日志，不弹通知：复制是高频动作，避免打扰用户。
+                storage.LogWarning = LogWarning;
                 // 保存模块自建的存储引用：其写入是后台合并落盘（不阻塞 UI），
                 // 退出前必须 Flush，否则最后一批剪贴板记录会丢失。
                 _ownedStorage = storage;
                 _service = new ClipboardHistoryService(storage);
+                _service.LogWarning = LogWarning;
             }
 
             if (_listener == null)
@@ -250,6 +253,22 @@ namespace CarroDesk.Modules.ClipboardHistory
                 Id = "clipboard_filter_settings",
                 Header = Loc.T("Clipboard.FilterSettings", "敏感信息过滤设置..."),
                 ClickAction = OpenFilterSettings
+            });
+
+            // 过滤只拦"此后"的记录；历史中此前已存在的敏感内容给用户一个显式一次清理入口。
+            // 不自动回溯，避免配置一变就意外删掉历史（既有语义，见 ClipboardFilterTests）。
+            root.Children.Add(new TrayMenuItem
+            {
+                Id = "clipboard_purge_sensitive",
+                Header = Loc.T("Clipboard.PurgeSensitive", "清理历史中的敏感内容..."),
+                ToolTip = Loc.T("Clipboard.PurgeSensitiveTip",
+                    "按当前过滤规则删除历史中已存在的命中记录（规则本身只拦新记录）"),
+                ClickAction = () =>
+                {
+                    int removed = _service?.PurgeSensitiveHistory() ?? 0;
+                    LogInfo("敏感规则历史清理：删除 " + removed + " 条");
+                    Context?.ShowNotification(Loc.T("Clipboard.PurgeSensitiveDone", removed));
+                }
             });
 
             root.Children.Add(TrayMenuItem.Separator());

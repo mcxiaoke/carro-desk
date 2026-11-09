@@ -9,7 +9,8 @@ namespace CarroDesk.Modules.ClipboardHistory.Models
     ///
     /// 设计边界（P1 范围，刻意从简）：
     ///   · 只做字面包含匹配，不做正则——避免回溯超时与难以预期的误杀；
-    ///   · 只拦本模块的入库路径，不改写系统剪贴板，也不回溯清理历史中已存在的记录。
+    ///   · 只拦本模块的入库路径，不改写系统剪贴板；历史中已存在的命中记录
+    ///     由用户显式调用 ClipboardHistoryService.PurgeSensitiveHistory() 清理。
     /// </summary>
     public class ClipboardFilterRule
     {

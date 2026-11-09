@@ -43,6 +43,11 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
         // 保险丝：加密历史解密失败且留档也失败时冻结 I/O，禁止空历史覆盖密文
         private bool _ioFrozen;
         private readonly ManualResetEventSlim _idle = new ManualResetEventSlim(true);
+        private const int FlushTimeoutSeconds = 5;
+        private bool _flushTimedOut;
+
+        /// <summary>可选日志出口（模块层注入）；写盘/Flush 失败只记日志，不弹通知打扰用户。</summary>
+        public Action<string> LogWarning { get; set; }
 
         /// <summary>
         /// 加密历史在当前环境解密失败且已成功留档后触发（参数为留档文件路径；
@@ -191,11 +196,21 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
         {
             try
             {
-                _idle.Wait(TimeSpan.FromSeconds(5));
+                bool done = _idle.Wait(TimeSpan.FromSeconds(FlushTimeoutSeconds));
+                _flushTimedOut = !done;
+                if (!done)
+                {
+                    // 历史多、磁盘慢时固定 5s 可能不够；超时必须留痕，
+                    // 否则用户重启后发现"最近复制的内容没了"却无线索。
+                    LogWarning?.Invoke("剪贴板历史 Flush 等待 " + FlushTimeoutSeconds +
+                                       "s 超时，最后一版快照可能未落盘");
+                }
             }
             catch (Exception ex)
             {
+                _flushTimedOut = true;
                 Debug.WriteLine("[ClipboardStorage] flush wait failed: " + ex.Message);
+                LogWarning?.Invoke("剪贴板历史 Flush 失败: " + ex.Message);
             }
         }
 
@@ -245,8 +260,10 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
             }
             catch (Exception ex)
             {
-                // 持久化失败不能击穿业务，但必须留痕
+                // 持久化失败不能击穿业务，但必须留痕：
+                // 旧实现只有 Debug.WriteLine，Release 下等于"用户以为存了、重启全丢"却无线索。
                 Debug.WriteLine("[ClipboardStorage] save failed: " + ex.Message);
+                LogWarning?.Invoke("剪贴板历史写入失败（重启后可能丢失最近记录）: " + ex.Message);
             }
         }
 
@@ -281,6 +298,10 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
             {
                 _disposed = true;
             }
+            // Flush 超时说明后台写线程可能仍在运行，此时释放 _idle 会让它稍后
+            // _idle.Set() 抛 ObjectDisposedException（未观察异常）。退出路径宁可
+            // 留着这个事件对象，也不要制造异常噪音。
+            if (_flushTimedOut) return;
             try { _idle.Dispose(); } catch { }
         }
     }

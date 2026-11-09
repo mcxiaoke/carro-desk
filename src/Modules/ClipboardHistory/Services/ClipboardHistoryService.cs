@@ -12,8 +12,12 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
         private readonly List<ClipboardItem> _items = new List<ClipboardItem>();
         private readonly object _lock = new object();
         private readonly IClipboardHistoryStorage _storage;
-        private ClipboardHistoryConfig _config;
+        // 配置重载（后台/IPC）与 RecordText（UI 线程）并发，引用写入必须可见。
+        private volatile ClipboardHistoryConfig _config;
         private string _suppressedHash;
+
+        /// <summary>可选日志出口（模块层注入），不设置时静默；不弹通知打扰用户。</summary>
+        public Action<string> LogWarning { get; set; }
         private DateTime _suppressedUntil;
 
         /// <summary>
@@ -57,6 +61,8 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
                     _items.AddRange(loaded);
                     ApplyCleanupRulesLocked();
                 }
+                // 保持既有语义：启动/配置变更不自动改写历史（避免"配置一变历史就没了"）。
+                // 需要清除历史中已存在的敏感内容时，由用户显式调用 PurgeSensitiveHistory()。
             }
 
             HistoryChanged?.Invoke();
@@ -90,8 +96,9 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
             if (_config != null && (!_config.Enabled || !_config.AutoRecord)) return;
 
             // 敏感信息过滤：必须在 MaxTextLength 截断之前按原始文本匹配，
-            // 否则关键字落在被截掉的尾部会漏检。命中即整条丢弃：不入内存、不落盘、
-            // 也不改动历史中此前已存在的同内容条目（过滤只影响此后的记录）。
+            // 否则关键字落在被截掉的尾部会漏检。命中即整条丢弃：不入内存、不落盘。
+            // 本路径只拦新记录；历史中已存在条目由用户显式调用 PurgeSensitiveHistory()
+            // 清理（不自动回溯，避免配置变更意外删掉历史）。
             var filter = _filter;
             if (filter.IsActive)
             {
@@ -240,6 +247,48 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
             }
 
             HistoryChanged?.Invoke();
+        }
+
+        /// <summary>
+        /// 显式清除历史中命中当前过滤规则的条目（用户从托盘主动触发）。
+        /// 刻意不做自动回溯：既有语义是"过滤只影响此后的记录"，配置一变就删历史
+        /// 会让用户意外丢数据；给用户一个可发现的一次性入口即可。
+        /// 返回删除条数，删除后立即落盘。
+        /// </summary>
+        public int PurgeSensitiveHistory()
+        {
+            lock (_lock)
+            {
+                int removed = PurgeSensitiveHistoryLocked();
+                if (removed > 0) _storage.Save(_items);
+                return removed;
+            }
+        }
+
+        /// <summary>在持有 _lock 时按当前规则清除命中项（含置顶项：敏感内容优先于置顶语义）。</summary>
+        private int PurgeSensitiveHistoryLocked()
+        {
+            var filter = _filter;
+            if (filter == null || !filter.IsActive) return 0;
+
+            int removed = 0;
+            for (int i = _items.Count - 1; i >= 0; i--)
+            {
+                var item = _items[i];
+                if (item == null || string.IsNullOrEmpty(item.FullText)) continue;
+                ClipboardFilterRule hit;
+                if (filter.TryMatch(item.FullText, out hit))
+                {
+                    _items.RemoveAt(i);
+                    removed++;
+                }
+            }
+
+            if (removed > 0)
+            {
+                LogWarning?.Invoke("敏感过滤规则变更：从剪贴板历史中清除 " + removed + " 条命中记录");
+            }
+            return removed;
         }
 
         private void ApplyCleanupRulesLocked()
