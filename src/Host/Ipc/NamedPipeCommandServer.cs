@@ -5,6 +5,7 @@ using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
+using CarroDesk.Common;
 using CarroDesk.Core;
 using CarroDesk.Core.Commands;
 using CarroDesk.Host.Commands;
@@ -24,6 +25,7 @@ namespace CarroDesk.Host.Ipc
         private readonly int _maxFrameBytes;
         private readonly bool _useAcl;
         private CancellationTokenSource _cts;
+        private int _started;   // Start 幂等：避免两个 accept 循环争抢同一管道名
 
         /// <param name="useAcl">false 仅限测试环境（同用户回环自测）；生产恒为 true。</param>
         public NamedPipeCommandServer(CommandHost host, string pipeName, ILoggerService logger,
@@ -47,7 +49,11 @@ namespace CarroDesk.Host.Ipc
                 if (sid != null && !string.IsNullOrEmpty(sid.Value))
                     return @"\\.\pipe\CarroDesk.ctl." + sid.Value;
             }
-            catch { /* 取 SID 失败不阻断启动 */ }
+            catch (Exception ex)
+            {
+                // 退化到固定管道名；必须留痕，否则排障时无从判断为何连的是 .default
+                StaticLog.Warn("Ipc", "读取当前用户 SID 失败，管道名退化为 .default: " + ex.Message);
+            }
             return @"\\.\pipe\CarroDesk.ctl.default";
         }
 
@@ -64,7 +70,11 @@ namespace CarroDesk.Host.Ipc
                         identity.User, PipeAccessRights.ReadWrite, AccessControlType.Allow));
                 }
             }
-            catch { /* 规则构造失败时仍有 SYSTEM 规则兜底 */ }
+            catch (Exception ex)
+            {
+                // 只剩 SYSTEM 规则时当前用户连不上管道，IPC 会静默不可用
+                StaticLog.Warn("Ipc", "当前用户 SID 读取失败，管道 ACL 仅剩 SYSTEM，IPC 可能不可用: " + ex.Message);
+            }
             security.AddAccessRule(new PipeAccessRule(
                 new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
                 PipeAccessRights.ReadWrite, AccessControlType.Allow));
@@ -73,15 +83,32 @@ namespace CarroDesk.Host.Ipc
 
         public void Start()
         {
-            _cts = new CancellationTokenSource();
-            Task.Run(() => AcceptLoopAsync(_cts.Token));
+            if (Interlocked.Exchange(ref _started, 1) != 0) return;
+            var cts = new CancellationTokenSource();
+            _cts = cts;
+            // 用局部变量而非 _cts：Dispose 可能已把字段置 null。
+            // continuation 观察异常，避免 accept 循环抛错成为未观察 Task 异常。
+            _ = Task.Run(() => AcceptLoopAsync(cts.Token)).ContinueWith(t =>
+            {
+                if (t.IsFaulted)
+                {
+                    StaticLog.Warn("Ipc", "管道 accept 循环异常终止: " +
+                        (t.Exception == null ? "unknown" : t.Exception.GetBaseException().Message));
+                }
+            }, TaskContinuationOptions.OnlyOnFaulted);
         }
 
         public void Dispose()
         {
-            // net48 的管道异步等待不真正响应取消令牌；取消后循环会在下一次
-            // 连接/失败周期退出，进程退出时后台任务随之终止，无需阻塞等待。
-            _cts?.Cancel();
+            // 取消并释放 CTS；accept 循环在下一次等待周期退出，进程退出时后台任务随之终止。
+            var cts = _cts;
+            _cts = null;
+            if (cts != null)
+            {
+                try { cts.Cancel(); } catch { }
+                try { cts.Dispose(); } catch { }
+            }
+            Interlocked.Exchange(ref _started, 0);
         }
 
         private NamedPipeServerStream CreateServerStream()

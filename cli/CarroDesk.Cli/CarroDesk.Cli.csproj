@@ -14,12 +14,10 @@
 
   <ItemGroup>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
-    <!-- <PackageReference Include="Costura.Fody" Version="6.0.0" PrivateAssets="all" /> -->
-    <!-- <PackageReference Include="Fody" Version="6.9.2" PrivateAssets="all" /> -->
   </ItemGroup>
 
-  <!-- Costura 已把 CarroDesk.exe/Newtonsoft 嵌入本 exe；主工程的 config 与样例文件
-       经 ProjectReference 流入输出目录但对 CLI 无用，构建后清理，保持输出即单 exe -->
+  <!-- 单文件由 dotnet publish -p:PublishSingleFile=true 产出（见 scripts/release.py）。
+       构建阶段清理 ProjectReference 流入的样例文件，避免污染 Debug 输出目录。 -->
   <Target Name="CleanCliOutputJunk" AfterTargets="Build">
     <ItemGroup>
       <CliJunk Include="$(OutDir)CarroDesk.exe.config;

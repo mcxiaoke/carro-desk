@@ -1,6 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Windows.Interop;
+using CarroDesk.Common;
 
 namespace CarroDesk.Modules.ClipboardHistory.Services
 {
@@ -45,11 +46,17 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
                     if (_hwndSource.Handle != IntPtr.Zero)
                     {
                         _isListening = AddClipboardFormatListener(_hwndSource.Handle);
+                        if (!_isListening)
+                        {
+                            StaticLog.Warn("Clipboard", "AddClipboardFormatListener 失败，剪贴板历史不会自动记录 (err=" +
+                                           Marshal.GetLastWin32Error() + ")");
+                        }
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
                     _isListening = false;
+                    StaticLog.Warn("Clipboard", "剪贴板监听启动失败，历史不会自动记录: " + ex.Message);
                 }
             }
         }

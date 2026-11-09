@@ -201,16 +201,16 @@ docs/remote-admin/grant-service-control.ps1 -Services TermService -DryRun   # �
 
 ## 6. 应用 PIN
 
-首次运行引导设置 PIN（6 位数字），用于：锁屏解锁、托盘退出确认、以及需要口令的 IPC 能力（如 `services.stop`）。防暴力：连错 5 次进入封锁期，第 n 次超限封锁 `(n-4)*30s` 递增。哈希 PBKDF2-SHA256 加盐存储，明文不落盘。
+首次运行引导设置 PIN（4–16 位纯数字），用于：锁屏解锁、托盘退出确认、以及需要口令的 IPC 能力（如 `services.stop`）。防暴力：连错 5 次进入封锁期，第 n 次超限封锁 `(n-4)*30s` 递增。哈希 PBKDF2-SHA256 加盐存储，明文不落盘。
 
 ## 7. 常见问题
 
-- **热键不生效？** 被其他软件占用，任务日志记 `hotkey register failed`，换组合后重载。
+- **热键不生效？** 大概率被其他软件占用；宿主 `log.txt` 会记 WARN（含冲突原因），换组合后重载配置。
 - **watch 不触发？** 确认 `path` 存在、`filter` 匹配；`event` 默认 `created`，修改文件需设 `changed`。
 - **脚本找不到？** 裸名需放 `scripts/` 或写绝对路径；日志首行打印解析后的 `starting: ...`。
 - **中文路径 / tasks.json 乱码？** 全程 UTF-8，请以 UTF-8 保存（编辑器保存为标准 JSON 数组，手写支持 `//` 注释）。
 - **detach 任务重启太频繁？** 调大 `restartDelaySec`/`stableUptimeSec`，或检查脚本自身退出码；连续失败超过 `restartLimit` 会熔断，重新保存任务即可复位。
-- **CLI 报 -32020？** 宿主 CarroDesk.exe 没在运行，先启动托盘程序（客户端无需重启即可自动恢复）。
+- **CLI 报 -32020？** 宿主 CarroDesk.exe 没在运行，先启动托盘程序；CLI 下次调用即恢复，MCP 空工具表不再缓存、下次 `tools/list` 自动重试（无需重启客户端）。
 
 ## 8. 日志一览
 

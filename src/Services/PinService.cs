@@ -265,9 +265,14 @@ namespace CarroDesk.Services
                 _blockedUntil = state.BlockedUntilLocal;
                 _lastUpdateUtc = state.UpdatedUtc;
             }
-            catch
+            catch (Exception ex)
             {
-                // 状态文件损坏/不可读：按"无历史失败"继续，绝不让限流自身成为不可用点
+                // 状态文件损坏/不可读：不能当作"零次失败"放行——
+                // 否则删除/篡改 pin-guard.json 即可无限重置暴力破解预算。
+                // 保守但不打扰：把计数预置到"再错一次即封锁"，不立即进入封锁期。
+                _fails = Math.Max(_fails, MaxFreeAttempts - 1);
+                _lastUpdateUtc = DateTime.UtcNow;
+                StaticLog.Warn("PinGuard", "失败计数状态文件读取失败，按保守计数处理: " + ex.Message);
             }
         }
 
@@ -291,9 +296,10 @@ namespace CarroDesk.Services
                 };
                 AtomicFile.WriteAllText(_statePath, JsonConvert.SerializeObject(state), Encoding.UTF8);
             }
-            catch
+            catch (Exception ex)
             {
-                // 落盘失败不影响本次判定：限流降级为进程内生效
+                // 落盘失败不影响本次判定：限流降级为进程内生效，但必须留痕
+                StaticLog.Warn("PinGuard", "失败计数落盘失败，本次仅进程内生效: " + ex.Message);
             }
         }
 

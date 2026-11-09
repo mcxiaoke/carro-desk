@@ -117,7 +117,8 @@ def copy_cli_exe():
 def zip_gui(release_dir: Path, version: str) -> Path:
     """
     把 GUI 输出目录（CarroDesk.exe + CarroDesk.Cli.exe + 样例配置）打包成 zip。
-    GUI/CLI 均为 Costura 嵌入的单 exe，无需额外 DLL；排除 pdb 与运行时生成文件。
+    GUI/CLI 均为 .NET PublishSingleFile 产出的单 exe（框架依赖，目标机需 .NET 10 桌面运行时）；
+    排除 pdb 与运行时生成文件。
     """
     if not (GUI_OUT / "CarroDesk.exe").exists():
         raise SystemExit(f"GUI 构建产物缺失：{GUI_OUT / 'CarroDesk.exe'}")

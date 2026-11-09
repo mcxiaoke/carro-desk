@@ -38,8 +38,8 @@ CarroDesk.Cli ctl services.start --name GameViewerService
 ## 构建与部署
 
 - Visual Studio 打开 `CarroDesk.slnx`，目标框架 **net10.0-windows**（2026-10 自 net48 升级，见 commit 7298bd7），需要 .NET 10 SDK
-- 产物：`src` → `CarroDesk.exe`（WPF 宿主），`cli` → `CarroDesk.Cli.exe`（Costura 单文件），`tests` → 单元测试
-- 打包发布：`python scripts/release.py`，产出便携 zip 与 NSIS 安装包（需先 `scoop install nsis`）
+- 产物：`src` → `CarroDesk.exe`（WPF 宿主），`cli` → `CarroDesk.Cli.exe`（.NET `PublishSingleFile` 单文件，框架依赖），`tests` → 单元测试
+- 打包发布：`python scripts/release.py`，产出便携 zip 与 Inno Setup 6 安装包（需 `ISCC.exe`）；目标机需 .NET 10 桌面运行时
 - 安装包：per-user 安装到 `%LOCALAPPDATA%\Programs\CarroDesk`，免管理员权限；安装/升级/卸载会自动结束主进程与 CLI 进程，升级无需手动杀进程
 - 便携部署：exe + `portable.ini` 放任意目录即为便携模式（数据在同级 `app_data\`），否则使用 `%AppData%\CarroDesk\`
 
@@ -52,4 +52,4 @@ CarroDesk.Cli ctl services.start --name GameViewerService
 | [docs/AI-AGENT-MANUAL.md](docs/AI-AGENT-MANUAL.md) | AI 助手接入手册（MCP/CLI，宿主内嵌，`host.guide` 可读） |
 | [docs/MODULE-DEVELOPMENT-GUIDE.md](docs/MODULE-DEVELOPMENT-GUIDE.md) | 模块开发指南 |
 | [docs/remote-admin/](docs/remote-admin/README.md) | 远程管理通道（服务 DACL 授予、RDP/SSH/Agent 初始化脚本） |
-| [docs/CHANGES-20260926.md](docs/CHANGES-20260926.md) | 近期变更日志 |
+| [docs/CHANGES-20261109.md](docs/CHANGES-20261109.md) | 近期变更日志（按日期分文件，命名 `CHANGES-YYYYMMDD.md`） |

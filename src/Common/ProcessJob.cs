@@ -103,8 +103,11 @@ namespace CarroDesk.Common
                         Marshal.StructureToPtr(info, buffer, false);
                         if (!SetInformationJobObject(handle, JobObjectExtendedLimitInformation, buffer, (uint)size))
                         {
-                            // 设置失败不致命：作业仍可创建，只是关闭句柄时不会连带杀进程树
-                            Debug.WriteLine("[ProcessJob] SetInformationJobObject failed, err=" + Marshal.GetLastWin32Error());
+                            // 设置失败不致命：作业仍可创建，只是关闭句柄时不会连带杀进程树。
+                            // 但必须留痕：KillWithHost 会谎报 true，宿主退出时留下孤儿进程树。
+                            int err = Marshal.GetLastWin32Error();
+                            Debug.WriteLine("[ProcessJob] SetInformationJobObject failed, err=" + err);
+                            StaticLog.Warn("ProcessJob", "SetInformationJobObject 失败，kill-on-close 未生效 (err=" + err + ")");
                         }
                     }
                     finally

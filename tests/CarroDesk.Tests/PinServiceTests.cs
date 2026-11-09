@@ -257,7 +257,7 @@ namespace CarroDesk.Tests
             }
         }
 
-        /// <summary>状态文件损坏不得让 PIN 校验链路整体不可用（降级为无历史失败）。</summary>
+        /// <summary>状态文件损坏不得让 PIN 校验链路整体不可用（不立即封锁、正确 PIN 仍可校验）。</summary>
         [TestMethod]
         public void PinGuard_CorruptStateFile_DegradesGracefully()
         {
@@ -268,11 +268,31 @@ namespace CarroDesk.Tests
             pinService.SetNewPin("8888");
             var guard = new PinGuard(pinService, statePath);
 
-            Assert.AreEqual(TimeSpan.Zero, guard.RemainingBlock(), "损坏状态文件应按无历史失败处理");
+            Assert.AreEqual(TimeSpan.Zero, guard.RemainingBlock(), "损坏状态文件不应立即进入封锁期");
 
             TimeSpan remaining;
             Assert.AreEqual(PinAttemptResult.Success, guard.Try("8888", out remaining),
                 "状态文件损坏不应影响正确 PIN 的校验");
+        }
+
+        [TestMethod]
+        public void PinGuard_CorruptStateFile_DoesNotResetBruteForceBudget()
+        {
+            // 旧实现损坏时按"零次失败"放行：删除/篡改 pin-guard.json 即可无限重置试探预算。
+            // 现在预置到"再错一次即封锁"，既不立即封锁打扰用户，也不放行。
+            string statePath = NewGuardStatePath("corrupt-conservative");
+            System.IO.File.WriteAllText(statePath, "{ this is not json");
+
+            var pinService = new PinService();
+            pinService.SetNewPin("8888");
+            var guard = new PinGuard(pinService, statePath);
+
+            Assert.AreEqual(TimeSpan.Zero, guard.RemainingBlock(), "不应立即进入封锁期");
+
+            TimeSpan remaining;
+            guard.Try("0000", out remaining);
+            Assert.IsTrue(remaining > TimeSpan.Zero,
+                "状态文件损坏后不得当作全新预算放行：一次错误即应触发封锁");
         }
     }
 }

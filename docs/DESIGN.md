@@ -2,7 +2,7 @@
 
 > 版本：v2.0（2026-09-29，随代码现状更新）
 > 平台：Windows 10 / 11
-> 技术栈：.NET Framework 4.8 + WPF（C# 7.3）
+> 技术栈：.NET 10（net10.0-windows）+ WPF（2026-10 自 net48 升级）
 
 ## 1. 项目定位
 
@@ -39,8 +39,8 @@ CarroDesk.slnx
 │   ├── Services/             ConfigService、PinService(+PinGuard)、
 │   │                         ProcessExclusionService、Tasks 运行时…
 │   └── Views/                LockWindow、TaskEditorWindow、TrayContextMenu 等
-├── cli/CarroDesk.Cli/        CarroDesk.Cli.exe（Costura 单文件；ctl / --mcp）
-├── tests/CarroDesk.Tests/    单元测试（291 通过）
+├── cli/CarroDesk.Cli/        CarroDesk.Cli.exe（PublishSingleFile 单文件；ctl / --mcp）
+├── tests/CarroDesk.Tests/    单元测试（420 通过，2026-11-09）
 ├── skills/carrodesk/         AI agent 技能（CLI 直控，MCP 无关）
 └── docs/                     设计文档、使用说明、AI 手册、remote-admin 脚本
 ```
@@ -172,8 +172,8 @@ CarroDesk.Cli --mcp ────┘       RpcProtocol：JSON-RPC 2.0 + pin/sourc
 ## 8. 构建、测试与发布
 
 - `CarroDesk.slnx`：`src`（主程序）、`cli/CarroDesk.Cli`（单文件 CLI）、`tests/CarroDesk.Tests`
-- 全部 .NET Framework 4.8 / C# 7.3，Win10/11 免安装运行时；CLI 经 Costura 内嵌依赖输出单 exe
-- 测试：`tests/CarroDesk.Tests`（291 通过，2026-09-29）
+- 全部 net10.0-windows / WPF；GUI 与 CLI 均经 `dotnet publish -p:PublishSingleFile=true --self-contained false` 产出单 exe，目标机需 .NET 10 桌面运行时
+- 测试：`tests/CarroDesk.Tests`（420 通过，2026-11-09；`dotnet test CarroDesk.slnx`）
 - 发布产物保持最小集：exe + 配置样例 + pdb；部署目标如 `C:\Home\Tools\CarroDesk\`（便携 + `app_data\`）
 
 ## 9. 相关设计文档

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Threading;
 using CarroDesk.Models;
@@ -538,7 +539,9 @@ namespace CarroDesk.Tests
                     Assert.IsFalse(scheduler.IsRunning(SuperviseTaskName), "熔断后不应有运行实例");
                     Assert.AreEqual(3, scheduler.GetSupervision(SuperviseTaskName).ConsecutiveFailures,
                         "1 次启动 + 2 次重启 = 3 次连续失败");
-                    Assert.IsTrue(scheduler.GetRecent().Count > 0 && scheduler.GetRecent()[0].Contains("marked"),
+                    // 守护重启是异步路径：熔断日志之后可能立刻插入其它 recent 记录。
+                    // 断言"列表中存在熔断标记"即可，不要求它恰好是最新一条（M28 时序脆弱用例）。
+                    Assert.IsTrue(scheduler.GetRecent().Any(entry => entry != null && entry.Contains("marked")),
                         "recent 列表应记录熔断标记");
 
                     // 手动运行 = 显式复位：清除标记并重新拉起（随后会再次失败、再次熔断，属预期）

@@ -1,5 +1,6 @@
 using System;
 using Microsoft.Win32;
+using CarroDesk.Common;
 using CarroDesk.Models;
 
 namespace CarroDesk.Services.Tasks.Triggers
@@ -25,7 +26,11 @@ namespace CarroDesk.Services.Tasks.Triggers
                 SystemEvents.SessionSwitch += OnSessionSwitch;
                 _subscribed = true;
             }
-            catch { }
+            catch (Exception ex)
+            {
+                // 订阅失败会让 sessionLock / sessionUnlock 任务永不触发且毫无线索
+                StaticLog.Warn("TaskScheduler", "订阅 SystemEvents.SessionSwitch 失败，会话锁定/解锁触发将不生效: " + ex.Message);
+            }
         }
 
         private void OnSessionSwitch(object sender, SessionSwitchEventArgs e)
@@ -43,7 +48,10 @@ namespace CarroDesk.Services.Tasks.Triggers
                     if (h != null) h(Task, "sessionUnlock");
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                StaticLog.Warn("TaskScheduler", "会话事件触发回调异常: " + ex.Message);
+            }
         }
 
         public void Stop()
