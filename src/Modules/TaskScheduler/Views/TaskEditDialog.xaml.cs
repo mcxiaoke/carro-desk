@@ -343,6 +343,10 @@ namespace CarroDesk.Modules.TaskScheduler.Views
 
         private async void OnTestRunClick(object sender, RoutedEventArgs e)
         {
+            // detach 测试进程仍在跑时禁止再次测试：旧实现会直接覆盖 _testRunHandle，
+            // 之前的常驻进程从此没有引用，"停止"和关窗兜底都只作用于最后一个。
+            if (_testRunHandle != null && _testRunHandle.HasExited != true) return;
+
             var task = BuildTaskFromForm();
             if (task == null) return;
 
@@ -353,10 +357,14 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                 return;
             }
 
+            DisposeTestCts();   // 兜底清理上一次遗留
+            var cts = new CancellationTokenSource();
+            _testCts = cts;
+            bool detachStarted = false;
+
             TestRunButton.Visibility = Visibility.Collapsed;
             TestStopButton.Visibility = Visibility.Visible;
             TestStatusText.Text = "⏳ 正在启动测试进程...";
-            _testCts = new CancellationTokenSource();
 
             var sw = System.Diagnostics.Stopwatch.StartNew();
             try
@@ -373,6 +381,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                     {
                         // 保存句柄供"停止"按钮与关窗清理使用；否则测试进程脱管，无法停止（M4）
                         _testRunHandle = handle;
+                        detachStarted = true;   // 保持"停止"态，用户必须先停掉才能再测
                         TestStatusText.Text = $"🟢 常驻测试已启动 PID: {handle.Pid}";
                     }
                     else
@@ -382,9 +391,11 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                 }
                 else
                 {
-                    int code = await TaskRunner.RunAsync(task, "test-run", _testCts.Token).ConfigureAwait(true);
+                    // 用局部变量而非 _testCts：窗口在 await 期间关闭时，OnClosing 会把字段置 null。
+                    int code = await TaskRunner.RunAsync(task, "test-run", cts.Token).ConfigureAwait(true);
                     sw.Stop();
-                    if (_testCts.IsCancellationRequested)
+                    if (!IsLoaded) return;   // 已关窗，不再触碰控件
+                    if (cts.IsCancellationRequested)
                     {
                         TestStatusText.Text = "🛑 已手动终止";
                     }
@@ -398,12 +409,16 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             }
             catch (Exception ex)
             {
-                TestStatusText.Text = $"🔴 测试异常: {ex.Message}";
+                if (IsLoaded) TestStatusText.Text = $"🔴 测试异常: {ex.Message}";
             }
             finally
             {
-                TestRunButton.Visibility = Visibility.Visible;
-                TestStopButton.Visibility = Visibility.Collapsed;
+                if (!detachStarted)
+                {
+                    // wait 模式已结束：释放本次 CTS，避免下次点击直接 new 覆盖造成泄漏。
+                    DisposeTestCts(cts);
+                    RestoreTestButtons();
+                }
             }
         }
 
@@ -412,12 +427,30 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             try { _testCts?.Cancel(); } catch { }
             // detach 测试运行没有可取消的等待循环，直接终止进程（句柄在启动成功时保存）
             var handle = _testRunHandle;
+            _testRunHandle = null;
             if (handle != null && handle.HasExited != true)
             {
                 try { handle.Stop(); } catch { }
-                _testRunHandle = null;
             }
-            TestStatusText.Text = "正在停止测试进程...";
+            DisposeTestCts();
+            if (IsLoaded) TestStatusText.Text = "正在停止测试进程...";
+            RestoreTestButtons();
+        }
+
+        /// <summary>释放测试用 CTS；expected 用于只释放本次那一轮，避免误伤新测试。</summary>
+        private void DisposeTestCts(CancellationTokenSource expected = null)
+        {
+            var cts = expected ?? _testCts;
+            if (ReferenceEquals(_testCts, cts)) _testCts = null;
+            if (cts == null) return;
+            try { cts.Dispose(); } catch { }
+        }
+
+        private void RestoreTestButtons()
+        {
+            if (!IsLoaded) return;   // 窗口已关闭时不触碰控件
+            TestRunButton.Visibility = Visibility.Visible;
+            TestStopButton.Visibility = Visibility.Collapsed;
         }
 
         protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
@@ -425,13 +458,14 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             // 关窗兜底：detach 测试进程不能因对话框关闭而变成脱管常驻进程（M4）
             try
             {
-                if (_testRunHandle != null && _testRunHandle.HasExited != true)
-                {
-                    try { _testRunHandle.Stop(); } catch { }
-                }
+                var handle = _testRunHandle;
                 _testRunHandle = null;
-                _testCts?.Dispose();
-                _testCts = null;
+                if (handle != null && handle.HasExited != true)
+                {
+                    try { handle.Stop(); } catch { }
+                }
+                try { _testCts?.Cancel(); } catch { }
+                DisposeTestCts();
             }
             catch { }
             base.OnClosing(e);
@@ -547,7 +581,9 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                 TimeoutSec = !isDetach && int.TryParse(TimeoutBox.Text.Trim(), out var to) ? to : 0,
                 Retry = !isDetach && int.TryParse(RetryBox.Text.Trim(), out var ret) ? ret : 0,
                 AllowConcurrent = !isDetach && (AllowConcurrentBox.IsChecked ?? false),
-                KillWithHost = isDetach && (KillWithHostBox.IsChecked ?? true),
+                // wait 模式也必须按复选框持久化：旧写法恒为 false，导致任务进程不挂 JobObject，
+                // 宿主退出后继续存活却不再被跟踪，下次启动可拉起重复实例。
+                KillWithHost = KillWithHostBox.IsChecked ?? true,
                 SingleInstance = isDetach && (SingleInstanceBox.IsChecked ?? false),
                 Restart = isDetach && (RestartOnFailureBox.IsChecked ?? false) ? "on-failure" : "none",
                 RestartDelaySec = int.TryParse(RestartDelayBox.Text.Trim(), out var rdelay) ? rdelay : 5,

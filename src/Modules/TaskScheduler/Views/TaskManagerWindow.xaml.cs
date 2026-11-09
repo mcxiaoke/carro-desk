@@ -31,7 +31,12 @@ namespace CarroDesk.Modules.TaskScheduler.Views
         private TaskLoadResult _loadResult;
         private readonly DispatcherTimer _ticker;
         private readonly DispatcherTimer _perfTicker;
+        private readonly DispatcherTimer _searchDebounce;
         private int _perfSampling;   // 0/1：性能采样进行中（防止重叠）
+        private volatile bool _closed;              // 窗口关闭后所有回投一律丢弃
+        private CancellationTokenSource _sampleCts; // 当前飞行采样轮次，失活时取消
+        private int _sampleGeneration;              // 采样代际：丢弃过期结果
+        private int _pendingResample;               // 采样被单飞挡住时，标记需要立即补一轮
 
         public TaskManagerWindow(ITaskSchedulerService scheduler, Action onTasksChanged = null)
         {
@@ -58,14 +63,21 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             _perfTicker.Tick += (s, e) => SampleMemoryIfVisible();
             _perfTicker.Start();
 
+            // 搜索逐字输入会整表重建，200ms 防抖后再刷新
+            _searchDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
+            _searchDebounce.Tick += (s, e) => { _searchDebounce.Stop(); ApplyFilterAndRefreshList(); };
+
             // 最小化即视为"无界面"：停掉心跳与采样；还原时恢复并立即补采一次
             StateChanged += (s, e) => UpdateSamplingActivity();
             IsVisibleChanged += (s, e) => UpdateSamplingActivity();
 
             Closed += (s, e) =>
             {
+                _closed = true;
                 _ticker.Stop();
                 _perfTicker.Stop();
+                _searchDebounce.Stop();
+                CancelInFlightSampling();
                 if (_scheduler != null)
                 {
                     _scheduler.StateChanged -= OnSchedulerStateChanged;
@@ -89,7 +101,22 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             {
                 _ticker.Stop();
                 _perfTicker.Stop();
+                // 只停 Timer 不够：已经在 Task.Run 里飞行的那一轮仍会逐个打开进程句柄读工作集。
+                CancelInFlightSampling();
             }
+        }
+
+        /// <summary>失活/关闭时取消飞行采样，保证"后台零读取"。</summary>
+        private void CancelInFlightSampling()
+        {
+            var cts = _sampleCts;
+            if (cts != null)
+            {
+                try { cts.Cancel(); } catch { }
+            }
+            Volatile.Write(ref _pendingResample, 0);
+            // 飞行任务若因取消直接 return（不再回投），这里必须复位，否则后续采样永远被单飞标志挡住。
+            Volatile.Write(ref _perfSampling, 0);
         }
 
         private void RefreshLiveDurations()
@@ -108,15 +135,22 @@ namespace CarroDesk.Modules.TaskScheduler.Views
         /// </summary>
         private void SampleMemoryIfVisible()
         {
-            if (!IsVisible || WindowState == WindowState.Minimized) return;
-            if (Interlocked.Exchange(ref _perfSampling, 1) != 0) return;   // 上一轮采样尚未回投
+            if (_closed || !IsVisible || WindowState == WindowState.Minimized) return;
+            if (Interlocked.Exchange(ref _perfSampling, 1) != 0)
+            {
+                // 状态跃迁 / 列表重建后的"立即补采"不能被静默吞掉：等飞行轮回投后再补一轮。
+                Volatile.Write(ref _pendingResample, 1);
+                return;
+            }
 
-            List<KeyValuePair<TaskRowViewModel, int>> targets = null;
+            // 只快照任务名 + PID，不持有 ViewModel 引用：列表随时可能被搜索/状态刷新重建，
+            // 旧实现会把结果写回已从集合移除的孤立对象。
+            List<KeyValuePair<string, int>> targets = null;
             foreach (var item in _items)
             {
                 if (!item.IsRunning || !item.Pid.HasValue) continue;
-                if (targets == null) targets = new List<KeyValuePair<TaskRowViewModel, int>>(_items.Count);
-                targets.Add(new KeyValuePair<TaskRowViewModel, int>(item, item.Pid.Value));
+                if (targets == null) targets = new List<KeyValuePair<string, int>>(_items.Count);
+                targets.Add(new KeyValuePair<string, int>(item.Name, item.Pid.Value));
             }
 
             if (targets == null)
@@ -126,41 +160,77 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                 return;
             }
 
+            var cts = new CancellationTokenSource();
+            _sampleCts = cts;
+            int generation = Interlocked.Increment(ref _sampleGeneration);
+
             try
             {
                 Task.Run(() =>
                 {
-                    var results = new List<KeyValuePair<TaskRowViewModel, long?>>(targets.Count);
+                    var results = new List<KeyValuePair<string, long?>>(targets.Count);
                     foreach (var t in targets)
                     {
-                        results.Add(new KeyValuePair<TaskRowViewModel, long?>(t.Key, ReadWorkingSetBytes(t.Value)));
+                        if (cts.IsCancellationRequested) break;   // 失活/关闭后不再打开进程句柄
+                        results.Add(new KeyValuePair<string, long?>(t.Key, ReadWorkingSetBytes(t.Value)));
                     }
+                    bool cancelled = cts.IsCancellationRequested;
 
-                    try
+                    // 无论是否被取消都要回投一次，保证 FinishSampling 一定执行并释放 CTS。
+                    if (!TryPost(() =>
                     {
-                        Dispatcher.BeginInvoke(new Action(() =>
+                        try
                         {
-                            try
+                            if (cancelled || _closed ||
+                                Volatile.Read(ref _sampleGeneration) != generation) return;  // 过期结果丢弃
+                            foreach (var r in results)
                             {
-                                foreach (var r in results) r.Key.SetMemoryBytes(r.Value);
+                                var current = _items.FirstOrDefault(i =>
+                                    string.Equals(i.Name, r.Key, StringComparison.OrdinalIgnoreCase));
+                                if (current != null) current.SetMemoryBytes(r.Value);
                             }
-                            finally
-                            {
-                                Volatile.Write(ref _perfSampling, 0);
-                            }
-                        }));
-                    }
-                    catch
+                        }
+                        finally { FinishSampling(cts); }
+                    }))
                     {
-                        // 窗口已关闭 / Dispatcher 已停止：丢弃本轮结果
-                        Volatile.Write(ref _perfSampling, 0);
+                        FinishSampling(cts);
                     }
                 });
             }
             catch
             {
-                Volatile.Write(ref _perfSampling, 0);
+                FinishSampling(cts);
             }
+        }
+
+        /// <summary>所有 Dispatcher 回投统一过这道门：窗口关闭后不再触碰控件。</summary>
+        private bool TryPost(Action action)
+        {
+            if (_closed) return false;
+            try
+            {
+                Dispatcher.BeginInvoke(action);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                // Dispatcher 已 shutdown：只记日志，不把异常抛给后台任务（未观察异常）。
+                TaskLogger.Warn("system", "task manager dispatcher post failed: " + ex.Message);
+                return false;
+            }
+        }
+
+        private void FinishSampling(CancellationTokenSource cts)
+        {
+            Volatile.Write(ref _perfSampling, 0);
+            if (cts != null)
+            {
+                if (ReferenceEquals(_sampleCts, cts)) _sampleCts = null;
+                try { cts.Dispose(); } catch { }
+            }
+            if (_closed || Interlocked.Exchange(ref _pendingResample, 0) != 1) return;
+            // 补采必须回到 UI 线程（FinishSampling 也可能在后台线程被调用，不能直接读 IsVisible）。
+            TryPost(SampleMemoryIfVisible);
         }
 
         /// <summary>
@@ -184,8 +254,9 @@ namespace CarroDesk.Modules.TaskScheduler.Views
 
         private void OnSchedulerStateChanged(string taskName, TaskRuntimeState newState, TaskStateSnapshot snapshot)
         {
-            Dispatcher.BeginInvoke(new Action(() =>
+            TryPost(() =>
             {
+                if (_closed) return;
                 var item = _items.FirstOrDefault(i => string.Equals(i.Name, taskName, StringComparison.OrdinalIgnoreCase));
                 if (item != null)
                 {
@@ -194,7 +265,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                     UpdateStatsSummary();
                     SampleMemoryIfVisible();   // 状态跃迁（启动完成 / 退出）后立即补采一次内存
                 }
-            }));
+            });
         }
 
         public void LoadTasks()
@@ -338,7 +409,14 @@ namespace CarroDesk.Modules.TaskScheduler.Views
 
         private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
         {
-            ApplyFilterAndRefreshList();
+            // 逐字输入立即整表重建会丢失选中/滚动位置并触发一次采样，改为 200ms 防抖。
+            if (SearchPlaceholder != null)
+            {
+                SearchPlaceholder.Visibility = string.IsNullOrWhiteSpace(SearchBox?.Text)
+                    ? Visibility.Visible : Visibility.Collapsed;
+            }
+            _searchDebounce.Stop();
+            _searchDebounce.Start();
         }
 
         private void OnRefreshClick(object sender, RoutedEventArgs e)
