@@ -6,6 +6,8 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -26,6 +28,8 @@ namespace CarroDesk.Modules.TaskScheduler.Views
         private readonly ObservableCollection<TaskRowViewModel> _items = new ObservableCollection<TaskRowViewModel>();
         private List<TaskDefinition> _tasks = new List<TaskDefinition>();
         private readonly DispatcherTimer _ticker;
+        private readonly DispatcherTimer _perfTicker;
+        private int _perfSampling;   // 0/1：性能采样进行中（防止重叠）
 
         public TaskManagerWindow(ITaskSchedulerService scheduler, Action onTasksChanged = null)
         {
@@ -41,23 +45,25 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                 _scheduler.StateChanged += OnSchedulerStateChanged;
             }
 
-            // 1s 轻量心跳定时器：仅用于就地递增运行中/重试任务的秒数显示
+            // 1s 轻量心跳：仅就地刷新"已运行"列文案（纯字符串格式化，不读取任何进程性能数据）
             _ticker = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-            _ticker.Tick += (s, e) =>
-            {
-                foreach (var item in _items)
-                {
-                    if (item.IsActive)
-                    {
-                        item.RefreshLiveDuration();
-                    }
-                }
-            };
+            _ticker.Tick += (s, e) => RefreshLiveDurations();
             _ticker.Start();
+
+            // 3s 性能采样（内存占用）：只有本窗口可见且未最小化时才读取进程工作集。
+            // 这是性能类数据，后台无界面（最小化 / 窗口关闭）时必须零读取，避免无谓的句柄与 CPU 开销。
+            _perfTicker = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+            _perfTicker.Tick += (s, e) => SampleMemoryIfVisible();
+            _perfTicker.Start();
+
+            // 最小化即视为"无界面"：停掉心跳与采样；还原时恢复并立即补采一次
+            StateChanged += (s, e) => UpdateSamplingActivity();
+            IsVisibleChanged += (s, e) => UpdateSamplingActivity();
 
             Closed += (s, e) =>
             {
                 _ticker.Stop();
+                _perfTicker.Stop();
                 if (_scheduler != null)
                 {
                     _scheduler.StateChanged -= OnSchedulerStateChanged;
@@ -65,6 +71,113 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             };
 
             LoadTasks();
+        }
+
+        /// <summary>按窗口可见性启停心跳与性能采样定时器。</summary>
+        private void UpdateSamplingActivity()
+        {
+            bool active = IsVisible && WindowState != WindowState.Minimized;
+            if (active)
+            {
+                if (!_ticker.IsEnabled) _ticker.Start();
+                if (!_perfTicker.IsEnabled) _perfTicker.Start();
+                SampleMemoryIfVisible();
+            }
+            else
+            {
+                _ticker.Stop();
+                _perfTicker.Stop();
+            }
+        }
+
+        private void RefreshLiveDurations()
+        {
+            if (WindowState == WindowState.Minimized) return;
+            foreach (var item in _items)
+            {
+                if (item.IsActive) item.RefreshLiveDuration();
+            }
+        }
+
+        /// <summary>
+        /// 进程内存采样：仅在窗口可见时执行。
+        /// 读取工作集需要打开进程句柄，属性能类数据，无界面时不应有任何读取。
+        /// 采样放到线程池执行后回投 UI 线程，避免个别句柄（受保护进程 / 已退出）阻塞界面。
+        /// </summary>
+        private void SampleMemoryIfVisible()
+        {
+            if (!IsVisible || WindowState == WindowState.Minimized) return;
+            if (Interlocked.Exchange(ref _perfSampling, 1) != 0) return;   // 上一轮采样尚未回投
+
+            List<KeyValuePair<TaskRowViewModel, int>> targets = null;
+            foreach (var item in _items)
+            {
+                if (!item.IsRunning || !item.Pid.HasValue) continue;
+                if (targets == null) targets = new List<KeyValuePair<TaskRowViewModel, int>>(_items.Count);
+                targets.Add(new KeyValuePair<TaskRowViewModel, int>(item, item.Pid.Value));
+            }
+
+            if (targets == null)
+            {
+                foreach (var item in _items) item.SetMemoryBytes(null);
+                Volatile.Write(ref _perfSampling, 0);
+                return;
+            }
+
+            try
+            {
+                Task.Run(() =>
+                {
+                    var results = new List<KeyValuePair<TaskRowViewModel, long?>>(targets.Count);
+                    foreach (var t in targets)
+                    {
+                        results.Add(new KeyValuePair<TaskRowViewModel, long?>(t.Key, ReadWorkingSetBytes(t.Value)));
+                    }
+
+                    try
+                    {
+                        Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            try
+                            {
+                                foreach (var r in results) r.Key.SetMemoryBytes(r.Value);
+                            }
+                            finally
+                            {
+                                Volatile.Write(ref _perfSampling, 0);
+                            }
+                        }));
+                    }
+                    catch
+                    {
+                        // 窗口已关闭 / Dispatcher 已停止：丢弃本轮结果
+                        Volatile.Write(ref _perfSampling, 0);
+                    }
+                });
+            }
+            catch
+            {
+                Volatile.Write(ref _perfSampling, 0);
+            }
+        }
+
+        /// <summary>
+        /// 读取进程物理工作集（RAM），失败返回 null（进程已退出 / 权限不足 / pid 已被回收）。
+        /// 注意：不要在这里先调用 Process.HasExited —— 该属性需要 SYNCHRONIZE 权限，
+        /// 对部分受保护/受限进程会抛"拒绝访问"，把本来可读的工作集误判为不可读。
+        /// </summary>
+        private static long? ReadWorkingSetBytes(int pid)
+        {
+            if (pid <= 0) return null;
+            try
+            {
+                using (var p = Process.GetProcessById(pid))
+                {
+                    long bytes = p.WorkingSet64;
+                    return bytes > 0 ? bytes : (long?)null;
+                }
+            }
+            catch { return null; }
         }
 
         private void OnSchedulerStateChanged(string taskName, TaskRuntimeState newState, TaskStateSnapshot snapshot)
@@ -77,6 +190,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                     item.UpdateSnapshot(snapshot);
                     UpdateToolbarButtons();
                     UpdateStatsSummary();
+                    SampleMemoryIfVisible();   // 状态跃迁（启动完成 / 退出）后立即补采一次内存
                 }
             }));
         }
@@ -124,6 +238,8 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                 var sel = _items.FirstOrDefault(i => string.Equals(i.Name, selectedName, StringComparison.OrdinalIgnoreCase));
                 if (sel != null) TaskListView.SelectedItem = sel;
             }
+
+            SampleMemoryIfVisible();   // 列表重建后立即采样（窗口未显示时此调用不产生任何读取）
         }
 
         private void UpdateStatsSummary()
@@ -402,6 +518,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
     {
         public TaskDefinition Task { get; }
         private TaskStateSnapshot _snapshot;
+        private long? _memoryBytes;   // 物理工作集，仅窗口可见时由采样器回填
 
         public event PropertyChangedEventHandler PropertyChanged;
 
@@ -414,16 +531,23 @@ namespace CarroDesk.Modules.TaskScheduler.Views
         public void UpdateSnapshot(TaskStateSnapshot snapshot)
         {
             _snapshot = snapshot ?? new TaskStateSnapshot();
+            _memoryBytes = null;   // 状态跃迁后旧的内存读数即失效，等待下一次采样
             OnPropertyChanged(nameof(StateDisplayText));
             OnPropertyChanged(nameof(StateDotBrush));
             OnPropertyChanged(nameof(StateTextBrush));
             OnPropertyChanged(nameof(IsRunning));
             OnPropertyChanged(nameof(IsActive));
             OnPropertyChanged(nameof(OutcomeDisplayText));
+            OnPropertyChanged(nameof(PidDisplayText));
+            OnPropertyChanged(nameof(PidTextBrush));
+            OnPropertyChanged(nameof(DurationDisplayText));
+            OnPropertyChanged(nameof(MemoryDisplayText));
+            OnPropertyChanged(nameof(MemoryTextBrush));
         }
 
         public void RefreshLiveDuration()
         {
+            OnPropertyChanged(nameof(DurationDisplayText));
             OnPropertyChanged(nameof(StateDisplayText));
         }
 
@@ -439,9 +563,18 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                                 _snapshot.State == TaskRuntimeState.Starting ||
                                 _snapshot.State == TaskRuntimeState.WaitingRetry;
 
-        public string EnabledBadgeText => Task.Enabled ? "已启用" : "已禁用";
+        // ---- 启用 / 常驻（配置态，值统一为 是 / 否） ----
+
+        public string EnabledBadgeText => Task.Enabled ? "是" : "否";
         public Brush EnabledBadgeBg => Task.Enabled ? new SolidColorBrush(Color.FromRgb(236, 253, 245)) : new SolidColorBrush(Color.FromRgb(241, 245, 249));
         public Brush EnabledBadgeFg => Task.Enabled ? new SolidColorBrush(Color.FromRgb(5, 150, 105)) : new SolidColorBrush(Color.FromRgb(100, 116, 139));
+
+        /// <summary>常驻守护（options.isDetach，进程退出自动重启）。原“模式”列。</summary>
+        public bool IsResident => Task.Options?.IsDetach == true;
+        public string ResidentText => IsResident ? "是" : "否";
+        public Brush ResidentTextBrush => IsResident
+            ? new SolidColorBrush(Color.FromRgb(29, 78, 216))
+            : new SolidColorBrush(Color.FromRgb(148, 163, 184));
 
         public string TriggerSummary
         {
@@ -468,7 +601,81 @@ namespace CarroDesk.Modules.TaskScheduler.Views
         public Brush TriggerBadgeBg => new SolidColorBrush((Color)ColorConverter.ConvertFromString(Task.TriggerBadgeBg));
         public Brush TriggerBadgeFg => new SolidColorBrush((Color)ColorConverter.ConvertFromString(Task.TriggerBadgeFg));
 
-        public string ModeDisplayText => Task.Options?.IsDetach == true ? "常驻守护" : "单次运行";
+        // ---- 运行时列（PID / 已运行 / 内存占用） ----
+
+        public int? Pid => _snapshot.Pid;
+
+        public string PidDisplayText
+        {
+            get
+            {
+                if (!IsRunning) return "--";
+                if (_snapshot.ActiveInstances > 1) return "多实例";
+                return _snapshot.Pid.HasValue ? _snapshot.Pid.Value.ToString() : "--";
+            }
+        }
+
+        public Brush PidTextBrush => IsRunning && _snapshot.Pid.HasValue
+            ? new SolidColorBrush(Color.FromRgb(51, 65, 85))
+            : new SolidColorBrush(Color.FromRgb(148, 163, 184));
+
+        /// <summary>已运行时长，人类可读：45 秒 / 12 分 30 秒 / 3 小时 7 分 / 2 天 8 小时。</summary>
+        public string DurationDisplayText => _snapshot.StartedAt.HasValue
+            ? FormatDuration(_snapshot.DurationSec)
+            : "--";
+
+        /// <summary>内存占用（物理工作集）。仅在窗口可见时由采样器写入，其余情况为 --。</summary>
+        public string MemoryDisplayText
+        {
+            get
+            {
+                if (!IsRunning) return "--";
+                return _memoryBytes.HasValue ? FormatBytes(_memoryBytes.Value) : "--";
+            }
+        }
+
+        public Brush MemoryTextBrush => _memoryBytes.HasValue && IsRunning
+            ? new SolidColorBrush(Color.FromRgb(51, 65, 85))
+            : new SolidColorBrush(Color.FromRgb(148, 163, 184));
+
+        /// <summary>由窗口的性能采样器回填（null = 读不到/未运行）。</summary>
+        public void SetMemoryBytes(long? bytes)
+        {
+            if (_memoryBytes == bytes) return;
+            _memoryBytes = bytes;
+            OnPropertyChanged(nameof(MemoryDisplayText));
+            OnPropertyChanged(nameof(MemoryTextBrush));
+        }
+
+        internal static string FormatDuration(double totalSeconds)
+        {
+            if (double.IsNaN(totalSeconds) || totalSeconds < 0) totalSeconds = 0;
+            long sec = (long)totalSeconds;
+
+            if (sec < 60) return sec + " 秒";
+            if (sec < 3600)
+            {
+                long m = sec / 60, s = sec % 60;
+                return s == 0 ? m + " 分" : m + " 分 " + s + " 秒";
+            }
+            if (sec < 86400)
+            {
+                long h = sec / 3600, m = (sec % 3600) / 60;
+                return m == 0 ? h + " 小时" : h + " 小时 " + m + " 分";
+            }
+            long d = sec / 86400, hh = (sec % 86400) / 3600;
+            return hh == 0 ? d + " 天" : d + " 天 " + hh + " 小时";
+        }
+
+        internal static string FormatBytes(long bytes)
+        {
+            if (bytes <= 0) return "--";
+            const double KB = 1024d, MB = KB * 1024d, GB = MB * 1024d;
+            // 固定不变文化：避免区域小数点差异让同一内存在不同语言下显示成 72,8 MB
+            if (bytes >= GB) return (bytes / GB).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + " GB";
+            if (bytes >= MB) return (bytes / MB).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " MB";
+            return (bytes / KB).ToString("0", System.Globalization.CultureInfo.InvariantCulture) + " KB";
+        }
 
         public string ActionSummary
         {
@@ -488,17 +695,13 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                 switch (_snapshot.State)
                 {
                     case TaskRuntimeState.Starting:
-                        return "启动中...";
+                        return "启动中";
                     case TaskRuntimeState.Running:
-                        if (_snapshot.ActiveInstances > 1)
-                            return $"运行中 ({_snapshot.ActiveInstances}个 · {_snapshot.DurationSec:0}s)";
-                        if (_snapshot.Pid.HasValue)
-                            return $"运行中 (PID {_snapshot.Pid} · {_snapshot.DurationSec:0}s)";
-                        return $"运行中 ({_snapshot.DurationSec:0}s)";
+                        return _snapshot.ActiveInstances > 1 ? $"运行中 ×{_snapshot.ActiveInstances}" : "运行中";
                     case TaskRuntimeState.Stopping:
-                        return "停止中...";
+                        return "停止中";
                     case TaskRuntimeState.WaitingRetry:
-                        return $"等待重试 ({_snapshot.NextRetryDelaySec}s)";
+                        return $"等待重试 {_snapshot.NextRetryDelaySec}s";
                     case TaskRuntimeState.MarkedFailed:
                         return "熔断保护";
                     default:

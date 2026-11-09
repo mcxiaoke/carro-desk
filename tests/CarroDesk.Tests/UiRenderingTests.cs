@@ -269,7 +269,7 @@ namespace CarroDesk.Tests
                 };
 
                 var win = new TaskManagerWindow(scheduler);
-                SaveWindowSnapshot(win, 980, 620, "TaskManagerWindow.png");
+                SaveWindowSnapshot(win, 1150, 620, "TaskManagerWindow.png");
             });
         }
 
