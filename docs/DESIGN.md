@@ -40,7 +40,7 @@ CarroDesk.slnx
 │   │                         ProcessExclusionService、Tasks 运行时…
 │   └── Views/                LockWindow、TaskEditorWindow、TrayContextMenu 等
 ├── cli/CarroDesk.Cli/        CarroDesk.Cli.exe（PublishSingleFile 单文件；ctl / --mcp）
-├── tests/CarroDesk.Tests/    单元测试（420 通过，2026-11-09）
+├── tests/CarroDesk.Tests/    单元测试（dotnet test CarroDesk.slnx；用例数随迭代变化）
 ├── skills/carrodesk/         AI agent 技能（CLI 直控，MCP 无关）
 └── docs/                     设计文档、使用说明、AI 手册、remote-admin 脚本
 ```
@@ -173,7 +173,7 @@ CarroDesk.Cli --mcp ────┘       RpcProtocol：JSON-RPC 2.0 + pin/sourc
 
 - `CarroDesk.slnx`：`src`（主程序）、`cli/CarroDesk.Cli`（单文件 CLI）、`tests/CarroDesk.Tests`
 - 全部 net10.0-windows / WPF；GUI 与 CLI 均经 `dotnet publish -p:PublishSingleFile=true --self-contained false` 产出单 exe，目标机需 .NET 10 桌面运行时
-- 测试：`tests/CarroDesk.Tests`（420 通过，2026-11-09；`dotnet test CarroDesk.slnx`）
+- 测试：`tests/CarroDesk.Tests`，运行 `dotnet test CarroDesk.slnx`；用例数以实际输出为准（勿手写静态数字）
 - 发布产物保持最小集：exe + 配置样例 + pdb；部署目标如 `C:\Home\Tools\CarroDesk\`（便携 + `app_data\`）
 
 ## 9. 相关设计文档
