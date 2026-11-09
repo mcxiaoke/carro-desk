@@ -184,8 +184,8 @@
 
                 <!-- 部署模式 -->
                 <StackPanel Grid.Row="0" Grid.Column="1" Margin="8,0,0,6">
-                    <TextBlock Text="部署模式" FontSize="11" Foreground="#FF94A3B8"/>
-                    <TextBlock x:Name="ModeText" Text="便携模式" FontSize="11" FontWeight="SemiBold" Foreground="#FF334155" Margin="0,2,0,0"/>
+                    <TextBlock Text="{loc:Loc About.ModeLabel, Default='部署模式'}" FontSize="11" Foreground="#FF94A3B8"/>
+                    <TextBlock x:Name="ModeText" Text="{loc:Loc About.ModePortable, Default='便携模式'}" FontSize="11" FontWeight="SemiBold" Foreground="#FF334155" Margin="0,2,0,0"/>
                 </StackPanel>
 
                 <!-- 数据目录 -->
@@ -207,7 +207,7 @@
                 <!-- 模块区标题栏 -->
                 <DockPanel Grid.Row="0" Margin="0,0,0,8" LastChildFill="False">
                     <TextBlock Text="{loc:Loc About.ModulesTitle, Default='已加载业务模块'}" FontWeight="Bold" FontSize="13" Foreground="#FF0F172A" VerticalAlignment="Center"/>
-                    <TextBlock x:Name="ModulesCountText" DockPanel.Dock="Right" Text="共 8 个模块" FontSize="11" Foreground="#FF64748B" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="ModulesCountText" DockPanel.Dock="Right" Text="{loc:Loc About.ModulesCountPlaceholder, Default='共 8 个模块'}" FontSize="11" Foreground="#FF64748B" VerticalAlignment="Center"/>
                 </DockPanel>
 
                 <!-- 模块滚动列表 -->

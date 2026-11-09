@@ -139,5 +139,60 @@ namespace CarroDesk.Tests
             Assert.AreEqual(0, missingEn.Count,
                 "代码引用了但英文语言包缺失的 key（英文界面会显示中文）: " + string.Join(", ", missingEn));
         }
+
+        /// <summary>
+        /// 存量白名单：这三条是含 {{file}} / {{date}} 的模板提示串，写成
+        /// {loc:Loc Key, Default='...'} 时 XAML 标记扩展会把 {{ 当作转义花括号，
+        /// 故保留中文原文。除此以外新增的裸中文一律必须走本地化绑定。
+        /// </summary>
+        private static readonly HashSet<string> AllowedBareXamlLiterals = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "唯一标识，日志将自动写入 logs/task-{name}.log",
+            "可在动作参数中使用 {{file}} 接收变动文件全路径，{{fileName}} 接收文件名",
+            "格式：每行一个 KEY=VALUE，可在值中使用 {{date}} 等变量",
+        };
+
+        private static readonly Regex XamlAttrPattern =
+            new Regex(@"(?<attr>[A-Za-z_][\w:.]*\s*=\s*"")(?<val>[^""]*)(?:"")", RegexOptions.Compiled);
+
+        [TestMethod]
+        public void Xaml_DoesNotContainUnlocalizedChineseLiterals()
+        {
+            string src = FindSourceRoot();
+            var files = Directory.GetFiles(src, "*.xaml", SearchOption.AllDirectories)
+                .Where(f => !f.Contains("\\obj\\") && !f.Contains("\\bin\\"))
+                .ToList();
+            Assert.IsTrue(files.Count > 0, "未扫描到任何 XAML 文件");
+
+            var offenders = new List<string>();
+            foreach (var file in files)
+            {
+                string text = Regex.Replace(File.ReadAllText(file), @"<!--.*?-->", "", RegexOptions.Singleline);
+                foreach (Match m in XamlAttrPattern.Matches(text))
+                {
+                    string attr = m.Groups["attr"].Value;
+                    string val = m.Groups["val"].Value;
+                    if (attr.StartsWith("xmlns", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (!HasCjk(val)) continue;
+                    // {Binding} / {StaticResource} / {loc:Loc ...} 不是需要翻译的字面量
+                    if (val.StartsWith("{", StringComparison.Ordinal) || val.Contains("loc:")) continue;
+                    if (AllowedBareXamlLiterals.Contains(val)) continue;
+                    offenders.Add(Path.GetFileName(file) + ": " + val);
+                }
+            }
+
+            Assert.AreEqual(0, offenders.Count,
+                "XAML 有未本地化的中文字面量（请改用 {loc:Loc Key, Default='...'} 或登记白名单）: "
+                + string.Join(" | ", offenders.Take(10)));
+        }
+
+        private static bool HasCjk(string s)
+        {
+            foreach (char c in s)
+            {
+                if (c >= '\u4e00' && c <= '\u9fff') return true;
+            }
+            return false;
+        }
     }
 }

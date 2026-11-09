@@ -194,7 +194,7 @@
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="{loc:Loc Audio.SpeakerKeyword, Default='🔊 扬声器关键字:'}" VerticalAlignment="Center" Foreground="#FF475569" FontSize="13"/>
-                            <TextBox x:Name="TxtSpeakerPattern" Grid.Column="1" Height="28" Padding="6,2" FontSize="13" Text="扬声器" VerticalContentAlignment="Center" BorderBrush="#CBD5E1"/>
+                            <TextBox x:Name="TxtSpeakerPattern" Grid.Column="1" Height="28" Padding="6,2" FontSize="13" Text="{loc:Loc Audio.Speaker, Default='扬声器'}" VerticalContentAlignment="Center" BorderBrush="#CBD5E1"/>
                             <Button Grid.Column="2" Content="{loc:Loc Audio.FillSelectedName, Default='填入选中设备名'}" Margin="8,0,0,0" Style="{StaticResource SmallButtonStyle}" Click="OnUseSelectedAsSpeakerClick" ToolTip="{loc:Loc Audio.FillSelectedNameTip, Default='将列表中选中的设备名称填入扬声器关键字'}"/>
                             <TextBlock Grid.Column="3" Text="{loc:Loc Audio.SpeakerDefaultHint, Default='(默认: 扬声器 / Speakers)'}" VerticalAlignment="Center" Foreground="#FF94A3B8" FontSize="11" Margin="8,0,0,0"/>
                         </Grid>
@@ -208,7 +208,7 @@
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="{loc:Loc Audio.HeadphoneKeyword, Default='🎧 耳机关键字:'}" VerticalAlignment="Center" Foreground="#FF475569" FontSize="13"/>
-                            <TextBox x:Name="TxtHeadphonePattern" Grid.Column="1" Height="28" Padding="6,2" FontSize="13" Text="耳机" VerticalContentAlignment="Center" BorderBrush="#CBD5E1"/>
+                            <TextBox x:Name="TxtHeadphonePattern" Grid.Column="1" Height="28" Padding="6,2" FontSize="13" Text="{loc:Loc Audio.Headset, Default='耳机'}" VerticalContentAlignment="Center" BorderBrush="#CBD5E1"/>
                             <Button Grid.Column="2" Content="{loc:Loc Audio.FillSelectedName, Default='填入选中设备名'}" Margin="8,0,0,0" Style="{StaticResource SmallButtonStyle}" Click="OnUseSelectedAsHeadphoneClick" ToolTip="{loc:Loc Audio.FillSelectedNameTipHeadphone, Default='将列表中选中的设备名称填入耳机关键字'}"/>
                             <TextBlock Grid.Column="3" Text="{loc:Loc Audio.HeadphoneDefaultHint, Default='(默认: 耳机 / Headphones)'}" VerticalAlignment="Center" Foreground="#FF94A3B8" FontSize="11" Margin="8,0,0,0"/>
                         </Grid>
