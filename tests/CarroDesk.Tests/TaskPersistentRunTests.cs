@@ -702,6 +702,58 @@ namespace CarroDesk.Tests
         }
 
         /// <summary>
+        /// 配置重载时被删除/禁用的任务必须停掉其实例（H2）：
+        /// 否则旧进程继续运行并占着运行槽，删除的任务永远留在"运行中"，
+        /// 同名新任务也会被占槽拒绝。
+        /// </summary>
+        [TestMethod]
+        public void Scheduler_Reload_StopsInstancesOfRemovedTask()
+        {
+            string bat = WriteSleepBat("reload-gone.bat", 30);
+            var tasks = new JArray(new JObject(
+                new JProperty("name", "t_reload_gone"),
+                new JProperty("enabled", true),
+                new JProperty("trigger", new JObject(new JProperty("type", "manual"))),
+                new JProperty("action", new JObject(new JProperty("file", bat))),
+                new JProperty("options", new JObject(
+                    new JProperty("mode", "detach"),
+                    new JProperty("hidden", true)))));
+
+            File.WriteAllText(TaskConfigService.FilePath, tasks.ToString(), Encoding.UTF8);
+            try
+            {
+                var scheduler = new TaskSchedulerService();
+                scheduler.Start();
+                try
+                {
+                    Assert.IsTrue(scheduler.RunManual("t_reload_gone"), "手动触发应成功");
+                    // 槽位先于句柄登记：GetRunning 只列已拿到句柄的实例，故以它作为"进程已起来"的信号
+                    WaitUntil(() => scheduler.GetRunning().Count == 1, TimeSpan.FromSeconds(10),
+                        "启动后应进入运行注册表");
+                    int pid = scheduler.GetRunning()[0].Pid;
+
+                    // 新配置中删除该任务
+                    File.WriteAllText(TaskConfigService.FilePath, new JArray().ToString(), Encoding.UTF8);
+                    var reload = scheduler.Reload();
+                    Assert.AreEqual(0, reload.Errors.Count, "重载不应有解析错误");
+
+                    WaitUntil(() => !scheduler.IsRunning("t_reload_gone"), TimeSpan.FromSeconds(10),
+                        "删除任务后重载必须停掉实例并出册");
+                    WaitUntil(() => !IsProcessAlive(pid), TimeSpan.FromSeconds(10),
+                        "被删除任务的旧进程应被终止");
+                }
+                finally
+                {
+                    scheduler.Stop();
+                }
+            }
+            finally
+            {
+                try { File.Delete(TaskConfigService.FilePath); } catch { }
+            }
+        }
+
+        /// <summary>
         /// GetRecent 必须返回快照。
         ///
         /// 原实现返回内部列表的活视图（AsReadOnly 只做包装，锁在返回瞬间就释放），

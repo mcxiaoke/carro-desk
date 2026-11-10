@@ -93,6 +93,23 @@ namespace CarroDesk.Services.Tasks
         }
 
         /// <summary>
+        /// 同一次执行内的下一次尝试（retry 循环的后续轮次）：只更新当前 pid/启动时刻，
+        /// 不重复累加实例计数。一次 ExecuteAsync 无论内部重试几次，在运行表与状态机里
+        /// 都只是同一个实例；否则每轮重试 ActiveInstances++ 而退出只减一次，任务会永久假运行（S1）。
+        /// </summary>
+        public void OnAttemptStarted(int pid, DateTime startTime)
+        {
+            lock (_lock)
+            {
+                if (ActiveInstances == 0) ActiveInstances++; // 兜底：首轮未登记时不至于显示零实例运行
+                CurrentState = TaskRuntimeState.Running;
+                CurrentPid = pid;
+                if (!CurrentStartedAt.HasValue) CurrentStartedAt = startTime;
+                LastOutcome = ActiveInstances > 1 ? $"运行中 ({ActiveInstances} 实例)" : "运行中";
+            }
+        }
+
+        /// <summary>
         /// 启动失败（如可执行文件不存在或权限不足），跃迁处理。
         /// </summary>
         public TaskRuntimeState OnStartFailed(bool shouldRetry, int retryDelaySec, int retryLimit, string error)
@@ -149,7 +166,18 @@ namespace CarroDesk.Services.Tasks
                 if (CurrentState == TaskRuntimeState.Starting)
                 {
                     CurrentState = TaskRuntimeState.Idle;
+                    NextRetryDelaySec = 0;
                     LastOutcome = "未启动";
+                }
+                else if (CurrentState == TaskRuntimeState.WaitingRetry)
+                {
+                    // 重启尝试无法继续（单实例互斥被占用 / 启动异常 / 配置重载）：
+                    // 必须取消倒计时回到 Idle，否则状态机永久停在 WaitingRetry，
+                    // 后续触发全被拒绝，界面显示"等待重试"却永不推进（H4）。
+                    // 保留 ConsecutiveFailures：放弃启动不消耗新的失败预算，也不清零既有预算。
+                    CurrentState = TaskRuntimeState.Idle;
+                    NextRetryDelaySec = 0;
+                    LastOutcome = "已放弃自动重试";
                 }
                 // 其它状态（如 allowConcurrent 下既有实例的 Running）一律不动
             }
@@ -294,8 +322,10 @@ namespace CarroDesk.Services.Tasks
                 ConsecutiveFailures = 0;
                 NextRetryDelaySec = 0;
                 MarkedFailedAt = null;
-                if (CurrentState == TaskRuntimeState.MarkedFailed)
+                if (CurrentState == TaskRuntimeState.MarkedFailed || CurrentState == TaskRuntimeState.WaitingRetry)
                 {
+                    // WaitingRetry 同样要复位：编辑保存/配置重载后旧的倒计时已无意义，
+                    // 若只清计数不改状态，状态机会卡在 WaitingRetry 拒绝后续触发（H4）。
                     CurrentState = TaskRuntimeState.Idle;
                     LastOutcome = "已重置";
                 }

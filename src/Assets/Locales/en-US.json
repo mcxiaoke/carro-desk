@@ -615,6 +615,7 @@
     "ValRestartLimitRange": "Max restarts must be between 1 and 100",
     "RunStatusMarked": "Marked FAILED ({0} consecutive failures) — save the task or run it manually to reset",
     "MarkedFailedNotify": "Task [{0}] exited unexpectedly {1} times in a row; marked FAILED and auto-restart stopped.\nRe-save the task after fixing, or run it manually/hotkey to reset.",
+    "RestartTimeout": "Task [{0}] did not stop in time; restart cancelled (try again later)",
     "TestRunSingleInstanceSkip": "An instance is already running (single-instance mutex); test process not started",
     "GlobalEnabledLabel": "Enable Task Scheduler",
     "GlobalEnabledTooltip": "Master switch: all scheduled tasks are paused when disabled",

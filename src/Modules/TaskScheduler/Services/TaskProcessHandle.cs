@@ -184,6 +184,24 @@ namespace CarroDesk.Services.Tasks
         }
 
         /// <summary>
+        /// 等待进程真正退出（停止链路用于确认旧实例已终结后再启动新实例，H3）。
+        /// 返回 true 表示已退出（含句柄已释放/进程不存在），false 表示超时仍存活。
+        /// </summary>
+        internal bool WaitForExit(TimeSpan timeout)
+        {
+            try
+            {
+                if (_proc == null || _proc.HasExited) return true;
+                return _proc.WaitForExit((int)Math.Max(0, timeout.TotalMilliseconds));
+            }
+            catch
+            {
+                // 句柄已被释放（宿主退出清理）或进程已不存在：视为已退出
+                return true;
+            }
+        }
+
+        /// <summary>
         /// 主动停止整棵进程树（用户停止 / 宿主退出清理）。
         /// killWithHost=true 时关闭作业对象即连带终止；否则走 taskkill /T /F 降级链。幂等。
         /// 即使句柄已 Dispose（如宿主退出清理顺序）也可用——taskkill 使用构造时记录的 pid。
@@ -198,6 +216,10 @@ namespace CarroDesk.Services.Tasks
             }
             catch { }
             try { KillTree(); } catch { }
+            // 确认进程已终结后再释放单实例互斥体（H3）：KillTree 的 taskkill 只保证发出了终止，
+            // 若在此刻就 Dispose 互斥体，紧随其后的重启可能抢到互斥体而旧进程尚未真正退出，
+            // 造成双实例/端口冲突。最多等 3s，超时也继续释放，避免停止路径被卡死。
+            try { if (_proc != null && !_proc.HasExited) _proc.WaitForExit(3000); } catch { }
             // 停止即实例终结：立即释放单实例互斥体（正常路径由 watcher 的 Dispose 释放，
             // 这里兜底覆盖无 watcher 的停止路径），保证随后的启动/重启能立即取到互斥体
             try { if (_singleInstanceMutex != null) _singleInstanceMutex.Dispose(); } catch { }

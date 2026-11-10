@@ -203,5 +203,72 @@ namespace CarroDesk.Tests
             // 人工触发仍可放行（显式意图）
             Assert.IsTrue(fsm.TryBeginStarting(true, out _));
         }
+
+        // ===== S1 / H4（docs/OPEN-ISSUES-20261110.md）回归 =====
+
+        /// <summary>
+        /// 同一次执行内的重试尝试不得重复累加实例计数：每轮都 OnProcessStarted 而退出只减一次，
+        /// 会让任务重试结束后永久停在"假运行"状态（S1）。
+        /// </summary>
+        [TestMethod]
+        public void OnAttemptStarted_RetryAttempt_DoesNotAccumulateInstances()
+        {
+            var fsm = new TaskStateMachine("retry-count");
+            Assert.IsTrue(fsm.TryBeginStarting(false, out _));
+            fsm.OnProcessStarted(9001, DateTime.Now);
+            Assert.AreEqual(1, fsm.GetSnapshot().ActiveInstances);
+
+            // 第一次尝试失败后，同一执行内发起第二次尝试
+            fsm.OnAttemptStarted(9002, DateTime.Now);
+            var snap = fsm.GetSnapshot();
+            Assert.AreEqual(1, snap.ActiveInstances, "重试不得累加 ActiveInstances");
+            Assert.AreEqual(9002, snap.Pid, "重试应更新当前 pid");
+            Assert.AreEqual(TaskRuntimeState.Running, snap.State);
+
+            // 执行结束只减一次，计数归零、状态回 Idle
+            fsm.OnProcessExited(0, false, false, 0, 0, 0);
+            Assert.AreEqual(0, fsm.GetSnapshot().ActiveInstances);
+            Assert.AreEqual(TaskRuntimeState.Idle, fsm.CurrentState);
+        }
+
+        /// <summary>
+        /// WaitingRetry 下放弃重启（单实例被占用/启动异常/重载）必须回到 Idle，
+        /// 否则状态机永久卡死、后续触发全被拒绝（H4）。
+        /// </summary>
+        [TestMethod]
+        public void OnAbandon_FromWaitingRetry_ReturnsToIdleAndKeepsFailures()
+        {
+            var fsm = new TaskStateMachine("abandon-retry");
+            Assert.IsTrue(fsm.TryBeginStarting(false, out _));
+            fsm.OnProcessStarted(9101, DateTime.Now);
+            var state = fsm.OnProcessExited(1, false, true, 5, 2, 0);
+            Assert.AreEqual(TaskRuntimeState.WaitingRetry, state);
+            Assert.AreEqual(1, fsm.ConsecutiveFailures);
+
+            fsm.OnAbandon();
+
+            Assert.AreEqual(TaskRuntimeState.Idle, fsm.CurrentState);
+            Assert.AreEqual(0, fsm.NextRetryDelaySec, "放弃重试必须取消倒计时");
+            Assert.AreEqual(1, fsm.ConsecutiveFailures, "放弃启动不应清空失败预算");
+            // 放弃后非人工触发应可再次进入 Starting（不再被 WaitingRetry 拒绝）
+            Assert.IsTrue(fsm.TryBeginStarting(false, out _));
+        }
+
+        /// <summary>编辑保存/配置重载的 Reset 必须能取消 WaitingRetry 的待重试。</summary>
+        [TestMethod]
+        public void Reset_FromWaitingRetry_CancelsPendingRetry()
+        {
+            var fsm = new TaskStateMachine("reset-retry");
+            Assert.IsTrue(fsm.TryBeginStarting(false, out _));
+            fsm.OnProcessStarted(9201, DateTime.Now);
+            fsm.OnProcessExited(1, false, true, 5, 2, 0);
+            Assert.AreEqual(TaskRuntimeState.WaitingRetry, fsm.CurrentState);
+
+            fsm.Reset();
+
+            Assert.AreEqual(TaskRuntimeState.Idle, fsm.CurrentState);
+            Assert.AreEqual(0, fsm.NextRetryDelaySec);
+            Assert.AreEqual(0, fsm.ConsecutiveFailures);
+        }
     }
 }

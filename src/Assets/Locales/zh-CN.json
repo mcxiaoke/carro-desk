@@ -615,6 +615,7 @@
     "ValRestartLimitRange": "最大重启次数必须在 1 到 100 之间",
     "RunStatusMarked": "已标记失败（连续失败 {0} 次）——保存任务或手动运行可重置",
     "MarkedFailedNotify": "任务 [{0}] 连续异常退出 {1} 次，已标记失败并停止自动重启。\n修复后重新保存任务，或手动/热键运行即可重置。",
+    "RestartTimeout": "任务 [{0}] 停止超时，已取消重启（请稍后重试）",
     "TestRunSingleInstanceSkip": "已有运行实例（单实例互斥），未启动测试进程",
     "GlobalEnabledLabel": "启用任务调度",
     "GlobalEnabledTooltip": "总开关：关闭后所有计划任务暂停执行",
