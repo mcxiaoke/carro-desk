@@ -97,6 +97,13 @@
                 <TextBlock x:Name="KeyHintText" FontSize="11" Foreground="#FFD97706" Margin="0,6,0,0"
                            Visibility="Collapsed" Text="{loc:Loc Lock.CapsLockWarning}"/>
 
+                <!-- 首次运行选项（H6）：默认不勾选，是否自启/自动锁屏由用户显式选择 -->
+                <StackPanel x:Name="OptionsPanel" Margin="0,16,0,0">
+                    <TextBlock Text="{loc:Loc FirstRun.OptionsTitle}" FontSize="12" FontWeight="SemiBold" Foreground="#FF444444" Margin="0,0,0,6"/>
+                    <CheckBox x:Name="AutoStartCheck" Content="{loc:Loc FirstRun.AutoStartOption}" IsChecked="False" Margin="0,0,0,6"/>
+                    <CheckBox x:Name="AutoLockCheck" Content="{loc:Loc FirstRun.AutoLockOption}" IsChecked="False"/>
+                </StackPanel>
+
                 <!-- 错误消息 -->
                 <TextBlock x:Name="MessageText" FontSize="12" Foreground="#FFD93025" Margin="0,6,0,0"
                            TextWrapping="Wrap" MinHeight="16"/>

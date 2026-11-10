@@ -16,7 +16,10 @@ namespace CarroDesk.Models
         /// </summary>
         public int SchemaVersion { get; set; } = CurrentSchemaVersion;
 
-        public bool AutoStart { get; set; } = true;
+        /// <summary>
+        /// 开机自启。默认关闭：是否写入 Run 注册表必须由用户在首次运行向导/设置页显式选择（H6）。
+        /// </summary>
+        public bool AutoStart { get; set; } = false;
         public string PinSalt { get; set; } = "";
         public string PinHash { get; set; } = "";
         public string Language { get; set; } = "auto";

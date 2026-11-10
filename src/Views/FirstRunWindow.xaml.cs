@@ -10,6 +10,12 @@ namespace CarroDesk.Views
         public string NewPin { get; private set; }
         public bool IsChangeMode { get; set; }
 
+        /// <summary>首次运行选项卡：是否随 Windows 启动（默认不勾选，H6）。</summary>
+        public bool StartWithWindows { get { return AutoStartCheck.IsChecked == true; } }
+
+        /// <summary>首次运行选项卡：空闲时是否自动锁屏（默认不勾选，H6）。</summary>
+        public bool AutoLockWhenIdle { get { return AutoLockCheck.IsChecked == true; } }
+
         public FirstRunWindow()
         {
             InitializeComponent();
@@ -17,10 +23,12 @@ namespace CarroDesk.Views
             {
                 PinBox1.Focus();
                 UpdateKeyLockStatus();
+                // 改 PIN 模式不展示首次运行选项，避免覆盖用户既有选择
                 if (IsChangeMode)
                 {
                     Title = Loc.T("FirstRun.TitleChangePin");
                     HeadingText.Text = Loc.T("FirstRun.HeadingChangePin");
+                    OptionsPanel.Visibility = Visibility.Collapsed;
                 }
             };
 

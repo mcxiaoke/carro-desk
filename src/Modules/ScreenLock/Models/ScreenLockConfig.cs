@@ -12,7 +12,10 @@ namespace CarroDesk.Modules.ScreenLock.Models
         public double OverlayOpacity { get; set; } = 0.88;
         public string Hotkey { get; set; } = "Ctrl+Alt+L";
 
-        public bool AutoLockEnabled { get; set; } = true;
+        /// <summary>
+        /// 空闲自动锁屏。默认关闭：锁屏属于侵入性行为，必须在首次运行向导或设置页显式开启（H6）。
+        /// </summary>
+        public bool AutoLockEnabled { get; set; } = false;
         public bool DevicePresenceEnabled { get; set; } = false;
         public string TargetDeviceIP { get; set; } = "";
         public int DeviceOfflineGraceSeconds { get; set; } = 30;

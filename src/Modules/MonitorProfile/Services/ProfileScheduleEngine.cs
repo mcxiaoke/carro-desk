@@ -359,6 +359,15 @@ namespace CarroDesk.Modules.MonitorProfile.Services
         }
 
         /// <summary>
+        /// 只设置亮度、保持当前对比度（M14）：托盘“常用亮度预设”不应把用户自定义的对比度重置为硬编码 70。
+        /// </summary>
+        public void SetBrightness(int brightness)
+        {
+            int contrast = CurrentContrast >= 0 ? CurrentContrast : 70;
+            ApplyValuesAsync(brightness, contrast, _config?.ActiveProfile ?? "Manual", false, null);
+        }
+
+        /// <summary>
         /// 手动设置绝对亮度和对比度。
         /// </summary>
         public void SetDirectValues(int brightness, int contrast)

@@ -493,7 +493,7 @@ namespace CarroDesk.Modules.ScreenLock
             root.Children.Add(TrayMenuItem.Separator());
 
             // 2. 空闲锁定档位：当前档位用 IsChecked 表达，"0-禁用" 即禁用态
-            bool autoLockEnabled = Config?.AutoLockEnabled ?? true;
+            bool autoLockEnabled = Config?.AutoLockEnabled ?? false;
             var idleRoot = new TrayMenuItem
             {
                 Id = "screenlock_idle_root",

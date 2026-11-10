@@ -18,6 +18,13 @@ namespace CarroDesk.Tests
     public class ConfigAndTriggerTests
     {
         [TestMethod]
+        public void AppSettings_DefaultAutoStart_IsDisabled()
+        {
+            // H6：新配置默认不写 Run 注册表，自启必须由用户在首次运行向导或设置页显式开启
+            Assert.IsFalse(new AppSettings().AutoStart, "默认不应启用开机自启");
+        }
+
+        [TestMethod]
         public void AtomicFile_WriteAllText_CreatesAndOverwritesSafely()
         {
             string tempDir = Path.Combine(Path.GetTempPath(), "CarroDesk_Test_" + Guid.NewGuid().ToString("N"));

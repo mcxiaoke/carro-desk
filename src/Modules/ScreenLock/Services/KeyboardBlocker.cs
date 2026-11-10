@@ -22,6 +22,14 @@ namespace CarroDesk.Services
         private const int VK_APPS = 0x5D;
         private const int VK_NUMPAD0 = 0x60;
         private const int VK_NUMPAD9 = 0x69;
+        private const int VK_TAB = 0x09;
+        private const int VK_HOME = 0x24;
+        private const int VK_END = 0x23;
+        private const int VK_LEFT = 0x25;
+        private const int VK_RIGHT = 0x27;
+        private const int VK_UP = 0x26;
+        private const int VK_DOWN = 0x28;
+        private const int VK_DELETE = 0x2E;
 
         [StructLayout(LayoutKind.Sequential)]
         private struct KBDLLHOOKSTRUCT
@@ -90,6 +98,26 @@ namespace CarroDesk.Services
             return false;
         }
 
+        /// <summary>
+        /// 密码框编辑必需的导航/删除键（M25）：此前全被吞掉，用户无法用方向键/Delete 修正输入。
+        /// </summary>
+        private static bool IsEditingKey(uint vk)
+        {
+            switch ((int)vk)
+            {
+                case VK_TAB:
+                case VK_HOME:
+                case VK_END:
+                case VK_LEFT:
+                case VK_RIGHT:
+                case VK_UP:
+                case VK_DOWN:
+                case VK_DELETE:
+                    return true;
+            }
+            return false;
+        }
+
         private IntPtr HookProc(int nCode, IntPtr wParam, IntPtr lParam)
         {
             if (nCode >= 0)
@@ -103,7 +131,13 @@ namespace CarroDesk.Services
 
                     bool winDown = (GetAsyncKeyState(VK_LWIN) & 0x8000) != 0 || (GetAsyncKeyState(VK_RWIN) & 0x8000) != 0;
 
+                    bool ctrlDown = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+
                     if (IsAllowedKey(vk) && !winDown && !altDown)
+                        return CallNextHookEx(_hook, nCode, wParam, lParam);
+
+                    // 编辑键放行给密码框，但不配合 Ctrl（避免 Ctrl+V 粘贴、Ctrl+A 等绕过数字限制）
+                    if (IsEditingKey(vk) && !winDown && !altDown && !ctrlDown)
                         return CallNextHookEx(_hook, nCode, wParam, lParam);
 
                     if (vk == VK_LWIN || vk == VK_RWIN || vk == VK_APPS)
@@ -118,7 +152,7 @@ namespace CarroDesk.Services
                     if (vk == VK_ESCAPE && (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0)
                         return (IntPtr)1;
 
-                    // 锁屏期间只允许数字、NumPad、Backspace、Enter、Shift；
+                    // 锁屏期间只允许数字、NumPad、Backspace、Enter、Shift 以及编辑键；
                     // 其它普通字符/Tab/空格/功能键也必须吞掉，避免输入泄漏到下层窗口。
                     return (IntPtr)1;
                 }

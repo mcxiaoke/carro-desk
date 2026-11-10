@@ -233,7 +233,7 @@ namespace CarroDesk.Modules.MonitorProfile
                 {
                     Id = $"monitor_preset_{val}",
                     Header = $"{val}%",
-                    ClickAction = () => ScheduleEngine?.SetDirectValues(val, 70)
+                    ClickAction = () => ScheduleEngine?.SetBrightness(val)
                 });
             }
             root.Children.Add(presetsNode);

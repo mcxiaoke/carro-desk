@@ -227,7 +227,10 @@
     "ErrorDigitsOnly": "PIN must contain digits 0-9 only (lock screen accepts digits only)",
     "ErrorMismatch": "The PINs you entered do not match",
     "ConfirmButton": "Save PIN",
-    "CancelButton": "Cancel"
+    "CancelButton": "Cancel",
+    "OptionsTitle": "Startup and lock screen (can be changed later in settings)",
+    "AutoStartOption": "Start CarroDesk with Windows",
+    "AutoLockOption": "Auto-lock after 5 minutes idle"
   },
   "VerifyPin": {
     "Title": "CarroDesk - Security Verification",

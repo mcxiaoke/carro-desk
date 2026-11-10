@@ -227,7 +227,10 @@
     "ErrorDigitsOnly": "PIN 只能包含数字 0-9（锁屏期间仅能输入数字）",
     "ErrorMismatch": "两次输入的 PIN 不一致",
     "ConfirmButton": "确认设置",
-    "CancelButton": "取消"
+    "CancelButton": "取消",
+    "OptionsTitle": "启动与锁屏（可稍后在设置中修改）",
+    "AutoStartOption": "随 Windows 启动 CarroDesk",
+    "AutoLockOption": "空闲 5 分钟后自动锁屏"
   },
   "VerifyPin": {
     "Title": "CarroDesk - 安全验证",

@@ -14,7 +14,7 @@ namespace CarroDesk.Tests
         public void ScreenLockConfig_DefaultsAndClone_WorkCorrectly()
         {
             var config = new ScreenLockConfig();
-            Assert.IsTrue(config.AutoLockEnabled, "默认应启用自动锁屏");
+            Assert.IsFalse(config.AutoLockEnabled, "默认关闭自动锁屏，需用户在首次运行/设置页显式开启（H6）");
             Assert.IsFalse(config.DevicePresenceEnabled, "默认不启用设备在线免锁");
             Assert.AreEqual("", config.TargetDeviceIP, "默认目标 IP 为空");
             Assert.AreEqual(30, config.DeviceOfflineGraceSeconds, "默认离线缓冲为 30 秒");

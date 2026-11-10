@@ -98,6 +98,7 @@ namespace CarroDesk
             var logger = new DefaultLoggerService();
             Services.AddSingleton<ILoggerService>(logger);
 
+            bool configExistedBeforeLoad = System.IO.File.Exists(ConfigService.FilePath);
             var rawConfig = new ConfigService();
             rawConfig.LoadOrCreate();
             if (rawConfig.LastLoadIoFailure)
@@ -146,6 +147,17 @@ namespace CarroDesk
                     hostPinService.SetNewPin(wizard.NewPin);
                     _configManager.Current.PinSalt = hostPinService.Salt;
                     _configManager.Current.PinHash = hostPinService.Hash;
+
+                    // H6：自启/自动锁屏默认关闭，只有本次为全新配置时才采用向导里的勾选；
+                    // 已有配置（例如仅因缺少 PIN 重新进入向导）不得覆盖用户设置。
+                    if (!configExistedBeforeLoad)
+                    {
+                        _configManager.Current.AutoStart = wizard.StartWithWindows;
+                        var lockToken = rawConfig.GetModuleToken("ScreenLock") as Newtonsoft.Json.Linq.JObject
+                            ?? new Newtonsoft.Json.Linq.JObject();
+                        lockToken["AutoLockEnabled"] = wizard.AutoLockWhenIdle;
+                        rawConfig.SetModuleToken("ScreenLock", lockToken);
+                    }
                     _configManager.Save();
                 }
                 else
