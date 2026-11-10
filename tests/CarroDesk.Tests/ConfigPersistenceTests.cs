@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using CarroDesk.Common;
+using CarroDesk.Host.Services;
 using CarroDesk.Models;
 using CarroDesk.Services;
 using CarroDesk.Services.Tasks;
@@ -347,6 +348,107 @@ namespace CarroDesk.Tests
             var reloaded = TaskConfigService.Load();
             Assert.AreEqual(1, reloaded.Tasks.Count);
             Assert.AreEqual(0, reloaded.Errors.Count, "实际: " + string.Join("; ", reloaded.Errors));
+        }
+
+        // ---------- M6：config.json schema 版本 ----------
+
+        [TestMethod]
+        public void ConfigService_LegacyFileWithoutSchemaVersion_IsUpgradedAndWrittenBack()
+        {
+            string path = ConfigService.FilePath;
+            string original = File.Exists(path) ? File.ReadAllText(path, Encoding.UTF8) : null;
+            try
+            {
+                File.WriteAllText(path, "{\n  \"AutoStart\": false,\n  \"Language\": \"en-US\"\n}", Encoding.UTF8);
+
+                var service = new ConfigService();
+                service.LoadOrCreate();
+
+                Assert.AreEqual(AppSettings.CurrentSchemaVersion, service.Current.SchemaVersion,
+                    "无版本字段的旧配置必须视为 v1 并升级到当前版本");
+                Assert.IsFalse(service.Current.AutoStart, "升级不得改动真实用户设置");
+
+                string saved = File.ReadAllText(path, Encoding.UTF8);
+                StringAssert.Contains(saved, "\"SchemaVersion\": " + AppSettings.CurrentSchemaVersion,
+                    "升级后必须把版本标记写回文件，避免每次启动重复迁移");
+            }
+            finally
+            {
+                if (original == null) { try { File.Delete(path); } catch { } }
+                else File.WriteAllText(path, original, Encoding.UTF8);
+            }
+        }
+
+        [TestMethod]
+        public void ConfigService_NewerSchemaVersion_IsPreservedAndNotDowngraded()
+        {
+            string path = ConfigService.FilePath;
+            string original = File.Exists(path) ? File.ReadAllText(path, Encoding.UTF8) : null;
+            try
+            {
+                string future = "{\"SchemaVersion\": 99, \"AutoStart\": false}";
+                File.WriteAllText(path, future, Encoding.UTF8);
+
+                var service = new ConfigService();
+                service.LoadOrCreate();
+
+                Assert.AreEqual(99, service.Current.SchemaVersion, "更高版本号必须保留");
+                Assert.IsFalse(service.Current.AutoStart);
+                Assert.AreEqual(future, File.ReadAllText(path, Encoding.UTF8),
+                    "未发生迁移时不得按旧结构重写更高版本的配置");
+            }
+            finally
+            {
+                if (original == null) { try { File.Delete(path); } catch { } }
+                else File.WriteAllText(path, original, Encoding.UTF8);
+            }
+        }
+
+        // ---------- M4：模块配置读写共用同一序列化口径 ----------
+
+        public class ModuleRoundTripConfig
+        {
+            public string Name { get; set; }
+            public string Optional { get; set; }
+            public DateTime When { get; set; }
+            public List<string> Tags { get; set; }
+            public Dictionary<string, int> Counts { get; set; }
+        }
+
+        [TestMethod]
+        public void ModuleConfig_SaveAndLoad_ShareSerializerSettingsAndRoundTrip()
+        {
+            string path = ConfigService.FilePath;
+            string original = File.Exists(path) ? File.ReadAllText(path, Encoding.UTF8) : null;
+            try
+            {
+                var service = new ConfigService();
+                service.LoadOrCreate();
+                var manager = new ConfigManager(service);
+
+                var expected = new ModuleRoundTripConfig
+                {
+                    Name = "round-trip",
+                    Optional = null,
+                    When = new DateTime(2026, 11, 10, 4, 5, 6, DateTimeKind.Utc),
+                    Tags = new List<string> { "a", "b" },
+                    Counts = new Dictionary<string, int> { ["x"] = 1 }
+                };
+
+                Assert.IsTrue(manager.SaveModuleConfig("RoundTrip", expected));
+
+                var actual = manager.GetModuleConfig<ModuleRoundTripConfig>("RoundTrip");
+                Assert.AreEqual(expected.Name, actual.Name);
+                Assert.IsNull(actual.Optional, "显式 null 必须按模块配置口径往返，不得变成空字符串");
+                Assert.AreEqual(expected.When, actual.When);
+                CollectionAssert.AreEqual(expected.Tags, actual.Tags);
+                Assert.AreEqual(1, actual.Counts["x"]);
+            }
+            finally
+            {
+                if (original == null) { try { File.Delete(path); } catch { } }
+                else File.WriteAllText(path, original, Encoding.UTF8);
+            }
         }
     }
 }

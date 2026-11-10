@@ -4,6 +4,18 @@ namespace CarroDesk.Models
 {
     public class AppSettings
     {
+        /// <summary>
+        /// 当前配置结构版本。v1 = 历史扁平配置（无版本字段），v2 = 模块分区结构。
+        /// 字段缺失时读取端视为 v1，由 ConfigService 的迁移链升级并写回（M6）。
+        /// </summary>
+        public const int CurrentSchemaVersion = 2;
+
+        /// <summary>
+        /// 配置结构版本；新建配置写入 <see cref="CurrentSchemaVersion"/>。
+        /// 读取到更高版本时只告警、不降级覆盖未知结构。
+        /// </summary>
+        public int SchemaVersion { get; set; } = CurrentSchemaVersion;
+
         public bool AutoStart { get; set; } = true;
         public string PinSalt { get; set; } = "";
         public string PinHash { get; set; } = "";
@@ -53,6 +65,7 @@ namespace CarroDesk.Models
 
         public void CopyTo(AppSettings target)
         {
+            target.SchemaVersion = SchemaVersion;
             target.AutoStart = AutoStart;
             target.PinSalt = PinSalt;
             target.PinHash = PinHash;

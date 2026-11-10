@@ -23,8 +23,6 @@ namespace CarroDesk.Host.Services
         public ConfigService Underlying => _underlying;
         public AppSettings Current => _underlying.Current;
 
-        public event Action ConfigReloaded;
-
         public void LoadOrCreate()
         {
             _underlying.LoadOrCreate();
@@ -37,9 +35,7 @@ namespace CarroDesk.Host.Services
 
         public bool Reload()
         {
-            if (!_underlying.Reload()) return false;
-            ConfigReloaded?.Invoke();
-            return true;
+            return _underlying.Reload();
         }
 
         public T GetModuleConfig<T>(string moduleId) where T : class, new()
@@ -51,16 +47,17 @@ namespace CarroDesk.Host.Services
             {
                 try
                 {
+                    var serializer = JsonSerializer.Create(ConfigService.ModuleSerializerSettings);
                     if (token is JObject jObj)
                     {
-                        return jObj.ToObject<T>() ?? CreateInstance<T>();
+                        return jObj.ToObject<T>(serializer) ?? CreateInstance<T>();
                     }
                     if (token.Type == JTokenType.String)
                     {
                         string str = token.Value<string>();
                         if (!string.IsNullOrWhiteSpace(str))
                         {
-                            return JsonConvert.DeserializeObject<T>(str) ?? CreateInstance<T>();
+                            return JsonConvert.DeserializeObject<T>(str, ConfigService.ModuleSerializerSettings) ?? CreateInstance<T>();
                         }
                     }
                 }
@@ -122,7 +119,7 @@ namespace CarroDesk.Host.Services
 
             try
             {
-                var token = JToken.FromObject(config);
+                var token = JToken.FromObject(config, JsonSerializer.Create(ConfigService.ModuleSerializerSettings));
                 if (persist)
                 {
                     // ConfigService 在同一锁内完成替换、落盘和失败回滚，避免并发保存互相覆盖回滚快照。

@@ -175,6 +175,17 @@ namespace CarroDesk.Services
             MissingMemberHandling = MissingMemberHandling.Ignore
         };
 
+        /// <summary>
+        /// 模块配置读写共用的序列化口径（M4）。
+        /// 模块段历史上使用 Newtonsoft 默认值处理（显式 null 保留、缺失成员忽略、
+        /// 日期按 ISO 字符串），此前读写各自调用无参重载，未来改动容易只改一侧而分叉。
+        /// 这里显式固化并强制双方注入；不改变现有文件形态，避免影响老用户配置的往返。
+        /// </summary>
+        public static readonly JsonSerializerSettings ModuleSerializerSettings = new JsonSerializerSettings
+        {
+            MissingMemberHandling = MissingMemberHandling.Ignore
+        };
+
         public void LoadOrCreate()
         {
             lock (_ioLock)
@@ -280,6 +291,10 @@ namespace CarroDesk.Services
                 var serializer = JsonSerializer.Create(SerializerSettings);
                 var loaded = obj.ToObject<AppSettings>(serializer) ?? new AppSettings();
                 var merged = AppSettings.Merge(loaded);
+                // 版本必须从 JSON 原文判断：字段缺失时 AppSettings 的属性初始化器会给当前版本，
+                // 无法区分"旧文件没有版本字段"和"文件就是当前版本"（M6）。
+                int loadedSchemaVersion = DetectSchemaVersion(obj);
+                merged.SchemaVersion = loadedSchemaVersion;
                 var moduleConfigs = new Dictionary<string, JToken>(StringComparer.OrdinalIgnoreCase);
 
                 foreach (var prop in obj.Properties())
@@ -304,7 +319,21 @@ namespace CarroDesk.Services
                 foreach (var kvp in moduleConfigs) _moduleConfigs[kvp.Key] = kvp.Value;
 
                 bool migrated = MigrateLegacyConfigs(obj);
-                if (migrated)
+                bool upgraded = loadedSchemaVersion < AppSettings.CurrentSchemaVersion;
+                if (upgraded)
+                {
+                    // v1（无版本字段）→ 当前版本：迁移链已执行，写回版本标记，
+                    // 避免每次启动都重复判定并重复触发迁移路径（M6）。
+                    Current.SchemaVersion = AppSettings.CurrentSchemaVersion;
+                }
+                if (loadedSchemaVersion > AppSettings.CurrentSchemaVersion)
+                {
+                    // 更高版本：不按旧结构重写，只留痕；未知字段在下次保存时会丢失，
+                    // 因此保留读到的版本号并在日志里明确提示。
+                    StaticLog.Warn("Config", "config.json schema version " + loadedSchemaVersion +
+                        " is newer than supported " + AppSettings.CurrentSchemaVersion);
+                }
+                if (migrated || upgraded)
                 {
                     try { SaveCore(); } catch { }
                 }
@@ -416,6 +445,20 @@ namespace CarroDesk.Services
         {
             "IdleMinutes", "ShowClock", "OverlayOpacity", "ExcludeProcesses", "UnlockOnResume"
         };
+
+        /// <summary>
+        /// 识别 config.json 的 schema 版本：字段缺失/非法一律视为 v1（历史扁平结构）。
+        /// 同时接受 SchemaVersion / schemaVersion 两种写法，便于外部工具生成配置。
+        /// </summary>
+        private static int DetectSchemaVersion(JObject rootObj)
+        {
+            if (rootObj == null) return 1;
+            var token = rootObj["SchemaVersion"] ?? rootObj["schemaVersion"];
+            if (token == null || token.Type == JTokenType.Null) return 1;
+            int version;
+            if (int.TryParse(token.ToString(), out version) && version > 0) return version;
+            return 1;
+        }
 
         private bool MigrateLegacyConfigs(JObject rootObj)
         {

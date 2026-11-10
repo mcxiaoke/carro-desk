@@ -120,7 +120,6 @@ namespace CarroDesk.Tests
         private class FakeConfigManager : IConfigManager
         {
             public Dictionary<string, object> Store = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
-            public event Action ConfigReloaded;
 
             public T GetModuleConfig<T>(string moduleId) where T : class, new()
             {
@@ -138,7 +137,6 @@ namespace CarroDesk.Tests
 
             public bool Reload()
             {
-                ConfigReloaded?.Invoke();
                 return true;
             }
         }
