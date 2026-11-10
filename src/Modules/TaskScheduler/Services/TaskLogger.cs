@@ -125,24 +125,41 @@ namespace CarroDesk.Services.Tasks
             object fileLock = GetFileLock(path);
             lock (fileLock)
             {
-                try
+                for (int attempt = 0; ; attempt++)
                 {
-                    EnsureLogDirLocked();
-                    RotateIfNeededLocked(path);
-
-                    using (var fs = new FileStream(path, FileMode.Append, FileAccess.Write,
-                        FileShare.ReadWrite | FileShare.Delete, bytes.Length))
+                    try
                     {
-                        fs.Write(bytes, 0, bytes.Length);
-                        fs.Flush();
-                        RememberSizeLocked(path, fs.Length);
+                        EnsureLogDirLocked();
+                        RotateIfNeededLocked(path);
+
+                        using (var fs = new FileStream(path, FileMode.Append, FileAccess.Write,
+                            FileShare.ReadWrite | FileShare.Delete, bytes.Length))
+                        {
+                            fs.Write(bytes, 0, bytes.Length);
+                            fs.Flush();
+                            RememberSizeLocked(path, fs.Length);
+                        }
+                        return;
+                    }
+                    catch (DirectoryNotFoundException)
+                    {
+                        // 目录被外部清理后 _dirEnsured 仍是 true：复位标记并重建，再重试一次（M19）
+                        if (attempt > 0) return;
+                        ResetDirEnsured();
+                    }
+                    catch
+                    {
+                        // 目录/文件不可写（磁盘满、权限、被独占）：放弃本条，绝不影响任务自身
+                        return;
                     }
                 }
-                catch
-                {
-                    // 目录/文件不可写（磁盘满、权限、被独占）：放弃本条，绝不影响任务自身
-                }
             }
+        }
+
+        private static void ResetDirEnsured()
+        {
+            lock (_metaLock) _dirEnsured = false;
+            EnsureLogDir();
         }
 
         /// <summary>取（并按需创建）某日志文件的专用锁对象。</summary>

@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using CarroDesk.Models;
+using CarroDesk.Services;
 using CarroDesk.Services.Tasks;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Newtonsoft.Json.Linq;
@@ -795,6 +796,117 @@ namespace CarroDesk.Tests
             {
                 try { File.Delete(TaskConfigService.FilePath); } catch { }
             }
+        }
+
+        // ---------- M11：options 未知字段不得被保存流程吞掉 ----------
+
+        [TestMethod]
+        public void TaskConfigService_PreservesUnknownOptionFields_OnLoadAndSave()
+        {
+            const string json = @"[
+  {
+    ""name"": ""ExtOptions"",
+    ""enabled"": true,
+    ""trigger"": { ""type"": ""manual"" },
+    ""action"": { ""file"": ""x.bat"" },
+    ""options"": { ""hidden"": true, ""myCustom"": 1, ""nested"": { ""a"": true } }
+  }
+]";
+            File.WriteAllText(TaskConfigService.FilePath, json, Encoding.UTF8);
+
+            var loaded = TaskConfigService.Load();
+            Assert.AreEqual(0, loaded.Errors.Count, "加载不应有错误: " + string.Join("; ", loaded.Errors));
+            var task = loaded.Tasks.FirstOrDefault(t => t.Name == "ExtOptions");
+            Assert.IsNotNull(task);
+            Assert.IsNotNull(task.Options.ExtraOptions, "未知 options 字段应保留在 ExtraOptions");
+            Assert.AreEqual(1, task.Options.ExtraOptions.Value<int>("myCustom"));
+
+            TaskConfigService.Save(loaded.Tasks);
+
+            string saved = File.ReadAllText(TaskConfigService.FilePath, Encoding.UTF8);
+            StringAssert.Contains(saved, "\"myCustom\": 1", "保存后未知字段必须原样回写");
+            StringAssert.Contains(saved, "\"nested\"", "嵌套扩展字段也必须回写");
+
+            var reloaded = TaskConfigService.Load();
+            var back = reloaded.Tasks.First(t => t.Name == "ExtOptions");
+            Assert.AreEqual(1, back.Options.ExtraOptions.Value<int>("myCustom"));
+            Assert.IsTrue(back.Options.ExtraOptions["nested"].Value<bool>("a"));
+        }
+
+        [TestMethod]
+        public void TaskDefinition_Clone_PreservesUnknownOptionFields()
+        {
+            var task = new TaskDefinition
+            {
+                Name = "CloneExt",
+                Trigger = new TaskTrigger { Type = TaskTriggerType.Manual },
+                Action = new TaskAction { File = "x.bat" },
+                Options = new TaskOptions { ExtraOptions = JObject.Parse("{ \"myCustom\": 2 }") }
+            };
+
+            var clone = task.Clone();
+            Assert.IsNotNull(clone.Options.ExtraOptions, "Clone 不得丢失 options 扩展字段（编辑器保存链依赖它）");
+            Assert.AreEqual(2, clone.Options.ExtraOptions.Value<int>("myCustom"));
+        }
+
+        // ---------- M15：相对脚本路径的工作目录必须解析为绝对路径 ----------
+
+        [TestMethod]
+        public void EffectiveWorkDir_RelativeScriptSubdir_ResolvedUnderScriptsDir()
+        {
+            string scripts = ConfigService.ScriptsDirPath;
+            string subName = "wd-" + Guid.NewGuid().ToString("N").Substring(0, 8);
+            string subDir = Path.Combine(scripts, subName);
+            Directory.CreateDirectory(subDir);
+            try
+            {
+                var task = new TaskDefinition
+                {
+                    Name = "WdRelative",
+                    Trigger = new TaskTrigger { Type = TaskTriggerType.Manual },
+                    Action = new TaskAction { File = Path.Combine(subName, "a.ps1") }
+                };
+
+                string workDir = task.EffectiveWorkDir();
+                Assert.IsTrue(Path.IsPathRooted(workDir), "相对脚本目录必须解析为绝对路径，实际: " + workDir);
+                Assert.AreEqual(Path.GetFullPath(subDir), workDir);
+            }
+            finally
+            {
+                try { Directory.Delete(subDir, true); } catch { }
+            }
+        }
+
+        [TestMethod]
+        public void EffectiveWorkDir_MissingRelativeDir_FallsBackToScriptsDir()
+        {
+            var task = new TaskDefinition
+            {
+                Name = "WdMissing",
+                Trigger = new TaskTrigger { Type = TaskTriggerType.Manual },
+                Action = new TaskAction { File = Path.Combine("no-such-" + Guid.NewGuid().ToString("N"), "a.ps1") }
+            };
+
+            Assert.AreEqual(Path.GetFullPath(ConfigService.ScriptsDirPath), task.EffectiveWorkDir(),
+                "目录不存在时应回退到 scripts 目录并记录警告，而不是把相对目录透传给进程");
+        }
+
+        // ---------- M19：日志目录被外部删除后必须重建 ----------
+
+        [TestMethod]
+        public void TaskLogger_RecreatesDeletedLogDir()
+        {
+            const string probe = "logdir-probe";
+            TaskLogger.Info(probe, "first");
+            string logDir = ConfigService.LogsDirPath;
+            Assert.IsTrue(Directory.Exists(logDir));
+
+            try { Directory.Delete(logDir, true); } catch { }
+
+            TaskLogger.Info(probe, "second");
+            Assert.IsTrue(Directory.Exists(logDir), "日志目录被删除后写入应重建目录");
+            Assert.IsTrue(File.Exists(TaskLogger.GetTaskLogPath(probe)), "重建后应成功写入任务日志");
+            StringAssert.Contains(File.ReadAllText(TaskLogger.GetTaskLogPath(probe), Encoding.UTF8), "second");
         }
     }
 }

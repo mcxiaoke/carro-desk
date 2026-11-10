@@ -485,9 +485,23 @@ namespace CarroDesk.Services.Tasks
             return o;
         }
 
+        /// <summary>
+        /// options 中本类已识别（含别名）的字段名。其余字段视为用户扩展字段，
+        /// 读取时原样保留到 <see cref="TaskOptions.ExtraOptions"/>，保存时回写（M11）。
+        /// </summary>
+        private static readonly HashSet<string> KnownOptionKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "hidden", "timeoutSec", "timeout", "allowConcurrent", "concurrent", "retry", "workDir",
+            "notifyOnFailure", "notify", "mode", "killWithHost", "singleInstance", "restart",
+            "restartDelaySec", "restartDelay", "restartLimit", "maxRestarts",
+            "stableUptimeSec", "minUptimeSec", "encoding", "outputEncoding",
+            "runAtStartup", "runOnStart", "catchUpMissed", "catchUp"
+        };
+
         private static JObject SerializeOptionsToken(TaskOptions op)
         {
-            var o = new JObject();
+            // 先铺开未识别的扩展字段，再用已知字段覆盖，保证手写字段不被 GUI 保存抹掉（M11）。
+            var o = op?.ExtraOptions != null ? (JObject)op.ExtraOptions.DeepClone() : new JObject();
             if (op == null) return o;
             o["hidden"] = op.Hidden;
             if (op.TimeoutSec != 0) o["timeoutSec"] = op.TimeoutSec;
@@ -674,6 +688,14 @@ namespace CarroDesk.Services.Tasks
                     opt.Encoding = GetStr(od, "encoding", "outputEncoding");
                     opt.RunAtStartup = GetBool(od, false, "runAtStartup", "runOnStart");
                     opt.CatchUpMissed = GetBool(od, false, "catchUpMissed", "catchUp");
+
+                    // 未识别字段原样保留，供保存时回写（M11）
+                    foreach (var prop in od.Properties())
+                    {
+                        if (KnownOptionKeys.Contains(prop.Name)) continue;
+                        if (opt.ExtraOptions == null) opt.ExtraOptions = new JObject();
+                        opt.ExtraOptions[prop.Name] = prop.Value?.DeepClone() ?? JValue.CreateNull();
+                    }
                 }
                 if (obj["hidden"] != null) opt.Hidden = GetBool(obj, opt.Hidden, "hidden");
                 if (obj["timeoutSec"] != null) opt.TimeoutSec = GetInt(obj, opt.TimeoutSec, "timeoutSec", "timeout");

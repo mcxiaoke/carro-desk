@@ -12,7 +12,7 @@ using CarroDesk.Services;
 using CarroDesk.Services.Localization;
 using CarroDesk.Services.Tasks;
 using Microsoft.Win32;
-using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace CarroDesk.Modules.TaskScheduler.Views
 {
@@ -49,9 +49,10 @@ namespace CarroDesk.Modules.TaskScheduler.Views
 
             LoadScriptsDropdown();
 
-            // 深拷贝一份以防直接污染外部
+            // 深拷贝一份以防直接污染外部；用 Clone() 而非 JsonConvert 往返，
+            // 后者会丢掉 [JsonIgnore] 的 options 扩展字段（M11）
             var workingTask = taskToEdit != null
-                ? JsonConvert.DeserializeObject<TaskDefinition>(JsonConvert.SerializeObject(taskToEdit))
+                ? taskToEdit.Clone()
                 : new TaskDefinition { Name = "NewTask", Trigger = new TaskTrigger { Type = TaskTriggerType.Startup } };
             _sourceTask = workingTask;
 
@@ -594,6 +595,10 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             if (_sourceTask?.Options != null)
             {
                 task.Options.StableUptimeSec = _sourceTask.Options.StableUptimeSec;
+                // 手写在 tasks.json 里的扩展字段同样透传，否则 GUI 保存一次即被删除（M11）
+                task.Options.ExtraOptions = _sourceTask.Options.ExtraOptions != null
+                    ? (JObject)_sourceTask.Options.ExtraOptions.DeepClone()
+                    : null;
             }
             // 工作目录统一由 action.workDir 承载（表单只有一个输入框，显示的是原 options.workDir 优先的有效值）；
             // 清空 options.workDir，避免旧值继续以更高优先级压过用户在表单里改的新工作目录。

@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using CarroDesk.Services;
 using CarroDesk.Services.Localization;
 using CarroDesk.Services.Tasks;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace CarroDesk.Models
 {
@@ -104,6 +106,14 @@ namespace CarroDesk.Models
         /// 0 表示计数永不自动复位。
         /// </summary>
         public int StableUptimeSec { get; set; } = 60;
+
+        /// <summary>
+        /// options 中未被本类识别的扩展字段（M11）：读取时原样保留，保存时原样回写，
+        /// 避免 GUI 保存一次就把用户手写的自定义字段静默删除。
+        /// 不参与 JsonConvert 直接序列化，只由 TaskConfigService 合并进 tasks.json。
+        /// </summary>
+        [JsonIgnore]
+        public JObject ExtraOptions { get; set; }
 
         [JsonIgnore]
         public bool IsDetach
@@ -216,8 +226,16 @@ namespace CarroDesk.Models
 
         public TaskDefinition Clone()
         {
+            // ExtraOptions 是 [JsonIgnore] 的运行时载体，JsonConvert 往返会丢失，需单独搬运。
+            var extras = Options?.ExtraOptions;
             var json = JsonConvert.SerializeObject(this);
-            return JsonConvert.DeserializeObject<TaskDefinition>(json) ?? new TaskDefinition();
+            var clone = JsonConvert.DeserializeObject<TaskDefinition>(json) ?? new TaskDefinition();
+            if (extras != null)
+            {
+                if (clone.Options == null) clone.Options = new TaskOptions();
+                clone.Options.ExtraOptions = (JObject)extras.DeepClone();
+            }
+            return clone;
         }
 
         public string Validate()
@@ -385,7 +403,26 @@ namespace CarroDesk.Models
             if (Action != null && !string.IsNullOrWhiteSpace(Action.WorkDir)) return Action.WorkDir;
             if (Action != null && !string.IsNullOrWhiteSpace(Action.File))
             {
-                try { return System.IO.Path.GetDirectoryName(Action.File); } catch { }
+                try
+                {
+                    string dir = System.IO.Path.GetDirectoryName(Action.File);
+                    if (string.IsNullOrEmpty(dir)) return "";   // 裸文件名：由 TaskRunner 解析脚本目录后兜底
+                    if (System.IO.Path.IsPathRooted(dir)) return dir;
+
+                    // 相对路径必须解析为绝对路径（M15）：否则工作目录取决于宿主当前目录，
+                    // 宿主以不同方式启动时行为不一致。脚本按 scripts/ 解析（与 ScriptResolver 一致），
+                    // 其它程序按数据目录解析。
+                    string ext = System.IO.Path.GetExtension(Action.File);
+                    string baseDir = ScriptResolver.IsScriptExtension(ext)
+                        ? ConfigService.ScriptsDirPath
+                        : ConfigService.DirPath;
+                    string absolute = System.IO.Path.GetFullPath(System.IO.Path.Combine(baseDir, dir));
+                    if (System.IO.Directory.Exists(absolute)) return absolute;
+
+                    TaskLogger.Warn("system", "workDir not found, fallback to " + baseDir + ": " + absolute);
+                    return baseDir;
+                }
+                catch { }
             }
             return "";
         }
