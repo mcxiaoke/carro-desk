@@ -98,7 +98,7 @@ namespace CarroDesk.Cli
             w.WriteLine("  CarroDesk.Cli ctl services.start --name GameViewerService");
             w.WriteLine("");
             w.WriteLine("exit codes: 0 ok | 1 usage | 2 capability/business error | 3 host unreachable");
-            w.WriteLine("errors: -32001 module unavailable | -32002 PIN | -32003 rate limited | -32004 timeout | -32020 host not running");
+            w.WriteLine("errors: -32001 module unavailable | -32002 PIN | -32003 rate limited | -32004 timeout | -32005 service unavailable | -32020 host not running");
             w.WriteLine("with --json, failures are written to stderr as {\"ok\":false,\"code\":<int>,\"message\":\"...\"}");
         }
     }

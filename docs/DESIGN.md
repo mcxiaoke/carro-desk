@@ -115,7 +115,7 @@ CarroDesk.Cli --mcp ────┘       RpcProtocol：JSON-RPC 2.0 + pin/sourc
 | 5 | 限流（默认每能力×来源 30 次/分钟） | -32003 RateLimited |
 | 6 | 执行（默认超时 5000ms） | 超时 -32004 / 异常折叠 -32010 |
 
-错误码全集：-32700 ParseError、-32601、-32602、-32001、-32002、-32003、-32004、-32010 Internal、-32020 TransportError（客户端连不上管道，通常宿主未运行）。
+错误码全集：-32700 ParseError、-32601、-32602、-32001、-32002、-32003、-32004、-32005 ServiceUnavailable（服务存在但当前不可操作）、-32010 Internal、-32020 TransportError（客户端连不上管道，通常宿主未运行）。
 
 **审计**：每次调用写 `ipc-audit.log`（1MB 轮转），参数只记 SHA-256 摘要，`pin` 单独提取不进摘要与参数（只记 PinUsed 布尔）。
 

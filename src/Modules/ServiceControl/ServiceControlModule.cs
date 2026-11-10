@@ -243,7 +243,9 @@ namespace CarroDesk.Modules.ServiceControl
                 if (IsAccessDenied(ex))
                     return Fail(CommandErrorCodes.Internal,
                         "access denied for '" + entry.Name + "': grant control via docs/remote-admin/grant-service-control.ps1 (IPC §11.2)");
-                return Fail(CommandErrorCodes.InvalidParams, "service '" + entry.Name + "' unavailable: " + ex.Message);
+                if (IsServiceNotFound(ex))
+                    return Fail(CommandErrorCodes.InvalidParams, "service '" + entry.Name + "' does not exist: " + ex.Message);
+                return Fail(CommandErrorCodes.ServiceUnavailable, "service '" + entry.Name + "' unavailable: " + ex.Message);
             }
             catch (Exception ex)
             {
@@ -281,7 +283,9 @@ namespace CarroDesk.Modules.ServiceControl
                 if (IsAccessDenied(ex))
                     return Fail(CommandErrorCodes.Internal,
                         "access denied for '" + entry.Name + "': grant control via docs/remote-admin/grant-service-control.ps1 (IPC §11.2)");
-                return Fail(CommandErrorCodes.InvalidParams, "service '" + entry.Name + "' unavailable: " + ex.Message);
+                if (IsServiceNotFound(ex))
+                    return Fail(CommandErrorCodes.InvalidParams, "service '" + entry.Name + "' does not exist: " + ex.Message);
+                return Fail(CommandErrorCodes.ServiceUnavailable, "service '" + entry.Name + "' unavailable: " + ex.Message);
             }
             catch (Exception ex)
             {
@@ -321,6 +325,22 @@ namespace CarroDesk.Modules.ServiceControl
             {
                 var win32 = current as Win32Exception;
                 if (win32 != null && win32.NativeErrorCode == 5) return true;
+                current = current.InnerException;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 服务不存在（Win32 1060）或已被标记删除（1072）才是参数错误；
+        /// 其余 InvalidOperationException（停止中、依赖缺失、被禁用）属于运行时不可用（M21）。
+        /// </summary>
+        private static bool IsServiceNotFound(Exception ex)
+        {
+            var current = ex;
+            while (current != null)
+            {
+                var win32 = current as Win32Exception;
+                if (win32 != null && (win32.NativeErrorCode == 1060 || win32.NativeErrorCode == 1072)) return true;
                 current = current.InnerException;
             }
             return false;

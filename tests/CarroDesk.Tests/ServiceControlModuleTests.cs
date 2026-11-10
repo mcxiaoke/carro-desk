@@ -267,13 +267,30 @@ namespace CarroDesk.Tests
         {
             FakeServiceAdapter adapter;
             var module = CreateModule(out adapter, Entry("AlphaSvc"));
-            adapter.OnStart = _ => new InvalidOperationException("service does not exist");
+            adapter.OnStart = _ => new InvalidOperationException(
+                "Cannot open AlphaSvc service on computer '.'.",
+                new Win32Exception(1060, "The specified service does not exist as an installed service"));
             var host = BuildHost(module);
 
             var result = host.Invoke(Call("services.start", "AlphaSvc", "1234"));
 
             Assert.IsFalse(result.Ok);
             Assert.AreEqual(CommandErrorCodes.InvalidParams, result.Error.Code);
+        }
+
+        [TestMethod]
+        public void Invoke_ServiceUnavailable_MapsToServiceUnavailable()
+        {
+            FakeServiceAdapter adapter;
+            var module = CreateModule(out adapter, Entry("AlphaSvc"));
+            adapter.OnStop = _ => new InvalidOperationException("服务正在停止中，请稍后重试 (service is stopping)");
+            var host = BuildHost(module);
+
+            var result = host.Invoke(Call("services.stop", "AlphaSvc", "1234"));
+
+            Assert.IsFalse(result.Ok);
+            Assert.AreEqual(CommandErrorCodes.ServiceUnavailable, result.Error.Code);
+            StringAssert.Contains(result.Error.Message, "unavailable");
         }
 
         [TestMethod]

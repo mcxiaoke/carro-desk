@@ -14,6 +14,7 @@ namespace CarroDesk.Core.Commands
         public const int PinRequired = -32002;         // 需要口令、口令被拒或触发失败限流
         public const int RateLimited = -32003;
         public const int Timeout = -32004;
+        public const int ServiceUnavailable = -32005;  // 服务存在但当前不可操作（停止中/依赖缺失/被禁用等）
         public const int Internal = -32010;
         public const int TransportError = -32020;      // 客户端侧：连不上管道 / 读写失败（仅 PipeRpcClient 使用）
     }

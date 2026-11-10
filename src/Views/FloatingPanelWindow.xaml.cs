@@ -489,7 +489,12 @@ namespace CarroDesk.Views
                         }
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    // 单模块菜单导出失败只跳过该模块，但必须留下日志，不能再静默吞掉（M20）
+                    _services?.GetService<ILoggerService>()?.LogError(
+                        "FloatingPanel", "GetTrayMenuItems failed for module " + module.Id, ex);
+                }
             }
 
             if (hasModule)
@@ -648,9 +653,14 @@ namespace CarroDesk.Views
                 ErrorHandler = (menuNode, ex) =>
                 {
                     _services?.GetService<ILoggerService>()?.LogError("FloatingPanel", "菜单操作执行失败", ex);
-                    _services?.GetService<INotificationService>()?.Show(
-                        (menuNode?.Header ?? Loc.T("Msg.TrayAction", "托盘操作")) + " " + Loc.T("Msg.TrayActionFailed", "执行失败"),
-                        "CarroDesk");
+                    string action = menuNode?.Header ?? Loc.T("Msg.TrayAction", "托盘操作");
+                    // 气泡里带上简短原因，用户才知道下一步该做什么；完整堆栈留在日志（M27）
+                    string reason = ex?.Message ?? "";
+                    if (reason.Length > 120) reason = reason.Substring(0, 117) + "...";
+                    string text = string.IsNullOrWhiteSpace(reason)
+                        ? action + " " + Loc.T("Msg.TrayActionFailed", "执行失败")
+                        : Loc.T("Msg.TrayActionFailedWithReason", "{0} 执行失败：{1}", action, reason);
+                    _services?.GetService<INotificationService>()?.Show(text, "CarroDesk");
                 }
             };
             return MenuProjectionEngine.CreateVisual(node, options, Dispatcher);

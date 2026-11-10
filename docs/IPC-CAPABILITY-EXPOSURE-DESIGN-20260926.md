@@ -189,6 +189,7 @@ public interface ICommandProvider
 | -32002 | 需要 PIN 或确认被拒 |
 | -32003 | 触发限流 |
 | -32004 | 执行超时 |
+| -32005 | 服务存在但当前不可操作（停止中/依赖缺失/被禁用） |
 | -32010 | 内部错误（含异常摘要，不含堆栈） |
 
 握手（首帧，可选但推荐）：`host.hello` 返回 `{protocolVersion, hostVersion, capabilitiesHash, requiresToken}`；客户端据此缓存能力表，`capabilitiesHash` 变化时重取。协议版本升级策略：`protocolVersion` 主版本不同直接拒绝并提示升级。
