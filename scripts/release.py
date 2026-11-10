@@ -61,6 +61,8 @@ EXCLUDE = ("app_data/", "portable.ini")
 # Inno Setup 编译器候选位置：优先 PATH，其次 scoop 与常见安装目录
 ISCC_CANDIDATES = (
     "iscc",
+    r"C:\Home\Apps\Inno Setup 7\iscc.exe",
+    r"C:\Home\Apps\Inno Setup 6\iscc.exe",
     r"C:\Home\Develop\Scoop\shims\iscc.exe",
     r"C:\Home\Develop\Scoop\apps\inno-setup\current\iscc.exe",
     r"C:\Program Files (x86)\Inno Setup 6\iscc.exe",
