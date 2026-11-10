@@ -82,7 +82,7 @@ namespace CarroDesk.Cli
             w.WriteLine("CarroDesk.Cli - Windows tray host control client");
             w.WriteLine("");
             w.WriteLine("usage:");
-            w.WriteLine("  CarroDesk.Cli ctl <capability> [--json] [--pin <pin>] [--pipe <name>] [--timeout <ms>] [--<param> <value> ...]");
+            w.WriteLine("  CarroDesk.Cli ctl <capability> [--json] [--pin <pin>] [--pipe <name>] [--timeout <ms>] [--<param> <value> | --<param>=<value> ...]");
             w.WriteLine("  CarroDesk.Cli --mcp                 (MCP stdio adapter; stdout is protocol JSON only)");
             w.WriteLine("  CarroDesk.Cli --help | -h | help | ctl help");
             w.WriteLine("  CarroDesk.Cli --version | -v");
@@ -94,6 +94,7 @@ namespace CarroDesk.Cli
             w.WriteLine("examples:");
             w.WriteLine("  CarroDesk.Cli ctl host.status --json");
             w.WriteLine("  CarroDesk.Cli ctl awake.on --minutes 120");
+            w.WriteLine("  CarroDesk.Cli ctl awake.on --minutes=120");
             w.WriteLine("  CarroDesk.Cli ctl services.start --name GameViewerService");
             w.WriteLine("");
             w.WriteLine("exit codes: 0 ok | 1 usage | 2 capability/business error | 3 host unreachable");

@@ -3,7 +3,6 @@ using System.IO;
 using System.IO.Pipes;
 using System.Threading.Tasks;
 using CarroDesk.Core.Commands;
-using CarroDesk.Host.Commands;
 
 namespace CarroDesk.Host.Ipc
 {

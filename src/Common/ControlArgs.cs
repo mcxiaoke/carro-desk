@@ -9,7 +9,8 @@ namespace CarroDesk
     ///   CarroDesk.exe ctl &lt;能力名&gt; [--json] [--pin &lt;口令&gt;] [--pipe &lt;名称&gt;] [--timeout &lt;ms&gt;] [--&lt;参数名&gt; &lt;值&gt;...]
     /// </code>
     /// 保留字（json/pin/pipe/timeout/source）为控制选项；其余 --key value 进入请求参数，
-    /// 不带值的 --key 解析为布尔 true。值一律按字符串传递，类型收敛由内核参数校验完成。
+    /// 不带值的 --key 解析为布尔 true。带值选项同时支持 --key=value 写法（M12）；
+    /// 值一律按字符串传递，类型收敛由内核参数校验完成。
     /// 主 exe 与 CarroDesk.Cli 共用本解析。
     /// </summary>
     public sealed class ControlArgs
@@ -62,20 +63,50 @@ namespace CarroDesk
                     error = "unexpected argument: " + token;
                     return false;
                 }
-                var key = token.Substring(2);
+                var body = token.Substring(2);
+
+                // --key=value：按第一个 '=' 拆分（值里允许再出现 '='，如 base64/URL 参数）
+                string key = body;
+                string inlineValue = null;
+                var equalsIndex = body.IndexOf('=');
+                if (equalsIndex >= 0)
+                {
+                    key = body.Substring(0, equalsIndex);
+                    inlineValue = body.Substring(equalsIndex + 1);
+                    if (key.Length == 0)
+                    {
+                        error = "unexpected argument: " + token;
+                        return false;
+                    }
+                    if (inlineValue.Length == 0)
+                    {
+                        error = "option --" + key + " requires a value";
+                        return false;
+                    }
+                }
                 index++;
 
                 if (string.Equals(key, "json", StringComparison.OrdinalIgnoreCase))
                 {
+                    if (inlineValue != null)
+                    {
+                        error = "option --json does not take a value";
+                        return false;
+                    }
                     result.Json = true;
                     continue;
                 }
 
                 string value = null;
-                var hasValue = index < args.Length && !args[index].StartsWith("--", StringComparison.Ordinal);
+                var hasValue = inlineValue != null;
                 if (hasValue)
                 {
+                    value = inlineValue;
+                }
+                else if (index < args.Length && !args[index].StartsWith("--", StringComparison.Ordinal))
+                {
                     value = args[index];
+                    hasValue = true;
                     index++;
                 }
 

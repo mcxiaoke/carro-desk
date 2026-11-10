@@ -122,7 +122,7 @@ namespace CarroDesk
             if (!ControlArgs.TryParse(args, out parsed, out parseError))
             {
                 Console.Error.WriteLine(parseError ?? "not a ctl invocation");
-                Console.Error.WriteLine("usage: CarroDesk.exe ctl <capability> [--json] [--pin <pin>] [--pipe <name>] [--timeout <ms>] [--<param> <value> ...]");
+                Console.Error.WriteLine("usage: CarroDesk.exe ctl <capability> [--json] [--pin <pin>] [--pipe <name>] [--timeout <ms>] [--<param> <value> | --<param>=<value> ...]");
                 return 1;
             }
 

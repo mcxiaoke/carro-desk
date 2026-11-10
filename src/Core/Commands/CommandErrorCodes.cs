@@ -1,8 +1,9 @@
-namespace CarroDesk.Host.Commands
+namespace CarroDesk.Core.Commands
 {
     /// <summary>
     /// 命令内核错误码，与 RPC 错误码共用一张表（IPC 设计 §5.2）。
     /// -32700（帧/JSON 解析）是传输层职责，此处仅占位对齐。
+    /// 契约层下沉 Core：模块与客户端只依赖本程序集，避免反向依赖 WPF Host（M2）。
     /// </summary>
     public static class CommandErrorCodes
     {

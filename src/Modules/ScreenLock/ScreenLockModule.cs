@@ -343,11 +343,15 @@ namespace CarroDesk.Modules.ScreenLock
         {
             if (Config != null)
             {
-                int previous = Config.IdleMinutes;
+                int previousMinutes = Config.IdleMinutes;
+                bool previousAutoLock = Config.AutoLockEnabled;
                 Config.IdleMinutes = mins;
+                // 选择具体档位即表示要启用空闲自动锁屏（M13）；0 = 禁用档位，保持自动锁屏开关不变。
+                if (mins > 0) Config.AutoLockEnabled = true;
                 if (!SaveConfig())
                 {
-                    Config.IdleMinutes = previous;
+                    Config.IdleMinutes = previousMinutes;
+                    Config.AutoLockEnabled = previousAutoLock;
                     ShowNotify(Loc.T("Config.SaveFailed"), Loc.T("Common.Error", "错误"));
                     return;
                 }

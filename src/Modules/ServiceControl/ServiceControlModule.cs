@@ -5,7 +5,6 @@ using System.Linq;
 using System.Threading;
 using CarroDesk.Core;
 using CarroDesk.Core.Commands;
-using CarroDesk.Host.Commands;
 using CarroDesk.Services.Localization;
 using System.ServiceProcess;
 

@@ -6,7 +6,6 @@ using System.Windows.Controls;
 using CarroDesk.Core;
 using CarroDesk.Core.Commands;
 using CarroDesk.Core.Models;
-using CarroDesk.Host.Commands;
 using CarroDesk.Modules.Awake.Models;
 using CarroDesk.Modules.Awake.Services;
 using CarroDesk.Modules.Awake.Views;

@@ -50,6 +50,45 @@ namespace CarroDesk.Tests
         }
 
         [TestMethod]
+        public void Parse_InlineValues_MatchSpaceSeparatedForm()
+        {
+            ControlArgs parsed;
+            string error;
+            var ok = ControlArgs.TryParse(new[]
+            {
+                "ctl", "awake.on", "--minutes=10", "--pin=1234", "--timeout=8000",
+                "--name=a=b", "--force"
+            }, out parsed, out error);
+            Assert.IsTrue(ok, error);
+            Assert.AreEqual("awake.on", parsed.Method);
+            Assert.AreEqual("10", parsed.Params["minutes"]);
+            Assert.AreEqual("1234", parsed.Pin);
+            Assert.AreEqual(8000, parsed.TimeoutMs);
+            Assert.AreEqual("a=b", parsed.Params["name"], "只按第一个 '=' 拆分，值中允许再出现 '='");
+            Assert.AreEqual(true, parsed.Params["force"]);
+        }
+
+        [TestMethod]
+        public void Parse_InlineEmptyValue_Fails()
+        {
+            ControlArgs parsed;
+            string error;
+            Assert.IsFalse(ControlArgs.TryParse(new[] { "ctl", "awake.on", "--minutes=" }, out parsed, out error));
+            Assert.IsTrue(error.Contains("--minutes"));
+            Assert.IsFalse(ControlArgs.TryParse(new[] { "ctl", "awake.on", "--pin=" }, out parsed, out error));
+            Assert.IsTrue(error.Contains("--pin"));
+        }
+
+        [TestMethod]
+        public void Parse_InlineValueOnBooleanFlag_Fails()
+        {
+            ControlArgs parsed;
+            string error;
+            Assert.IsFalse(ControlArgs.TryParse(new[] { "ctl", "host.status", "--json=1" }, out parsed, out error));
+            Assert.IsTrue(error.Contains("--json"));
+        }
+
+        [TestMethod]
         public void Parse_MissingMethod_Fails()
         {
             ControlArgs parsed;

@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Text;
 using System.Threading;
 using CarroDesk.Core.Commands;
-using CarroDesk.Host.Commands;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 

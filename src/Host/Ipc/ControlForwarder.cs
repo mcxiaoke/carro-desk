@@ -1,7 +1,6 @@
 using System;
 using System.IO;
 using CarroDesk.Core.Commands;
-using CarroDesk.Host.Commands;
 using Newtonsoft.Json;
 
 namespace CarroDesk.Host.Ipc
