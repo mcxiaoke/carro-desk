@@ -1,6 +1,8 @@
 using System;
 using System.Windows;
 using System.Windows.Controls;
+using CarroDesk.Common;
+using CarroDesk.Core;
 using CarroDesk.Host.Services;
 using CarroDesk.Models;
 using CarroDesk.Services;
@@ -9,7 +11,8 @@ using CarroDesk.Services.Localization;
 namespace CarroDesk.Views
 {
     /// <summary>
-    /// 宿主全局设置编辑器：仅承载应用级设置（语言、开机自启、配置目录、PIN）。
+    /// 宿主全局设置窗口：语言、开机自启、配置目录、PIN、关于与诊断。
+    /// 语言与开机自启修改后立即保存并生效；托盘/悬浮面板不再散落这些入口。
     /// P2-16：屏锁 / 任务调度等模块专属设置已拆分到各模块自有设置窗口，
     /// 此处不再 import 任何模块私有 Model，宿主零反向依赖业务模块。
     /// </summary>
@@ -21,14 +24,21 @@ namespace CarroDesk.Views
         private readonly PinGuard _pinGuard;
         private readonly ConfigManager _configManager;
         private readonly Action _onApplied;
+        private readonly ServiceContainer _services;
 
-        public ConfigEditorWindow(IPinService pinService, ConfigManager configManager = null, Action onApplied = null, PinGuard pinGuard = null)
+        public ConfigEditorWindow(
+            IPinService pinService,
+            ConfigManager configManager = null,
+            Action onApplied = null,
+            PinGuard pinGuard = null,
+            ServiceContainer services = null)
         {
             InitializeComponent();
             _pinService = pinService;
             _pinGuard = pinGuard;
             _configManager = configManager;
             _onApplied = onApplied;
+            _services = services;
             Loaded += OnLoaded;
         }
 
@@ -90,14 +100,87 @@ namespace CarroDesk.Views
 
         private void LanguageBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (_isInitializing) return;
-            if (LanguageBox.SelectedItem is ComboBoxItem item && item.Tag != null)
+            if (_isInitializing || _editing == null) return;
+            if (!(LanguageBox.SelectedItem is ComboBoxItem item) || item.Tag == null) return;
+
+            string lang = item.Tag.ToString();
+            if (string.Equals(_editing.Language ?? "auto", lang, StringComparison.OrdinalIgnoreCase)) return;
+
+            if (_configManager?.Current == null)
             {
-                string lang = item.Tag.ToString();
-                // 语言是草稿字段，只在“保存并应用”成功后切换运行时语言。
-                // 旧实现立即 SetLanguage，关闭窗口也不会回滚，导致本次进程与磁盘配置分叉。
                 _editing.Language = lang;
-                RefreshDynamicTexts();
+                I18nService.Instance.SetLanguage(lang);
+                return;
+            }
+
+            // 语言即时生效：保存配置 + 切换运行时语言，并通知宿主重载（托盘/浮窗文案同步）。
+            HostMenuActions.SetLanguage(_configManager, _services, lang, () =>
+            {
+                _onApplied?.Invoke();
+
+                var cur = _configManager?.Current;
+                if (cur != null) _editing = cur.Clone();
+
+                _isInitializing = true;
+                try
+                {
+                    ApplyEditingToUi();
+                    RefreshDynamicTexts();
+                }
+                finally
+                {
+                    _isInitializing = false;
+                }
+                ValidateText.Text = Loc.T("Config.AppliedImmediately", "已立即生效");
+            });
+
+            // 保存失败时 HostMenuActions 已回滚配置并提示，把下拉恢复到真实值。
+            if (!string.Equals(_configManager.Current.Language ?? "auto", lang, StringComparison.OrdinalIgnoreCase))
+            {
+                _isInitializing = true;
+                try { ApplyEditingToUi(); }
+                finally { _isInitializing = false; }
+            }
+        }
+
+        private void OnAutoStartClick(object sender, RoutedEventArgs e)
+        {
+            if (_isInitializing || _editing == null) return;
+            if (_configManager?.Current == null) return;
+
+            bool desired = AutoStartBox.IsChecked == true;
+            if (desired == _configManager.Current.AutoStart) return;
+
+            // 开机自启即时生效：注册表与配置同步提交，失败时 HostMenuActions 会提示并回滚。
+            HostMenuActions.ToggleAutoStart(_configManager, _services);
+
+            bool actual = _configManager.Current.AutoStart;
+            _editing.AutoStart = actual;
+            _isInitializing = true;
+            try { AutoStartBox.IsChecked = actual; }
+            finally { _isInitializing = false; }
+
+            ValidateText.Text = actual == desired ? Loc.T("Config.AppliedImmediately", "已立即生效") : "";
+        }
+
+        private void OnAboutClick(object sender, RoutedEventArgs e)
+        {
+            HostMenuActions.OpenAboutDialog(_services);
+        }
+
+        private void OnDiagnosticsClick(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var modules = _services?.GetService<ModuleManager>()?.Modules;
+                string report = AppInfo.GetDiagnosticReport(modules);
+                Clipboard.SetDataObject(report);
+                ValidateText.Text = Loc.T("Msg.DiagnosticsCopied", "诊断信息已复制到剪贴板");
+            }
+            catch (Exception ex)
+            {
+                _services?.GetService<ILoggerService>()?.LogError("HostMenu", "复制诊断信息失败", ex);
+                ValidateText.Text = Loc.T("Msg.DiagnosticsFailed", "复制诊断信息失败，详见日志");
             }
         }
 
@@ -110,91 +193,7 @@ namespace CarroDesk.Views
 
         private void OnOpenConfigDirClick(object sender, RoutedEventArgs e)
         {
-            HostMenuActions.OpenConfigDirectory();
-        }
-
-        private void OnResetDefaultsClick(object sender, RoutedEventArgs e)
-        {
-            if (MessageBox.Show(Loc.T("Config.ResetDefaultsConfirm"), Loc.T("Config.ResetDefaultsTitle"), MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
-                return;
-
-            var defHost = new AppSettings();
-            try
-            {
-                _isInitializing = true;
-                _editing.AutoStart = defHost.AutoStart;
-                ApplyEditingToUi();
-            }
-            finally
-            {
-                _isInitializing = false;
-            }
-
-            // 刻意不在"恢复默认"范围内：
-            //   - PIN（安全凭据，清掉会让用户被锁在门外）
-            //   - Language（语言偏好，重置会导致界面语言突变）
-            ValidateText.Text = Loc.T("Config.ResetDefaultsTooltip");
-        }
-
-        private void SyncFromUI()
-        {
-            if (_editing == null) _editing = new AppSettings();
-            _editing.AutoStart = AutoStartBox.IsChecked == true;
-            _editing.Language = _editing.Language ?? "auto";
-        }
-
-        private void OnSaveApplyClick(object sender, RoutedEventArgs e)
-        {
-            if (!DoSave(true)) return;
-            MessageBox.Show(Loc.T("Config.SaveSuccessApplied"), Loc.T("Common.Success"), MessageBoxButton.OK, MessageBoxImage.Information);
-        }
-
-        private bool DoSave(bool apply)
-        {
-            SyncFromUI();
-            AppSettings previous = null;
-            var target = _configManager?.Current;
-            if (target != null) previous = target.Clone();
-
-            try
-            {
-                if (_configManager != null)
-                {
-                    if (target == null) return false;
-                    _editing.CopyTo(target);
-                    _editing = target.Clone();
-                    _configManager.Save();
-                }
-                ValidateText.Text = Loc.T("Common.Success");
-
-                if (apply && !ApplyRuntime())
-                {
-                    MessageBox.Show(Loc.T("Config.ApplyFailed", "配置已保存，但运行时应用失败"), Loc.T("Common.Error"), MessageBoxButton.OK, MessageBoxImage.Warning);
-                    return false;
-                }
-                return true;
-            }
-            catch (Exception ex)
-            {
-                if (target != null && previous != null) previous.CopyTo(target);
-                MessageBox.Show(Loc.T("Config.SaveFailed", "保存配置失败") + ": " + ex.Message, Loc.T("Common.Error"), MessageBoxButton.OK, MessageBoxImage.Error);
-                return false;
-            }
-        }
-
-        private bool ApplyRuntime()
-        {
-            // 规范 M9：Config 编辑器不越权直驱模块/Controller。
-            // 仅在持久化后向 Host 发一次重载通知，由各模块 OnConfigReloaded 自行应用。
-            try
-            {
-                _onApplied?.Invoke();
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
+            HostMenuActions.OpenConfigDirectory(_services);
         }
 
         private void OnPinChangeClick(object sender, RoutedEventArgs e)
@@ -218,7 +217,7 @@ namespace CarroDesk.Views
                 string saltStr = Convert.ToBase64String(salt);
                 string hashStr = PinService.ComputeHash(salt, newPin);
 
-                // PIN 是安全凭据，不能像语言/自启那样留在草稿里等"保存并应用"：
+                // PIN 是安全凭据，不能像普通设置那样留在草稿里：
                 // 旧实现弹"新 PIN 已生成"后关窗即丢，用户以为已换掉泄露的旧 PIN。
                 if (!PersistPinImmediately(saltStr, hashStr)) return;
 
@@ -232,8 +231,7 @@ namespace CarroDesk.Views
         }
 
         /// <summary>
-        /// 只持久化 PIN 两个字段并让 PIN 服务立即重建凭据；其它草稿字段（语言/自启）
-        /// 仍由"保存并应用"统一提交，不因改 PIN 被顺带写盘。
+        /// 只持久化 PIN 两个字段并让 PIN 服务立即重建凭据；语言/自启由各自控件即时提交。
         /// 失败时回滚内存配置并提示，绝不显示"已生效"。
         /// </summary>
         private bool PersistPinImmediately(string salt, string hash)

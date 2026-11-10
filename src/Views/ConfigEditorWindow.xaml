@@ -86,35 +86,6 @@
             </Setter>
         </Style>
 
-        <!-- 主操作强调按钮样式 -->
-        <Style x:Key="PrimaryBtn" TargetType="{x:Type Button}">
-            <Setter Property="Background" Value="#FF1A73E8"/>
-            <Setter Property="Foreground" Value="White"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Padding" Value="16,4"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="{x:Type Button}">
-                        <Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="4" Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" RecognizesAccessKey="True"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="border" Property="Background" Value="#FF1558B0"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="border" Property="Background" Value="#FF0D3C7A"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter TargetName="border" Property="Opacity" Value="0.45"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
     </Window.Resources>
 
     <Grid>
@@ -142,10 +113,10 @@
                     </Grid>
                 </Border>
 
-                <!-- 基础设置 -->
+                <!-- 通用设置：修改即保存并生效 -->
                 <Border Background="White" CornerRadius="6" BorderBrush="#FFE4E7EB" BorderThickness="1" Padding="12,8" Margin="0,0,0,8">
                     <StackPanel>
-                        <TextBlock Text="{loc:Loc Config.BasicSettings}" FontWeight="Bold" Foreground="#FF333333" Margin="0,0,0,6"/>
+                        <TextBlock Text="{loc:Loc Config.GeneralSettings}" FontWeight="Bold" Foreground="#FF333333" Margin="0,0,0,6"/>
                         <Grid>
                             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" MinWidth="110"/><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                             <TextBlock Text="{loc:Loc Config.LanguageLabel}" VerticalAlignment="Center" Foreground="#FF444444" Margin="0,0,10,0"/>
@@ -155,19 +126,13 @@
                                 <ComboBoxItem Content="{loc:Loc Tray.LangEn}" Tag="en-US"/>
                             </ComboBox>
                         </Grid>
-                    </StackPanel>
-                </Border>
-
-                <!-- 系统集成 -->
-                <Border Background="White" CornerRadius="6" BorderBrush="#FFE4E7EB" BorderThickness="1" Padding="12,8" Margin="0,0,0,8">
-                    <StackPanel>
-                        <TextBlock Text="{loc:Loc Config.SystemIntegration}" FontWeight="Bold" Foreground="#FF333333" Margin="0,0,0,6"/>
-                        <CheckBox x:Name="AutoStartBox" Content="{loc:Loc Config.AutoStartLabel}" Margin="0,2,0,0"/>
+                        <CheckBox x:Name="AutoStartBox" Content="{loc:Loc Config.AutoStartLabel}" Margin="0,8,0,0" Click="OnAutoStartClick"/>
+                        <TextBlock Text="{loc:Loc Config.ImmediateHint}" Foreground="#FF888888" FontSize="11" Margin="0,6,0,0"/>
                     </StackPanel>
                 </Border>
 
                 <!-- 安全设置 -->
-                <Border Background="White" CornerRadius="6" BorderBrush="#FFE4E7EB" BorderThickness="1" Padding="12,8" Margin="0,0,0,4">
+                <Border Background="White" CornerRadius="6" BorderBrush="#FFE4E7EB" BorderThickness="1" Padding="12,8" Margin="0,0,0,8">
                     <StackPanel>
                         <TextBlock Text="{loc:Loc Config.SecurityTitle}" FontWeight="Bold" Foreground="#FF333333" Margin="0,0,0,6"/>
                         <Grid>
@@ -180,18 +145,25 @@
                     </StackPanel>
                 </Border>
 
-                <TextBlock x:Name="ValidateText" Foreground="#FFD93025" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                <!-- 关于与诊断（从托盘/浮窗菜单收敛到设置窗口） -->
+                <Border Background="White" CornerRadius="6" BorderBrush="#FFE4E7EB" BorderThickness="1" Padding="12,8" Margin="0,0,0,4">
+                    <StackPanel>
+                        <TextBlock Text="{loc:Loc Config.HelpAndAbout}" FontWeight="Bold" Foreground="#FF333333" Margin="0,0,0,6"/>
+                        <StackPanel Orientation="Horizontal">
+                            <Button x:Name="AboutButton" Content="{loc:Loc Tray.About}" Height="26" Padding="12,0" Margin="0,0,8,0" Click="OnAboutClick"/>
+                            <Button x:Name="DiagnosticsButton" Content="{loc:Loc Tray.Diagnostics}" Height="26" Padding="12,0" Click="OnDiagnosticsClick"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <TextBlock x:Name="ValidateText" Foreground="#FF1A7F37" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0"/>
             </StackPanel>
         </ScrollViewer>
 
         <!-- 底部固定底栏 -->
         <Border Grid.Row="1" Background="#FFF9F9F9" BorderBrush="#FFE2E5E8" BorderThickness="0,1,0,0" Padding="16,10">
             <DockPanel LastChildFill="False">
-                <Button Content="{loc:Loc Common.ResetDefaults}" DockPanel.Dock="Left" Height="30" Padding="12,0" ToolTip="{loc:Loc Config.ResetDefaultsTooltip}" Click="OnResetDefaultsClick"/>
-                <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
-                    <Button Content="{loc:Loc Common.SaveAndApply}" Style="{StaticResource PrimaryBtn}" Height="30" Padding="16,0" Margin="0,0,8,0" Click="OnSaveApplyClick"/>
-                    <Button Content="{loc:Loc Common.Close}" Height="30" MinWidth="68" Padding="12,0" IsCancel="True" Click="OnCloseClick"/>
-                </StackPanel>
+                <Button Content="{loc:Loc Common.Close}" DockPanel.Dock="Right" Height="30" MinWidth="68" Padding="12,0" IsCancel="True" Click="OnCloseClick"/>
             </DockPanel>
         </Border>
     </Grid>

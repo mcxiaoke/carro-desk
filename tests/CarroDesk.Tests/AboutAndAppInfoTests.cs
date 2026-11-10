@@ -61,7 +61,7 @@ namespace CarroDesk.Tests
         }
 
         [TestMethod]
-        public void TrayContextMenu_TitleIncludesVersion_AndHasAboutItem_WithoutLanguageMenu()
+        public void TrayContextMenu_TitleIncludesVersion_AndHasSettingsEntry_WithoutScatteredItems()
         {
             TestEnvironment.RunInSta(() =>
             {
@@ -71,29 +71,33 @@ namespace CarroDesk.Tests
                 Assert.IsNotNull(menu.TitleVersionText, "TitleVersionText 控件应存在");
                 Assert.AreEqual(AppInfo.DisplayVersion, menu.TitleVersionText.Text, "TitleVersionText 应展示 AppInfo.DisplayVersion");
 
-                // 验证关于菜单项存在，且不再包含语言子菜单
-                bool foundAbout = false;
-                bool foundLanguage = false;
+                // 设置入口存在
+                Assert.IsNotNull(menu.SettingsItem, "托盘菜单应包含【设置】入口");
+                string settingsHeader = menu.SettingsItem.Header?.ToString() ?? "";
+                Assert.IsTrue(settingsHeader.Contains("设置") || settingsHeader.Contains("Settings"),
+                    "设置入口文案应本地化，实际: " + settingsHeader);
 
-                foreach (var item in menu.Items)
+                // 关于/诊断/语言/开机自启已收敛到设置窗口，不再散落在托盘顶层
+                bool hasAbout = false;
+                bool hasDiagnostics = false;
+                bool hasLanguage = false;
+                bool hasAutoStart = false;
+
+                foreach (var item in menu.Items.OfType<MenuItem>())
                 {
-                    if (item is MenuItem mi)
-                    {
-                        if (mi.Name == "LanguageMenu")
-                        {
-                            foundLanguage = true;
-                        }
+                    if (item == menu.SettingsItem) continue;
 
-                        string headerText = mi.Header?.ToString() ?? "";
-                        if (headerText.Contains("关于") || headerText.Contains("About"))
-                        {
-                            foundAbout = true;
-                        }
-                    }
+                    string headerText = item.Header?.ToString() ?? "";
+                    if (headerText.Contains("关于") || headerText.Contains("About")) hasAbout = true;
+                    if (headerText.Contains("诊断") || headerText.Contains("Diagnostic")) hasDiagnostics = true;
+                    if (headerText.Contains("语言") || headerText.Contains("Language")) hasLanguage = true;
+                    if (headerText.Contains("开机自启") || headerText.Contains("Start with Windows")) hasAutoStart = true;
                 }
 
-                Assert.IsTrue(foundAbout, "托盘菜单应包含【关于】菜单项");
-                Assert.IsFalse(foundLanguage, "托盘菜单应已移除【语言】菜单项");
+                Assert.IsFalse(hasAbout, "关于应移入设置窗口");
+                Assert.IsFalse(hasDiagnostics, "诊断信息应移入设置窗口");
+                Assert.IsFalse(hasLanguage, "语言切换应移入设置窗口");
+                Assert.IsFalse(hasAutoStart, "开机自启应移入设置窗口");
             });
         }
 

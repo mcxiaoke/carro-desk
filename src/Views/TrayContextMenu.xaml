@@ -141,24 +141,11 @@
     <Separator x:Name="PluginSlotAnchorTop"/>
     <Separator x:Name="PluginSlotAnchorBottom"/>
 
-    <!-- ③ 宿主通用区：桌面控制面板/开机自启/配置目录/关于/退出（仅真正宿主项，不含业务） -->
+    <!-- ③ 宿主通用区：桌面控制面板/设置/配置目录/退出（仅真正宿主项，不含业务） -->
     <MenuItem x:Name="FloatingPanelItem" Header="{loc:Loc Tray.FloatingPanel}" Click="OnFloatingPanelClick"/>
-    <MenuItem x:Name="AutoStartItem" Header="{loc:Loc Tray.AutoStart}" Click="OnAutoStartClick"/>
-    <MenuItem Header="{loc:Loc Tray.ConfigEditor}" Click="OnConfigEditorClick"/>
+    <MenuItem x:Name="SettingsItem" Header="{loc:Loc Tray.Settings, Default='设置...'}" Click="OnSettingsClick"/>
     <MenuItem Header="{loc:Loc Tray.OpenConfigDir}" Click="OnOpenConfigDirClick"/>
     <MenuItem Header="{loc:Loc Tray.ReloadConfig}" Click="OnReloadConfigClick"/>
-
-    <!-- 语言（与浮窗菜单保持一致） -->
-    <MenuItem x:Name="LanguageItem" Header="{loc:Loc Tray.Language, Default='语言 / Language'}">
-        <MenuItem x:Name="LangAutoItem" Header="{loc:Loc Tray.LangAuto}" Tag="auto" IsCheckable="True" Click="OnLanguageClick"/>
-        <Separator/>
-        <MenuItem x:Name="LangZhItem" Header="{loc:Loc Tray.LangZh}" Tag="zh-CN" IsCheckable="True" Click="OnLanguageClick"/>
-        <MenuItem x:Name="LangEnItem" Header="{loc:Loc Tray.LangEn}" Tag="en-US" IsCheckable="True" Click="OnLanguageClick"/>
-    </MenuItem>
-
-    <!-- 关于 / 诊断 -->
-    <MenuItem Header="{loc:Loc Tray.About, Default='关于...'}" Click="OnAboutClick"/>
-    <MenuItem Header="{loc:Loc Tray.Diagnostics, Default='诊断信息...'}" Click="OnDiagnosticsClick"/>
 
     <Separator/>
 

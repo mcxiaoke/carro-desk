@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -65,7 +64,6 @@ namespace CarroDesk.Views
         private readonly ServiceContainer _services;
         private readonly Action _reloadConfig;
         private readonly Action _promptExit;
-        private readonly Action _updateTrayText;
 
         private AppSettings CurrentSettings => _configManager?.Current;
 
@@ -90,8 +88,7 @@ namespace CarroDesk.Views
             ModuleManager moduleManager = null,
             ServiceContainer services = null,
             Action reloadConfig = null,
-            Action promptExit = null,
-            Action updateTrayText = null)
+            Action promptExit = null)
         {
             _instance = this;
             _configManager = configManager;
@@ -99,7 +96,6 @@ namespace CarroDesk.Views
             _services = services;
             _reloadConfig = reloadConfig;
             _promptExit = promptExit;
-            _updateTrayText = updateTrayText;
 
             InitializeComponent();
 
@@ -136,12 +132,11 @@ namespace CarroDesk.Views
             ModuleManager moduleManager = null,
             ServiceContainer services = null,
             Action reloadConfig = null,
-            Action promptExit = null,
-            Action updateTrayText = null)
+            Action promptExit = null)
         {
             if (_instance == null)
             {
-                _instance = new FloatingPanelWindow(configManager, moduleManager, services, reloadConfig, promptExit, updateTrayText);
+                _instance = new FloatingPanelWindow(configManager, moduleManager, services, reloadConfig, promptExit);
             }
 
             if (_instance.IsVisible)
@@ -502,45 +497,25 @@ namespace CarroDesk.Views
                 ItemsHostMenu.Items.Add(new Separator());
             }
 
-            // ② 挂载宿主通用管理项（开机自启、配置、语言、退出）
+            // ② 挂载宿主通用管理项（设置、配置目录、重载、退出）
             BuildHostItems();
         }
 
         private void BuildHostItems()
         {
-            var config = CurrentSettings;
-
-            // 开机自启
-            var autoStartItem = new MenuItem
+            // 设置（语言/开机自启/关于/诊断均收敛到设置窗口，与托盘结构一致）
+            var settingsItem = new MenuItem
             {
-                Header = Loc.T("Tray.AutoStart", "开机自启"),
-                IsChecked = config != null && config.AutoStart
+                Header = Loc.T("Tray.Settings", "设置...")
             };
-            MenuProjectionEngine.AttachHoverBehavior(autoStartItem);
-            autoStartItem.Click += (s, e) =>
-            {
-                HostMenuActions.ToggleAutoStart(_configManager, _services, () =>
-                {
-                    autoStartItem.IsChecked = CurrentSettings?.AutoStart ?? false;
-                });
-                CloseAllTopLevelSubmenus();
-                DismissIfNotPinned();
-            };
-            ItemsHostMenu.Items.Add(autoStartItem);
-
-            // 配置编辑器
-            var configEditorItem = new MenuItem
-            {
-                Header = Loc.T("Tray.ConfigEditor", "配置编辑器...")
-            };
-            MenuProjectionEngine.AttachHoverBehavior(configEditorItem);
-            configEditorItem.Click += (s, e) =>
+            MenuProjectionEngine.AttachHoverBehavior(settingsItem);
+            settingsItem.Click += (s, e) =>
             {
                 CloseAllTopLevelSubmenus();
                 DismissIfNotPinned();
                 HostMenuActions.OpenConfigEditor(_services, _configManager, _reloadConfig, RebuildMenu);
             };
-            ItemsHostMenu.Items.Add(configEditorItem);
+            ItemsHostMenu.Items.Add(settingsItem);
 
             // 打开配置目录
             var openConfigDirItem = new MenuItem
@@ -552,7 +527,7 @@ namespace CarroDesk.Views
             {
                 CloseAllTopLevelSubmenus();
                 DismissIfNotPinned();
-                HostMenuActions.OpenConfigDirectory();
+                HostMenuActions.OpenConfigDirectory(_services);
             };
             ItemsHostMenu.Items.Add(openConfigDirItem);
 
@@ -570,55 +545,6 @@ namespace CarroDesk.Views
                 DismissIfNotPinned();
             };
             ItemsHostMenu.Items.Add(reloadConfigItem);
-
-            // 语言切换
-            var langRoot = new MenuItem
-            {
-                Header = Loc.T("Tray.Language", "语言 / Language")
-            };
-            MenuProjectionEngine.AttachHoverBehavior(langRoot);
-            string currentLang = config?.Language ?? "auto";
-
-            void AddLangItem(string langKey, string header)
-            {
-                var item = new MenuItem
-                {
-                    Header = header,
-                    IsChecked = string.Equals(currentLang, langKey, StringComparison.OrdinalIgnoreCase)
-                };
-                MenuProjectionEngine.AttachHoverBehavior(item);
-                item.Click += (s, e) =>
-                {
-                    HostMenuActions.SetLanguage(_configManager, _services, langKey, () =>
-                    {
-                        RebuildMenu();
-                        _updateTrayText?.Invoke();
-                    });
-                    DismissIfNotPinned();
-                };
-                langRoot.Items.Add(item);
-            }
-
-            AddLangItem("auto", Loc.T("Tray.LangAuto", "自动跟随系统 (Auto)"));
-            langRoot.Items.Add(new Separator());
-            AddLangItem("zh-CN", Loc.T("Tray.LangZh", "简体中文 (Chinese)"));
-            AddLangItem("en-US", Loc.T("Tray.LangEn", "English"));
-
-            ItemsHostMenu.Items.Add(langRoot);
-
-            // 关于（与托盘菜单保持一致）
-            var aboutItem = new MenuItem
-            {
-                Header = Loc.T("Tray.About", "关于...")
-            };
-            MenuProjectionEngine.AttachHoverBehavior(aboutItem);
-            aboutItem.Click += (s, e) =>
-            {
-                CloseAllTopLevelSubmenus();
-                DismissIfNotPinned();
-                HostMenuActions.OpenAboutDialog(_services);
-            };
-            ItemsHostMenu.Items.Add(aboutItem);
 
             ItemsHostMenu.Items.Add(new Separator());
 

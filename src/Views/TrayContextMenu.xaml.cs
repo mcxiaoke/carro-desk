@@ -1,9 +1,7 @@
 using System;
-using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using CarroDesk.Common;
-using CarroDesk.Core;
 using CarroDesk.Host.Services;
 using CarroDesk.Services;
 using CarroDesk.Services.Localization;
@@ -28,7 +26,6 @@ namespace CarroDesk.Views
         private readonly ServiceContainer _services;
         private readonly Action _toggleFloatingPanel;
         private readonly Action _reloadConfig;
-        private readonly Action _updateTrayText;
         private readonly Action _promptExit;
 
         public TrayContextMenu(
@@ -36,14 +33,12 @@ namespace CarroDesk.Views
             ServiceContainer services = null,
             Action toggleFloatingPanel = null,
             Action reloadConfig = null,
-            Action updateTrayText = null,
             Action promptExit = null)
         {
             _configManager = configManager;
             _services = services;
             _toggleFloatingPanel = toggleFloatingPanel;
             _reloadConfig = reloadConfig;
-            _updateTrayText = updateTrayText;
             _promptExit = promptExit;
 
             InitializeComponent();
@@ -66,33 +61,23 @@ namespace CarroDesk.Views
 
         internal void RefreshTray()
         {
-            RefreshHostChecks();
+            RefreshHostState();
             DynamicController?.RefreshNow();
         }
 
-        /// <summary>宿主通用区的勾选态（开机自启）。</summary>
-        private void RefreshHostChecks()
+        /// <summary>宿主通用区的动态态（浮动面板热键文案）。</summary>
+        private void RefreshHostState()
         {
             try
             {
                 var config = _configManager?.Current;
                 if (config == null) return;
 
-                if (AutoStartItem != null)
-                {
-                    AutoStartItem.IsChecked = config.AutoStart;
-                }
-
                 // 热键文案跟随配置，避免用户改了组合后托盘仍显示默认值
                 if (FloatingPanelItem != null)
                 {
                     FloatingPanelItem.InputGestureText = config.FloatingPanelHotkey;
                 }
-
-                string lang = config.Language ?? "auto";
-                if (LangAutoItem != null) LangAutoItem.IsChecked = string.Equals(lang, "auto", StringComparison.OrdinalIgnoreCase);
-                if (LangZhItem != null) LangZhItem.IsChecked = string.Equals(lang, "zh-CN", StringComparison.OrdinalIgnoreCase);
-                if (LangEnItem != null) LangEnItem.IsChecked = string.Equals(lang, "en-US", StringComparison.OrdinalIgnoreCase);
             }
             catch { }
         }
@@ -102,55 +87,19 @@ namespace CarroDesk.Views
             _toggleFloatingPanel?.Invoke();
         }
 
-        private void OnAutoStartClick(object sender, RoutedEventArgs e)
-        {
-            HostMenuActions.ToggleAutoStart(_configManager, _services, RefreshHostChecks);
-        }
-
-        private void OnConfigEditorClick(object sender, RoutedEventArgs e)
+        private void OnSettingsClick(object sender, RoutedEventArgs e)
         {
             HostMenuActions.OpenConfigEditor(_services, _configManager, _reloadConfig, RefreshTray);
         }
 
         private void OnOpenConfigDirClick(object sender, RoutedEventArgs e)
         {
-            HostMenuActions.OpenConfigDirectory();
+            HostMenuActions.OpenConfigDirectory(_services);
         }
 
         private void OnReloadConfigClick(object sender, RoutedEventArgs e)
         {
             _reloadConfig?.Invoke();
-        }
-
-        private void OnAboutClick(object sender, RoutedEventArgs e)
-        {
-            HostMenuActions.OpenAboutDialog(_services);
-        }
-
-        private void OnLanguageClick(object sender, RoutedEventArgs e)
-        {
-            var item = sender as MenuItem;
-            string lang = item != null ? item.Tag as string : null;
-            if (string.IsNullOrEmpty(lang)) return;
-
-            // 菜单点击会先翻转 IsChecked，这里以配置为准刷新一次勾选态
-            HostMenuActions.SetLanguage(_configManager, _services, lang, () => _updateTrayText?.Invoke());
-            RefreshHostChecks();
-        }
-
-        private void OnDiagnosticsClick(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                var modules = _services?.GetService<ModuleManager>()?.Modules;
-                string report = AppInfo.GetDiagnosticReport(modules);
-                Clipboard.SetDataObject(report);
-                App.ShowBalloonPublic(Loc.T("Msg.DiagnosticsCopied", "诊断信息已复制到剪贴板"));
-            }
-            catch (Exception ex)
-            {
-                _services?.GetService<ILoggerService>()?.LogError("HostMenu", "复制诊断信息失败", ex);
-            }
         }
 
         private void OnExitClick(object sender, RoutedEventArgs e)

@@ -315,8 +315,7 @@ namespace CarroDesk
                     Modules,
                     Services,
                     ReloadConfig,
-                    PromptExit,
-                    UpdateTrayText);
+                    PromptExit);
             }));
         }
 
@@ -466,7 +465,6 @@ namespace CarroDesk
                 Services,
                 ToggleFloatingPanel,
                 ReloadConfig,
-                UpdateTrayText,
                 PromptExit);
 
             _tbIcon = new TaskbarIcon

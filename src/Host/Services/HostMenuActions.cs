@@ -62,7 +62,7 @@ namespace CarroDesk.Host.Services
             {
                 var pinService = services?.GetService<IPinService>();
                 var pinGuard = services?.GetService<PinGuard>();
-                var win = new ConfigEditorWindow(pinService, configManager, reloadConfig, pinGuard)
+                var win = new ConfigEditorWindow(pinService, configManager, reloadConfig, pinGuard, services)
                 {
                     WindowStartupLocation = WindowStartupLocation.CenterScreen
                 };
