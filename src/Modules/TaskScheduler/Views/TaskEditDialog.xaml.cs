@@ -36,13 +36,13 @@ namespace CarroDesk.Modules.TaskScheduler.Views
 
             if (_isNew)
             {
-                Title = "新建自动化任务 - CarroDesk";
+                Title = Loc.T("Tasks.NewTitle", "新建自动化任务 - CarroDesk");
                 HeaderTitleText.Text = "新建自动化任务";
             }
             else
             {
                 string originalName = taskToEdit?.Name ?? "";
-                Title = $"编辑任务: {originalName} - CarroDesk";
+                Title = Loc.T("Tasks.EditTitle", "编辑任务: {0} - CarroDesk", originalName);
                 HeaderTitleText.Text = $"编辑任务: {originalName}";
                 _existingNames.Remove(originalName);
             }
@@ -262,8 +262,8 @@ namespace CarroDesk.Modules.TaskScheduler.Views
         {
             var dlg = new OpenFileDialog
             {
-                Title = "选择可执行程序或脚本文件",
-                Filter = "常见程序与脚本 (*.exe;*.bat;*.cmd;*.ps1;*.vbs;*.js;*.py)|*.exe;*.bat;*.cmd;*.ps1;*.vbs;*.js;*.py|所有文件 (*.*)|*.*"
+                Title = Loc.T("Tasks.SelectScriptFile", "选择可执行程序或脚本文件"),
+                Filter = Loc.T("Tasks.FileDialogFilter", "常见程序与脚本 (*.exe;*.bat;*.cmd;*.ps1;*.vbs;*.js;*.py)|*.exe;*.bat;*.cmd;*.ps1;*.vbs;*.js;*.py|所有文件 (*.*)|*.*")
             };
             if (dlg.ShowDialog() == true)
             {
@@ -293,7 +293,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
         {
             var dlg = new OpenFolderDialog
             {
-                Title = "选择工作目录"
+                Title = Loc.T("Tasks.SelectWorkDir")
             };
             if (dlg.ShowDialog() == true)
             {
@@ -305,7 +305,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
         {
             var dlg = new OpenFolderDialog
             {
-                Title = "选择监听目录"
+                Title = Loc.T("Tasks.SelectWatchDir")
             };
             if (dlg.ShowDialog() == true)
             {
@@ -316,16 +316,16 @@ namespace CarroDesk.Modules.TaskScheduler.Views
         private void OnInsertTemplateClick(object sender, RoutedEventArgs e)
         {
             var cm = new ContextMenu();
-            AddTemplateMenuItem(cm, "{{date}}", "当前日期 (yyyy-MM-dd)");
-            AddTemplateMenuItem(cm, "{{time}}", "当前时间 (HH-mm-ss)");
-            AddTemplateMenuItem(cm, "{{datetime}}", "完整时间戳 (yyyy-MM-dd_HH-mm-ss)");
-            AddTemplateMenuItem(cm, "{{timestamp}}", "Unix 纪元秒数");
-            AddTemplateMenuItem(cm, "{{task}}", "当前任务名称");
+            AddTemplateMenuItem(cm, "{{date}}", Loc.T("Tasks.TplDate", "当前日期 (yyyy-MM-dd)"));
+            AddTemplateMenuItem(cm, "{{time}}", Loc.T("Tasks.TplTime", "当前时间 (HH-mm-ss)"));
+            AddTemplateMenuItem(cm, "{{datetime}}", Loc.T("Tasks.TplDateTime", "完整时间戳 (yyyy-MM-dd_HH-mm-ss)"));
+            AddTemplateMenuItem(cm, "{{timestamp}}", Loc.T("Tasks.TplTimestamp", "Unix 纪元秒数"));
+            AddTemplateMenuItem(cm, "{{task}}", Loc.T("Tasks.TplTask", "当前任务名称"));
             cm.Items.Add(new Separator());
-            AddTemplateMenuItem(cm, "{{file}}", "变动文件全路径 (watch专用)");
-            AddTemplateMenuItem(cm, "{{fileName}}", "变动文件名 (watch专用)");
-            AddTemplateMenuItem(cm, "{{fileDir}}", "变动文件所在目录 (watch专用)");
-            AddTemplateMenuItem(cm, "{{fileEvent}}", "触发事件类型 (created/changed等)");
+            AddTemplateMenuItem(cm, "{{file}}", Loc.T("Tasks.TplFile", "变动文件全路径 (watch专用)"));
+            AddTemplateMenuItem(cm, "{{fileName}}", Loc.T("Tasks.TplFileName", "变动文件名 (watch专用)"));
+            AddTemplateMenuItem(cm, "{{fileDir}}", Loc.T("Tasks.TplFileDir", "变动文件所在目录 (watch专用)"));
+            AddTemplateMenuItem(cm, "{{fileEvent}}", Loc.T("Tasks.TplFileEvent", "触发事件类型 (created/changed等)"));
             cm.PlacementTarget = InsertTemplateBtn;
             cm.IsOpen = true;
         }
@@ -353,7 +353,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             var valError = task.Validate();
             if (!string.IsNullOrEmpty(valError))
             {
-                MessageBox.Show(this, "任务配置校验未通过:\n" + valError, "无法测试", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(this, Loc.Format("Tasks.TestError", valError), Loc.T("Tasks.TestInvalidTitle", "无法测试"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
@@ -364,7 +364,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
 
             TestRunButton.Visibility = Visibility.Collapsed;
             TestStopButton.Visibility = Visibility.Visible;
-            TestStatusText.Text = "⏳ 正在启动测试进程...";
+            TestStatusText.Text = Loc.T("Tasks.TestStarting");
 
             var sw = System.Diagnostics.Stopwatch.StartNew();
             try
@@ -375,18 +375,18 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                     int code = TaskRunner.StartDetached(task, "test-run", out handle);
                     if (code == TaskRunner.StartSkippedSingleInstance)
                     {
-                        TestStatusText.Text = "单实例互斥：已有实例在运行，测试跳过";
+                        TestStatusText.Text = Loc.T("Tasks.TestRunSingleInstanceSkip");
                     }
                     else if (code == 0 && handle != null)
                     {
                         // 保存句柄供"停止"按钮与关窗清理使用；否则测试进程脱管，无法停止（M4）
                         _testRunHandle = handle;
                         detachStarted = true;   // 保持"停止"态，用户必须先停掉才能再测
-                        TestStatusText.Text = $"🟢 常驻测试已启动 PID: {handle.Pid}";
+                        TestStatusText.Text = Loc.Format("Tasks.TestRunDetachedStatus", handle.Pid);
                     }
                     else
                     {
-                        TestStatusText.Text = "🔴 启动失败，详见日志";
+                        TestStatusText.Text = Loc.T("Tasks.TestStartFailed");
                     }
                 }
                 else
@@ -397,19 +397,19 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                     if (!IsLoaded) return;   // 已关窗，不再触碰控件
                     if (cts.IsCancellationRequested)
                     {
-                        TestStatusText.Text = "🛑 已手动终止";
+                        TestStatusText.Text = Loc.T("Tasks.TestRunCancelled");
                     }
                     else
                     {
                         TestStatusText.Text = code == 0
-                            ? $"🟢 执行成功 (0) 耗时: {sw.Elapsed.TotalSeconds:0.0}s"
-                            : $"🔴 执行返回 {code} 耗时: {sw.Elapsed.TotalSeconds:0.0}s";
+                            ? Loc.T("Tasks.TestRunSuccess", "🟢 执行成功 (0) 耗时: {0}s", sw.Elapsed.TotalSeconds.ToString("0.0"))
+                            : Loc.T("Tasks.TestRunExitCode", "🔴 执行返回 {0} 耗时: {1}s", code, sw.Elapsed.TotalSeconds.ToString("0.0"));
                     }
                 }
             }
             catch (Exception ex)
             {
-                if (IsLoaded) TestStatusText.Text = $"🔴 测试异常: {ex.Message}";
+                if (IsLoaded) TestStatusText.Text = Loc.Format("Tasks.TestException", ex.Message);
             }
             finally
             {
@@ -433,7 +433,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                 try { handle.Stop(); } catch { }
             }
             DisposeTestCts();
-            if (IsLoaded) TestStatusText.Text = "正在停止测试进程...";
+            if (IsLoaded) TestStatusText.Text = Loc.T("Tasks.TestRunStopping");
             RestoreTestButtons();
         }
 
@@ -479,14 +479,14 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             string name = task.Name.Trim();
             if (string.IsNullOrWhiteSpace(name))
             {
-                MessageBox.Show(this, "请输入任务名称！", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(this, Loc.T("Tasks.ValNameRequired"), Loc.T("Common.Prompt"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 NameBox.Focus();
                 return;
             }
 
             if (_existingNames.Contains(name))
             {
-                MessageBox.Show(this, $"任务名称 \"{name}\" 已存在，请更换！", "重名提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(this, Loc.Format("Tasks.ValNameDuplicate", name), Loc.T("Tasks.DuplicateTitle", "重名提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 NameBox.Focus();
                 return;
             }
@@ -494,7 +494,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             var err = task.Validate();
             if (!string.IsNullOrEmpty(err))
             {
-                MessageBox.Show(this, "任务配置校验未通过:\n" + err, "校验失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(this, Loc.Format("Tasks.TestError", err), Loc.T("Tasks.ValFailTitle", "校验失败"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
@@ -507,7 +507,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
         {
             if (_isDirty)
             {
-                var res = MessageBox.Show(this, "当前有未保存的修改，确定放弃并退出吗？", "放弃确认", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                var res = MessageBox.Show(this, Loc.T("Tasks.DiscardConfirm", "当前有未保存的修改，确定放弃并退出吗？"), Loc.T("Tasks.DiscardTitle", "放弃确认"), MessageBoxButton.YesNo, MessageBoxImage.Question);
                 if (res != MessageBoxResult.Yes) return;
             }
 

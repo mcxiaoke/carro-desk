@@ -67,6 +67,9 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             _searchDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
             _searchDebounce.Tick += (s, e) => { _searchDebounce.Stop(); ApplyFilterAndRefreshList(); };
 
+            // 语言切换后刷新一次性取值的统计栏与所有计算型列文案（V11）
+            I18nService.Instance.LanguageChanged += OnLanguageChanged;
+
             // 最小化即视为"无界面"：停掉心跳与采样；还原时恢复并立即补采一次
             StateChanged += (s, e) => UpdateSamplingActivity();
             IsVisibleChanged += (s, e) => UpdateSamplingActivity();
@@ -78,6 +81,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                 _perfTicker.Stop();
                 _searchDebounce.Stop();
                 CancelInFlightSampling();
+                I18nService.Instance.LanguageChanged -= OnLanguageChanged;
                 if (_scheduler != null)
                 {
                     _scheduler.StateChanged -= OnSchedulerStateChanged;
@@ -277,12 +281,12 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                 result = new TaskLoadResult
                 {
                     ReadOnly = true,
-                    ReadOnlyReason = "加载 tasks.json 异常（" + ex.Message + "），已只读打开，磁盘文件未改动"
+                    ReadOnlyReason = Loc.T("Tasks.BannerLoadException", "加载 tasks.json 异常（{0}），已只读打开，磁盘文件未改动", ex.Message)
                 };
             }
             if (result == null)
             {
-                result = new TaskLoadResult { ReadOnly = true, ReadOnlyReason = "加载任务配置失败，已只读打开" };
+                result = new TaskLoadResult { ReadOnly = true, ReadOnlyReason = Loc.T("Tasks.BannerLoadFailed", "加载任务配置失败，已只读打开") };
             }
 
             _loadResult = result;
@@ -304,8 +308,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             string reason = result?.ReadOnlyReason;
             if (string.IsNullOrEmpty(reason) && result != null && result.FileRecovered)
             {
-                reason = "tasks.json 已损坏并备份重建：" + result.RecoveredBackupPath +
-                         "（当前列表为空，请检查备份文件）";
+                reason = Loc.T("Tasks.BannerRecovered", "tasks.json 已损坏并备份重建：{0}（当前列表为空，请检查备份文件）", result.RecoveredBackupPath);
             }
 
             if (string.IsNullOrEmpty(reason))
@@ -367,7 +370,15 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                 running = states.Values.Count(s => s.IsRunning);
             }
 
-            StatsSummaryText.Text = $"共 {total} 个任务 · {running} 个运行中 · {disabled} 个已禁用";
+            StatsSummaryText.Text = Loc.T("Tasks.StatsSummary", "共 {0} 个任务 · {1} 个运行中 · {2} 个已禁用", total, running, disabled);
+        }
+
+        /// <summary>语言切换：统计栏是 C# 一次性取值，XAML 绑定不会自动刷新；列文案同理。</summary>
+        private void OnLanguageChanged()
+        {
+            if (_closed) return;
+            UpdateStatsSummary();
+            foreach (var item in _items) item.RefreshAllTexts();
         }
 
         private TaskRowViewModel GetSelectedRow()
@@ -495,7 +506,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             var row = GetSelectedRow();
             if (row == null) return;
 
-            var res = MessageBox.Show(this, $"确定要删除任务 \"{row.Name}\" 吗？", "删除确认", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            var res = MessageBox.Show(this, Loc.Format("Tasks.DeleteConfirm", row.Name), Loc.T("Tasks.DeleteConfirmTitle", "删除确认"), MessageBoxButton.YesNo, MessageBoxImage.Warning);
             if (res != MessageBoxResult.Yes) return;
 
             if (row.IsRunning)
@@ -528,14 +539,14 @@ namespace CarroDesk.Modules.TaskScheduler.Views
 
             if (!_scheduler.IsGlobalEnabled)
             {
-                MessageBox.Show(this, "任务调度总开关已禁用，请先启用总开关！", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(this, Loc.T("Tasks.GlobalDisabledEnable", "任务调度总开关已禁用，请先启用总开关！"), Loc.T("Common.Prompt"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
             bool ok = _scheduler.RunManual(row.Name);
             if (!ok)
             {
-                MessageBox.Show(this, $"任务 \"{row.Name}\" 触发失败（可能已被禁用或不满足运行条件）。", "触发失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(this, Loc.T("Tasks.TriggerFailed", "任务 \"{0}\" 触发失败（可能已被禁用或不满足运行条件）。", row.Name), Loc.T("Tasks.TriggerFailedTitle", "触发失败"), MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 
@@ -547,7 +558,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             bool ok = _scheduler.TryStop(row.Name);
             if (!ok)
             {
-                MessageBox.Show(this, $"未能停止任务 \"{row.Name}\"（当前没有可停止的活跃进程或重试任务）。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(this, Loc.T("Tasks.StopNoActive", "未能停止任务 \"{0}\"（当前没有可停止的活跃进程或重试任务）。", row.Name), Loc.T("Common.Prompt"), MessageBoxButton.OK, MessageBoxImage.Information);
             }
         }
 
@@ -558,14 +569,14 @@ namespace CarroDesk.Modules.TaskScheduler.Views
 
             if (!_scheduler.IsGlobalEnabled)
             {
-                MessageBox.Show(this, "任务调度总开关已禁用，无法启动任务！", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(this, Loc.T("Tasks.GlobalDisabledRun", "任务调度总开关已禁用，无法启动任务！"), Loc.T("Common.Prompt"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
             bool ok = _scheduler.RestartTask(row.Name);
             if (!ok)
             {
-                MessageBox.Show(this, $"重启任务 \"{row.Name}\" 失败。", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(this, Loc.T("Tasks.RestartFailed", "重启任务 \"{0}\" 失败。", row.Name), Loc.T("Common.Prompt"), MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 
@@ -577,7 +588,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             string logFile = Path.Combine(ConfigService.LogsDirPath, $"task-{row.Name}.log");
             if (!File.Exists(logFile))
             {
-                MessageBox.Show(this, $"该任务尚未生成运行日志文件：\n{logFile}", "暂无日志", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(this, Loc.Format("Tasks.NoLogFile", logFile), Loc.T("Tasks.NoLogTitle", "暂无日志"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
@@ -587,7 +598,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             }
             catch (Exception ex)
             {
-                MessageBox.Show(this, $"打开日志文件失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(this, Loc.Format("Tasks.OpenLogFailed", ex.Message), Loc.T("Common.Error"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -600,7 +611,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             }
             catch (Exception ex)
             {
-                MessageBox.Show(this, $"打开日志目录失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(this, Loc.Format("Tasks.OpenLogsDirFailed", ex.Message), Loc.T("Common.Error"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -626,7 +637,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             if (!saved)
             {
                 // 只在这次用户主动保存被拒绝时给提示，不打扰后台运行。
-                MessageBox.Show(this, error ?? "保存任务配置文件失败", "保存被拒绝",
+                MessageBox.Show(this, error ?? Loc.T("Tasks.SaveConfigFailed", "保存任务配置文件失败"), Loc.T("Tasks.SaveRejectedTitle", "保存被拒绝"),
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 // 不 Reload、不 LoadTasks：保留用户本次编辑，修好文件后可重试。
                 return;
@@ -706,13 +717,13 @@ namespace CarroDesk.Modules.TaskScheduler.Views
 
         // ---- 启用 / 常驻（配置态，值统一为 是 / 否） ----
 
-        public string EnabledBadgeText => Task.Enabled ? "是" : "否";
+        public string EnabledBadgeText => Task.Enabled ? Loc.T("Tasks.Yes", "是") : Loc.T("Tasks.No", "否");
         public Brush EnabledBadgeBg => Task.Enabled ? new SolidColorBrush(Color.FromRgb(236, 253, 245)) : new SolidColorBrush(Color.FromRgb(241, 245, 249));
         public Brush EnabledBadgeFg => Task.Enabled ? new SolidColorBrush(Color.FromRgb(5, 150, 105)) : new SolidColorBrush(Color.FromRgb(100, 116, 139));
 
         /// <summary>常驻守护（options.isDetach，进程退出自动重启）。原“模式”列。</summary>
         public bool IsResident => Task.Options?.IsDetach == true;
-        public string ResidentText => IsResident ? "是" : "否";
+        public string ResidentText => IsResident ? Loc.T("Tasks.Yes", "是") : Loc.T("Tasks.No", "否");
         public Brush ResidentTextBrush => IsResident
             ? new SolidColorBrush(Color.FromRgb(29, 78, 216))
             : new SolidColorBrush(Color.FromRgb(148, 163, 184));
@@ -721,19 +732,19 @@ namespace CarroDesk.Modules.TaskScheduler.Views
         {
             get
             {
-                if (Task.Trigger == null) return "未知";
+                if (Task.Trigger == null) return Loc.T("Tasks.Unknown", "未知");
                 switch (Task.Trigger.Type)
                 {
-                    case TaskTriggerType.Startup: return $"启动 {Task.Trigger.DelaySec}s";
-                    case TaskTriggerType.Interval: return $"间隔 {Task.Trigger.Every}";
-                    case TaskTriggerType.Daily: return $"每天 {Task.Trigger.At}";
-                    case TaskTriggerType.Cron: return $"Cron {Task.Trigger.Expr}";
-                    case TaskTriggerType.Watch: return $"监听 {Task.Trigger.WatchFilter}";
-                    case TaskTriggerType.SessionLock: return "锁屏时";
-                    case TaskTriggerType.SessionUnlock: return "解锁时";
-                    case TaskTriggerType.Idle: return $"空闲 {Task.Trigger.AfterMinutes}m";
-                    case TaskTriggerType.Manual: return "手动运行";
-                    case TaskTriggerType.Hotkey: return $"热键 {Task.Trigger.Hotkey}";
+                    case TaskTriggerType.Startup: return Loc.T("Tasks.TriggerStartup", "启动 {0}s", Task.Trigger.DelaySec);
+                    case TaskTriggerType.Interval: return Loc.T("Tasks.TriggerInterval", "间隔 {0}", Task.Trigger.Every);
+                    case TaskTriggerType.Daily: return Loc.T("Tasks.TriggerDaily", "每天 {0}", Task.Trigger.At);
+                    case TaskTriggerType.Cron: return Loc.T("Tasks.TriggerCron", "Cron {0}", Task.Trigger.Expr);
+                    case TaskTriggerType.Watch: return Loc.T("Tasks.TriggerWatch", "监听 {0}", Task.Trigger.WatchFilter);
+                    case TaskTriggerType.SessionLock: return Loc.T("Tasks.TriggerSessionLock", "锁屏时");
+                    case TaskTriggerType.SessionUnlock: return Loc.T("Tasks.TriggerSessionUnlock", "解锁时");
+                    case TaskTriggerType.Idle: return Loc.T("Tasks.TriggerIdle", "空闲 {0}m", Task.Trigger.AfterMinutes);
+                    case TaskTriggerType.Manual: return Loc.T("Tasks.TriggerManual", "手动运行");
+                    case TaskTriggerType.Hotkey: return Loc.T("Tasks.TriggerHotkey", "热键 {0}", Task.Trigger.Hotkey);
                     default: return Task.Trigger.Type.ToString();
                 }
             }
@@ -751,7 +762,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             get
             {
                 if (!IsRunning) return "--";
-                if (_snapshot.ActiveInstances > 1) return "多实例";
+                if (_snapshot.ActiveInstances > 1) return Loc.T("Tasks.MultiInstance", "多实例");
                 return _snapshot.Pid.HasValue ? _snapshot.Pid.Value.ToString() : "--";
             }
         }
@@ -788,24 +799,41 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             OnPropertyChanged(nameof(MemoryTextBrush));
         }
 
+        /// <summary>语言切换后由窗口调用，通知所有计算型文本属性重新求值。</summary>
+        public void RefreshAllTexts()
+        {
+            OnPropertyChanged(nameof(EnabledBadgeText));
+            OnPropertyChanged(nameof(ResidentText));
+            OnPropertyChanged(nameof(TriggerSummary));
+            OnPropertyChanged(nameof(PidDisplayText));
+            OnPropertyChanged(nameof(DurationDisplayText));
+            OnPropertyChanged(nameof(MemoryDisplayText));
+            OnPropertyChanged(nameof(ActionSummary));
+            OnPropertyChanged(nameof(StateDisplayText));
+            OnPropertyChanged(nameof(OutcomeDisplayText));
+        }
+
         internal static string FormatDuration(double totalSeconds)
         {
             if (double.IsNaN(totalSeconds) || totalSeconds < 0) totalSeconds = 0;
             long sec = (long)totalSeconds;
 
-            if (sec < 60) return sec + " 秒";
+            if (sec < 60) return Loc.T("Tasks.DurationSeconds", "{0} 秒", sec);
             if (sec < 3600)
             {
                 long m = sec / 60, s = sec % 60;
-                return s == 0 ? m + " 分" : m + " 分 " + s + " 秒";
+                return s == 0 ? Loc.T("Tasks.DurationMinutes", "{0} 分", m)
+                    : Loc.T("Tasks.DurationMinutesSeconds", "{0} 分 {1} 秒", m, s);
             }
             if (sec < 86400)
             {
                 long h = sec / 3600, m = (sec % 3600) / 60;
-                return m == 0 ? h + " 小时" : h + " 小时 " + m + " 分";
+                return m == 0 ? Loc.T("Tasks.DurationHours", "{0} 小时", h)
+                    : Loc.T("Tasks.DurationHoursMinutes", "{0} 小时 {1} 分", h, m);
             }
             long d = sec / 86400, hh = (sec % 86400) / 3600;
-            return hh == 0 ? d + " 天" : d + " 天 " + hh + " 小时";
+            return hh == 0 ? Loc.T("Tasks.DurationDays", "{0} 天", d)
+                    : Loc.T("Tasks.DurationDaysHours", "{0} 天 {1} 小时", d, hh);
         }
 
         internal static string FormatBytes(long bytes)
@@ -825,7 +853,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                 string f = Task.Action?.File ?? "";
                 string a = Task.Action?.Args ?? "";
                 string s = $"{f} {a}".Trim();
-                return string.IsNullOrEmpty(s) ? "<未设置>" : s;
+                return string.IsNullOrEmpty(s) ? Loc.T("Tasks.NotSet", "<未设置>") : s;
             }
         }
 
@@ -836,17 +864,17 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                 switch (_snapshot.State)
                 {
                     case TaskRuntimeState.Starting:
-                        return "启动中";
+                        return Loc.T("Tasks.StateStarting", "启动中");
                     case TaskRuntimeState.Running:
-                        return _snapshot.ActiveInstances > 1 ? $"运行中 ×{_snapshot.ActiveInstances}" : "运行中";
+                        return _snapshot.ActiveInstances > 1 ? Loc.T("Tasks.StateRunningMulti", "运行中 ×{0}", _snapshot.ActiveInstances) : Loc.T("Tasks.StateRunning", "运行中");
                     case TaskRuntimeState.Stopping:
-                        return "停止中";
+                        return Loc.T("Tasks.StateStopping", "停止中");
                     case TaskRuntimeState.WaitingRetry:
-                        return $"等待重试 {_snapshot.NextRetryDelaySec}s";
+                        return Loc.T("Tasks.StateWaitingRetry", "等待重试 {0}s", _snapshot.NextRetryDelaySec);
                     case TaskRuntimeState.MarkedFailed:
-                        return "熔断保护";
+                        return Loc.T("Tasks.StateMarkedFailed", "熔断保护");
                     default:
-                        return "空闲";
+                        return Loc.T("Tasks.StateIdle", "空闲");
                 }
             }
         }
@@ -902,7 +930,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                 if (!string.IsNullOrEmpty(_snapshot.LastOutcome))
                     return _snapshot.LastOutcome;
                 if (_snapshot.LastExitCode.HasValue)
-                    return $"退出码: {_snapshot.LastExitCode.Value}";
+                    return Loc.T("Tasks.ExitCode", "退出码: {0}", _snapshot.LastExitCode.Value);
                 return "--";
             }
         }
