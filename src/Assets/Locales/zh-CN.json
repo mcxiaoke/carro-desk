@@ -27,6 +27,7 @@
     "ExeFilter": "可执行文件 (*.exe)|*.exe|所有文件 (*.*)|*.*"
   },
   "Tray": {
+    "Diagnostics": "诊断信息...",
     "Title": "CarroDesk",
     "Running": "运行中",
     "Locked": "已锁定",
@@ -824,6 +825,7 @@
     "OccupiedExternal": "快捷键 '{0}' 已被系统或其他外部程序占用 (Win32: 1409)"
   },
   "Msg": {
+    "DiagnosticsCopied": "诊断信息已复制到剪贴板",
     "FormatError": "格式错误",
     "NameDuplicate": "名称重复",
     "ConfirmClear": "确认清空",

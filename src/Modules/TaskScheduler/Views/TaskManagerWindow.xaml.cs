@@ -338,8 +338,14 @@ namespace CarroDesk.Modules.TaskScheduler.Views
 
             var selectedName = GetSelectedTask()?.Name;
 
-            _items.Clear();
             var states = _scheduler?.GetAllStates() ?? new Dictionary<string, TaskStateSnapshot>();
+            // 默认排序：运行中 → 启用 → 名称。此前按 tasks.json 物理顺序，10 列高密度下难以扫读。
+            filtered = filtered
+                .OrderByDescending(t => states.TryGetValue(t.Name, out var s) && s.IsRunning)
+                .ThenByDescending(t => t.Enabled)
+                .ThenBy(t => t.Name, StringComparer.OrdinalIgnoreCase);
+
+            _items.Clear();
 
             foreach (var t in filtered)
             {

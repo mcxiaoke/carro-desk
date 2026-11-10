@@ -27,6 +27,7 @@
     "ExeFilter": "Executable (*.exe)|*.exe|All files (*.*)|*.*"
   },
   "Tray": {
+    "Diagnostics": "Diagnostics...",
     "Title": "CarroDesk",
     "Running": "Running",
     "Locked": "Locked",
@@ -824,6 +825,7 @@
     "OccupiedExternal": "Hotkey '{0}' is already taken by the system or another program (Win32: 1409)"
   },
   "Msg": {
+    "DiagnosticsCopied": "Diagnostic report copied to clipboard",
     "FormatError": "Invalid format",
     "NameDuplicate": "Duplicate name",
     "ConfirmClear": "Confirm clear",

@@ -600,6 +600,21 @@ namespace CarroDesk.Views
             AddLangItem("en-US", Loc.T("Tray.LangEn", "English"));
 
             ItemsHostMenu.Items.Add(langRoot);
+
+            // 关于（与托盘菜单保持一致）
+            var aboutItem = new MenuItem
+            {
+                Header = Loc.T("Tray.About", "关于...")
+            };
+            MenuProjectionEngine.AttachHoverBehavior(aboutItem);
+            aboutItem.Click += (s, e) =>
+            {
+                CloseAllTopLevelSubmenus();
+                DismissIfNotPinned();
+                HostMenuActions.OpenAboutDialog(_services);
+            };
+            ItemsHostMenu.Items.Add(aboutItem);
+
             ItemsHostMenu.Items.Add(new Separator());
 
             // 退出

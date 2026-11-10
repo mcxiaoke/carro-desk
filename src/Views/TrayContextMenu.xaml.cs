@@ -82,6 +82,17 @@ namespace CarroDesk.Views
                 {
                     AutoStartItem.IsChecked = config.AutoStart;
                 }
+
+                // 热键文案跟随配置，避免用户改了组合后托盘仍显示默认值
+                if (FloatingPanelItem != null)
+                {
+                    FloatingPanelItem.InputGestureText = config.FloatingPanelHotkey;
+                }
+
+                string lang = config.Language ?? "auto";
+                if (LangAutoItem != null) LangAutoItem.IsChecked = string.Equals(lang, "auto", StringComparison.OrdinalIgnoreCase);
+                if (LangZhItem != null) LangZhItem.IsChecked = string.Equals(lang, "zh-CN", StringComparison.OrdinalIgnoreCase);
+                if (LangEnItem != null) LangEnItem.IsChecked = string.Equals(lang, "en-US", StringComparison.OrdinalIgnoreCase);
             }
             catch { }
         }
@@ -114,6 +125,32 @@ namespace CarroDesk.Views
         private void OnAboutClick(object sender, RoutedEventArgs e)
         {
             HostMenuActions.OpenAboutDialog(_services);
+        }
+
+        private void OnLanguageClick(object sender, RoutedEventArgs e)
+        {
+            var item = sender as MenuItem;
+            string lang = item != null ? item.Tag as string : null;
+            if (string.IsNullOrEmpty(lang)) return;
+
+            // 菜单点击会先翻转 IsChecked，这里以配置为准刷新一次勾选态
+            HostMenuActions.SetLanguage(_configManager, _services, lang, () => _updateTrayText?.Invoke());
+            RefreshHostChecks();
+        }
+
+        private void OnDiagnosticsClick(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var modules = _services?.GetService<ModuleManager>()?.Modules;
+                string report = AppInfo.GetDiagnosticReport(modules);
+                Clipboard.SetDataObject(report);
+                App.ShowBalloonPublic(Loc.T("Msg.DiagnosticsCopied", "诊断信息已复制到剪贴板"));
+            }
+            catch (Exception ex)
+            {
+                _services?.GetService<ILoggerService>()?.LogError("HostMenu", "复制诊断信息失败", ex);
+            }
         }
 
         private void OnExitClick(object sender, RoutedEventArgs e)
