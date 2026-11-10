@@ -42,6 +42,14 @@ namespace CarroDesk.Host.Ipc
 
         private sealed class Session
         {
+            /// <summary>服务端显式支持的 MCP 协议版本；initialize 只回可选集合内的版本（M35）。</summary>
+            private static readonly string[] SupportedProtocolVersions =
+            {
+                DefaultProtocolVersion,
+                "2025-03-26",
+                "2024-11-05"
+            };
+
             private readonly TextWriter _log;
             private readonly Func<PipeRpcClient> _clientFactory;
             private JObject _capabilities; // host.capabilities.list 的 result（含 hash + capabilities 数组）
@@ -101,7 +109,8 @@ namespace CarroDesk.Host.Ipc
                 var requested = parameters == null ? null : (string)parameters["protocolVersion"];
                 return new JObject
                 {
-                    ["protocolVersion"] = string.IsNullOrEmpty(requested) ? DefaultProtocolVersion : requested,
+                    // 只回服务端实际实现的协议版本，避免"假装支持"任意客户端版本（M35）
+                    ["protocolVersion"] = NegotiateProtocolVersion(requested),
                     ["capabilities"] = new JObject { ["tools"] = new JObject { ["listChanged"] = false } },
                     ["serverInfo"] = new JObject
                     {
@@ -122,6 +131,24 @@ namespace CarroDesk.Host.Ipc
                         "4) 本服务器不提供任意 shell 与文件访问；那类需求请用户走 SSH/远控通道。\n" +
                         "5) 需要更详细的使用说明（含口令策略与能力边界）时，调用 host.guide 工具获取完整手册。"
                 };
+            }
+
+            /// <summary>
+            /// 选择双方都支持的协议版本：命中支持列表则沿用客户端请求，
+            /// 否则回退到最新支持版本并记录日志（客户端不兼容时可自行断开）。
+            /// </summary>
+            private string NegotiateProtocolVersion(string requested)
+            {
+                if (!string.IsNullOrEmpty(requested))
+                {
+                    foreach (var version in SupportedProtocolVersions)
+                    {
+                        if (string.Equals(version, requested, StringComparison.Ordinal)) return requested;
+                    }
+                    _log.WriteLine("mcp: client protocolVersion '" + requested +
+                        "' is not supported, falling back to " + DefaultProtocolVersion);
+                }
+                return DefaultProtocolVersion;
             }
 
             private JObject BuildToolsList()

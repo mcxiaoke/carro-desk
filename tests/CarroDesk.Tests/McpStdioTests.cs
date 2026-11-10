@@ -230,6 +230,26 @@ namespace CarroDesk.Tests
             finally { server.Dispose(); }
         }
 
+        /// <summary>M35：客户端请求未支持的协议版本时回退到服务端支持版本，而不是原样回显。</summary>
+        [TestMethod]
+        public void Run_Initialize_UnsupportedProtocolVersion_FallsBackToSupported()
+        {
+            string pipeName;
+            var server = StartTestServer(out pipeName);
+            try
+            {
+                var responses = RunSession(
+                    pipeName,
+                    "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"1999-01-01\"}}");
+                var init = FindResponse(responses, 1);
+                Assert.IsNotNull(init);
+                Assert.IsNull(init["error"]);
+                Assert.AreEqual(McpStdioServer.DefaultProtocolVersion,
+                    (string)init["result"]["protocolVersion"], "未支持版本必须回退到服务端支持版本");
+            }
+            finally { server.Dispose(); }
+        }
+
         [TestMethod]
         public void Run_EmptyInput_ExitsCleanly()
         {

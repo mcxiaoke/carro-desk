@@ -126,7 +126,9 @@ namespace CarroDesk
                 return 1;
             }
 
-            var client = new PipeRpcClient(parsed.PipeName, parsed.TimeoutMs > 0 ? parsed.TimeoutMs : 3000);
+            // --timeout 同时约束连接与等待响应：宿主卡死时二实例转发必须有界退出（H7）
+            int timeoutMs = parsed.TimeoutMs > 0 ? parsed.TimeoutMs : 3000;
+            var client = new PipeRpcClient(parsed.PipeName, timeoutMs, timeoutMs);
             return ControlForwarder.Forward(parsed, client, Console.Out, Console.Error);
         }
     }

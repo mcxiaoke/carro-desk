@@ -1,4 +1,7 @@
 using System;
+using System.Diagnostics;
+using System.IO.Pipes;
+using System.Threading.Tasks;
 using CarroDesk.Core;
 using CarroDesk.Core.Commands;
 using CarroDesk.Host.Commands;
@@ -100,6 +103,39 @@ namespace CarroDesk.Tests
                 Assert.AreEqual("granted", (string)((Newtonsoft.Json.Linq.JToken)ok.Data));
             }
             finally { server.Dispose(); }
+        }
+
+        /// <summary>
+        /// H7：对端接受连接、读走请求后故意不响应，客户端必须在读超时后返回 TransportError，
+        /// 而不是永久阻塞（宿主卡死时 CLI/MCP 不能一起挂住）。
+        /// </summary>
+        [TestMethod]
+        public void Call_ServerNeverResponds_ReturnsTransportTimeout()
+        {
+            string pipeName = "CarroDesk.timeout-test." + Guid.NewGuid().ToString("N");
+            using (var server = new NamedPipeServerStream(pipeName, PipeDirection.InOut, 1,
+                PipeTransmissionMode.Byte, PipeOptions.Asynchronous))
+            {
+                var accept = server.WaitForConnectionAsync();
+                var client = new PipeRpcClient(pipeName, 2000, 300);
+                var sw = Stopwatch.StartNew();
+                var call = Task.Run(() => client.Call(CommandRequest.Create("host.status")));
+
+                Assert.IsTrue(accept.Wait(3000), "客户端应能连上测试管道");
+                // 读走完整请求帧，但故意不写响应
+                var header = new byte[4];
+                server.ReadExactly(header, 0, header.Length);
+                var body = new byte[BitConverter.ToInt32(header, 0)];
+                server.ReadExactly(body, 0, body.Length);
+
+                Assert.IsTrue(call.Wait(5000), "客户端必须超时返回，不能永久挂起");
+                sw.Stop();
+                Assert.IsFalse(call.Result.Ok);
+                Assert.AreEqual(CommandErrorCodes.TransportError, call.Result.Error.Code);
+                StringAssert.Contains(call.Result.Error.Message, "timeout");
+                Assert.IsTrue(sw.ElapsedMilliseconds < 2500,
+                    "读超时应及时返回，实际 " + sw.ElapsedMilliseconds + "ms");
+            }
         }
 
         [TestMethod]
