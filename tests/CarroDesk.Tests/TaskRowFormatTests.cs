@@ -1,3 +1,5 @@
+using CarroDesk.Core;
+using CarroDesk.Models;
 using CarroDesk.Modules.TaskScheduler.Views;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -55,6 +57,24 @@ namespace CarroDesk.Tests
             Assert.AreEqual("1.0 MB", TaskRowViewModel.FormatBytes(1024L * 1024));
             Assert.AreEqual("72.8 MB", TaskRowViewModel.FormatBytes(76312576));
             Assert.AreEqual("2.50 GB", TaskRowViewModel.FormatBytes((long)(2.5 * 1024 * 1024 * 1024)));
+        }
+
+        [TestMethod]
+        public void TriggerSummary_Interval_UsesSecondsAndMinutesUnits()
+        {
+            Assert.AreEqual("每 90 秒", MakeIntervalRow("90s").TriggerSummary);
+            Assert.AreEqual("每 2 分钟", MakeIntervalRow("120s").TriggerSummary);
+            Assert.AreEqual("每 60 分钟", MakeIntervalRow("1h").TriggerSummary);
+        }
+
+        private static TaskRowViewModel MakeIntervalRow(string every)
+        {
+            var task = new TaskDefinition
+            {
+                Name = "IntervalTask",
+                Trigger = new TaskTrigger { Type = TaskTriggerType.Interval, Every = every }
+            };
+            return new TaskRowViewModel(task, new TaskStateSnapshot());
         }
     }
 }

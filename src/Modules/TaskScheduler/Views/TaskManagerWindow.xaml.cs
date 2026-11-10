@@ -11,6 +11,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -38,6 +39,15 @@ namespace CarroDesk.Modules.TaskScheduler.Views
         private CancellationTokenSource _sampleCts; // 当前飞行采样轮次，失活时取消
         private int _sampleGeneration;              // 采样代际：丢弃过期结果
         private int _pendingResample;               // 采样被单飞挡住时，标记需要立即补一轮
+        private string _sortColumn;                 // 列头排序：null = 默认排序（运行中优先）
+        private bool _sortAscending = true;
+        private GridViewColumnHeader _sortHeader;   // 当前排序列头，仅用于提示文案
+
+        /// <summary>与 XAML 中任务列表列顺序一一对应的排序键（GridViewColumn 无 Tag）。</summary>
+        private static readonly string[] ColumnSortKeys =
+        {
+            "state", "pid", "duration", "name", "enabled", "resident", "trigger", "memory", "action", "outcome"
+        };
 
         public TaskManagerWindow(ITaskSchedulerService scheduler, Action onTasksChanged = null)
         {
@@ -46,6 +56,8 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             _onTasksChanged = onTasksChanged;
 
             TaskListView.ItemsSource = _items;
+            // 列头点击排序（M26）：GridViewColumnHeader.Click 冒泡到 ListView
+            TaskListView.AddHandler(ButtonBase.ClickEvent, new RoutedEventHandler(OnColumnHeaderClick));
 
             if (_scheduler != null)
             {
@@ -340,18 +352,32 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             var selectedName = GetSelectedTask()?.Name;
 
             var states = _scheduler?.GetAllStates() ?? new Dictionary<string, TaskStateSnapshot>();
-            // 默认排序：运行中 → 启用 → 名称。此前按 tasks.json 物理顺序，10 列高密度下难以扫读。
-            filtered = filtered
-                .OrderByDescending(t => states.TryGetValue(t.Name, out var s) && s.IsRunning)
-                .ThenByDescending(t => t.Enabled)
-                .ThenBy(t => t.Name, StringComparer.OrdinalIgnoreCase);
-
-            _items.Clear();
-
+            var rows = new List<TaskRowViewModel>();
             foreach (var t in filtered)
             {
                 states.TryGetValue(t.Name, out var snap);
-                _items.Add(new TaskRowViewModel(t, snap));
+                rows.Add(new TaskRowViewModel(t, snap));
+            }
+
+            // 未点列头：运行中 → 启用 → 名称；点了列头：按该列排序（M26）
+            IEnumerable<TaskRowViewModel> ordered;
+            if (string.IsNullOrEmpty(_sortColumn))
+            {
+                ordered = rows
+                    .OrderByDescending(r => r.IsRunning)
+                    .ThenByDescending(r => r.Task.Enabled)
+                    .ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase);
+            }
+            else
+            {
+                ordered = SortRows(rows, _sortColumn, _sortAscending);
+            }
+
+            _items.Clear();
+
+            foreach (var r in ordered)
+            {
+                _items.Add(r);
             }
 
             EmptyHintPanel.Visibility = _items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -363,6 +389,83 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             }
 
             SampleMemoryIfVisible();   // 列表重建后立即采样（窗口未显示时此调用不产生任何读取）
+        }
+
+        /// <summary>列头点击：同列再次点击切换升降序，换列则重置为升序（M26）。</summary>
+        private void OnColumnHeaderClick(object sender, RoutedEventArgs e)
+        {
+            var header = FindColumnHeader(e.OriginalSource as DependencyObject) ?? e.Source as GridViewColumnHeader;
+            var grid = TaskListView.View as GridView;
+            var column = header?.Column;
+            if (grid == null || column == null) return;
+
+            // GridViewColumn 没有 Tag 属性，按 XAML 中的列顺序映射排序键；
+            // 列顺序必须与 ColumnSortKeys 一致（新增/移动列时同步维护）。
+            int index = grid.Columns.IndexOf(column);
+            if (index < 0 || index >= ColumnSortKeys.Length) return;
+            string key = ColumnSortKeys[index];
+
+            if (string.Equals(_sortColumn, key, StringComparison.Ordinal))
+            {
+                _sortAscending = !_sortAscending;
+            }
+            else
+            {
+                _sortColumn = key;
+                _sortAscending = true;
+            }
+
+            UpdateSortHint(header);
+            ApplyFilterAndRefreshList();
+        }
+
+        private static GridViewColumnHeader FindColumnHeader(DependencyObject source)
+        {
+            while (source != null && !(source is GridViewColumnHeader))
+            {
+                source = VisualTreeHelper.GetParent(source);
+            }
+            return source as GridViewColumnHeader;
+        }
+
+        /// <summary>用 ToolTip 标示当前排序列与方向（不改 Column.Header，避免破坏本地化绑定）。</summary>
+        private void UpdateSortHint(GridViewColumnHeader header)
+        {
+            if (_sortHeader != null && !ReferenceEquals(_sortHeader, header))
+                _sortHeader.ToolTip = null;
+            _sortHeader = header;
+            if (header == null) return;
+            header.ToolTip = _sortAscending
+                ? Loc.T("Tasks.SortAscHint", "已按此列升序排序，再次点击切换为降序")
+                : Loc.T("Tasks.SortDescHint", "已按此列降序排序，再次点击切换为升序");
+        }
+
+        private static IEnumerable<TaskRowViewModel> SortRows(List<TaskRowViewModel> rows, string column, bool ascending)
+        {
+            Comparison<TaskRowViewModel> cmp;
+            switch (column)
+            {
+                case "state": cmp = (a, b) => string.Compare(a.StateDisplayText, b.StateDisplayText, StringComparison.OrdinalIgnoreCase); break;
+                case "pid": cmp = (a, b) => Nullable.Compare(a.Pid, b.Pid); break;
+                case "duration": cmp = (a, b) => a.DurationSeconds.CompareTo(b.DurationSeconds); break;
+                case "name": cmp = (a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase); break;
+                case "enabled": cmp = (a, b) => a.Task.Enabled.CompareTo(b.Task.Enabled); break;
+                case "resident": cmp = (a, b) => a.IsResident.CompareTo(b.IsResident); break;
+                case "trigger": cmp = (a, b) => string.Compare(a.TriggerSummary, b.TriggerSummary, StringComparison.OrdinalIgnoreCase); break;
+                case "memory": cmp = (a, b) => Nullable.Compare(a.MemoryBytes, b.MemoryBytes); break;
+                case "action": cmp = (a, b) => string.Compare(a.ActionSummary, b.ActionSummary, StringComparison.OrdinalIgnoreCase); break;
+                case "outcome": cmp = (a, b) => string.Compare(a.OutcomeDisplayText, b.OutcomeDisplayText, StringComparison.OrdinalIgnoreCase); break;
+                default: return rows;
+            }
+
+            var sorted = new List<TaskRowViewModel>(rows);
+            sorted.Sort((a, b) =>
+            {
+                int r = cmp(a, b);
+                if (r == 0) r = string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase);
+                return ascending ? r : -r;
+            });
+            return sorted;
         }
 
         private void UpdateStatsSummary()
@@ -386,6 +489,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             if (_closed) return;
             UpdateStatsSummary();
             foreach (var item in _items) item.RefreshAllTexts();
+            if (_sortHeader != null) UpdateSortHint(_sortHeader);   // 排序提示文案跟随语言
         }
 
         private TaskRowViewModel GetSelectedRow()
@@ -791,7 +895,15 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                 switch (Task.Trigger.Type)
                 {
                     case TaskTriggerType.Startup: return Loc.T("Tasks.TriggerStartup", "启动 {0}s", Task.Trigger.DelaySec);
-                    case TaskTriggerType.Interval: return Loc.T("Tasks.TriggerInterval", "间隔 {0}", Task.Trigger.Every);
+                    case TaskTriggerType.Interval:
+                    {
+                        // 显示真实单位：裸数字无法判断是 60 秒还是 60 分钟（M10）
+                        int sec = Task.GetIntervalSeconds();
+                        if (sec <= 0) return Loc.T("Tasks.TriggerInterval", "间隔 {0}", Task.Trigger.Every);
+                        if (sec >= 60 && sec % 60 == 0)
+                            return Loc.T("Tasks.TriggerIntervalMinutes", "每 {0} 分钟", sec / 60);
+                        return Loc.T("Tasks.TriggerIntervalSeconds", "每 {0} 秒", sec);
+                    }
                     case TaskTriggerType.Daily: return Loc.T("Tasks.TriggerDaily", "每天 {0}", Task.Trigger.At);
                     case TaskTriggerType.Cron: return Loc.T("Tasks.TriggerCron", "Cron {0}", Task.Trigger.Expr);
                     case TaskTriggerType.Watch: return Loc.T("Tasks.TriggerWatch", "监听 {0}", Task.Trigger.WatchFilter);
@@ -828,6 +940,12 @@ namespace CarroDesk.Modules.TaskScheduler.Views
         public string DurationDisplayText => _snapshot.StartedAt.HasValue
             ? FormatDuration(_snapshot.DurationSec)
             : "--";
+
+        /// <summary>排序列使用的原始秒数；未运行返回 -1，保证空值统一排在最前/最后。</summary>
+        public double DurationSeconds => _snapshot.StartedAt.HasValue ? _snapshot.DurationSec : -1;
+
+        /// <summary>排序列使用的原始内存字节数（null = 未运行/未采样）。</summary>
+        public long? MemoryBytes => _memoryBytes;
 
         /// <summary>内存占用（物理工作集）。仅在窗口可见时由采样器写入，其余情况为 --。</summary>
         public string MemoryDisplayText

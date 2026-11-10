@@ -348,6 +348,12 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             // 之前的常驻进程从此没有引用，"停止"和关窗兜底都只作用于最后一个。
             if (_testRunHandle != null && _testRunHandle.HasExited != true) return;
 
+            if (!TryValidateNumericInputs(out string inputError))
+            {
+                MessageBox.Show(this, inputError, Loc.T("Tasks.ValFailTitle", "校验失败"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
             var task = BuildTaskFromForm();
             if (task == null) return;
 
@@ -456,6 +462,34 @@ namespace CarroDesk.Modules.TaskScheduler.Views
 
         protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
         {
+            // 右上角关闭 / Alt+F4 与"取消"按钮保持一致：有未保存修改时先询问（M17）
+            if (_isDirty)
+            {
+                var res = MessageBox.Show(this,
+                    Loc.T("Tasks.CloseUnsavedConfirm", "当前有未保存的修改，是否保存后关闭？"),
+                    Loc.T("Tasks.CloseUnsavedTitle", "未保存的修改"),
+                    MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+                if (res == MessageBoxResult.Cancel)
+                {
+                    e.Cancel = true;
+                    return;
+                }
+                if (res == MessageBoxResult.Yes)
+                {
+                    // OnClosing 内不能直接设置 DialogResult（窗口已在关闭流程中），
+                    // 先取消本次关闭，回到消息循环后再执行保存并关闭。
+                    e.Cancel = true;
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        if (!TrySaveTask()) return;   // 校验失败/重名：保持窗口打开
+                        DialogResult = true;
+                        Close();
+                    }));
+                    return;
+                }
+                // No：放弃修改，继续关闭
+            }
+
             // 关窗兜底：detach 测试进程不能因对话框关闭而变成脱管常驻进程（M4）
             try
             {
@@ -474,34 +508,93 @@ namespace CarroDesk.Modules.TaskScheduler.Views
 
         private void OnSaveClick(object sender, RoutedEventArgs e)
         {
+            if (!TrySaveTask()) return;
+            DialogResult = true;
+            Close();
+        }
+
+        /// <summary>校验数值输入并生成保存结果；失败时保持对话框打开并提示具体字段。</summary>
+        private bool TrySaveTask()
+        {
+            if (!TryValidateNumericInputs(out string inputError))
+            {
+                MessageBox.Show(this, inputError, Loc.T("Tasks.ValFailTitle", "校验失败"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                return false;
+            }
+
             var task = BuildTaskFromForm();
-            if (task == null) return;
+            if (task == null) return false;
 
             string name = task.Name.Trim();
             if (string.IsNullOrWhiteSpace(name))
             {
                 MessageBox.Show(this, Loc.T("Tasks.ValNameRequired"), Loc.T("Common.Prompt"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 NameBox.Focus();
-                return;
+                return false;
             }
 
             if (_existingNames.Contains(name))
             {
                 MessageBox.Show(this, Loc.Format("Tasks.ValNameDuplicate", name), Loc.T("Tasks.DuplicateTitle", "重名提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 NameBox.Focus();
-                return;
+                return false;
             }
 
             var err = task.Validate();
             if (!string.IsNullOrEmpty(err))
             {
                 MessageBox.Show(this, Loc.Format("Tasks.TestError", err), Loc.T("Tasks.ValFailTitle", "校验失败"), MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
+                return false;
             }
 
             ResultTask = task;
-            DialogResult = true;
-            Close();
+            UpdateDirtyState(false);   // 关闭流程会再次进入 OnClosing，不能重复追问
+            return true;
+        }
+
+        /// <summary>
+        /// 数字输入统一校验（M16）：此前 TryParse 失败会静默回退默认值，用户以为保存了自己的输入。
+        /// 只校验当前可见/生效的字段，避免隐藏面板里的旧值挡住保存。
+        /// </summary>
+        private bool TryValidateNumericInputs(out string error)
+        {
+            string trigType = GetSelectedComboTag(TriggerTypeBox).ToLowerInvariant();
+            if (trigType == "startup" &&
+                !TryReadInt(DelaySecBox, 0, 365 * 24 * 60 * 60, Loc.T("Tasks.MgrDelaySeconds", "延迟秒数"), out error))
+                return false;
+            if (trigType == "idle" &&
+                !TryReadInt(IdleMinutesBox, 1, 10080, Loc.T("Tasks.MgrIdleMinutes", "空闲分钟数"), out error))
+                return false;
+
+            bool isDetach = string.Equals(GetSelectedComboTag(ModeBox), "detach", StringComparison.OrdinalIgnoreCase);
+            if (!isDetach)
+            {
+                if (!TryReadInt(TimeoutBox, 0, 7 * 24 * 60 * 60, Loc.T("Tasks.MgrTimeoutSeconds", "超时秒数"), out error)) return false;
+                if (!TryReadInt(RetryBox, 0, 100, Loc.T("Tasks.MgrRetryOnFailure", "失败重试"), out error)) return false;
+            }
+            else if (RestartOnFailureBox.IsChecked == true)
+            {
+                if (!TryReadInt(RestartDelayBox, 1, 3600, Loc.T("Tasks.MgrRestartDelay", "重启延迟"), out error)) return false;
+                if (!TryReadInt(RestartLimitBox, 1, 100, Loc.T("Tasks.MgrMaxFailureBudget", "最大失败预算"), out error)) return false;
+            }
+
+            error = null;
+            return true;
+        }
+
+        private bool TryReadInt(TextBox box, int min, int max, string label, out string error)
+        {
+            string text = box?.Text?.Trim() ?? "";
+            int value;
+            if (!int.TryParse(text, out value) || value < min || value > max)
+            {
+                error = Loc.Format("Tasks.ValNumberRange", "{0} 必须是 {1} 到 {2} 之间的整数", label, min, max);
+                box?.Focus();
+                box?.SelectAll();
+                return false;
+            }
+            error = null;
+            return true;
         }
 
         private void OnCancelClick(object sender, RoutedEventArgs e)
@@ -510,6 +603,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             {
                 var res = MessageBox.Show(this, Loc.T("Tasks.DiscardConfirm", "当前有未保存的修改，确定放弃并退出吗？"), Loc.T("Tasks.DiscardTitle", "放弃确认"), MessageBoxButton.YesNo, MessageBoxImage.Question);
                 if (res != MessageBoxResult.Yes) return;
+                UpdateDirtyState(false);   // 已确认放弃，关闭时不再重复追问
             }
 
             try { _testCts?.Cancel(); } catch { }
