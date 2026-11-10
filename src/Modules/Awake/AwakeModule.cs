@@ -640,7 +640,15 @@ namespace CarroDesk.Modules.Awake
                 IsChecked = currentMode == AwakeMode.UntilTime
             };
 
-            int[] targetHours = new[] { 18, 20, 22 };
+            // 目标小时来自配置（L2），非法项过滤后使用默认 18/20/22
+            var configuredHours = Config?.UntilHourOptions;
+            int[] targetHours = (configuredHours == null || configuredHours.Count == 0
+                    ? new List<int> { 18, 20, 22 }
+                    : configuredHours)
+                .Where(h => h >= 0 && h <= 23)
+                .Distinct()
+                .OrderBy(h => h)
+                .ToArray();
             foreach (var h in targetHours)
             {
                 string label = Loc.T("Awake.UntilHour", "至 {0:D2}:00", h);

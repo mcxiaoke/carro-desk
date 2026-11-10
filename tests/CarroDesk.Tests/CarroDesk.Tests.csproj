@@ -3,61 +3,10 @@
   <PropertyGroup>
     <TargetFramework>net10.0-windows</TargetFramework>
     <IsPackable>false</IsPackable>
-    <Nullable>disable</Nullable>
+    <Nullable>annotations</Nullable>
     <OutputType>Library</OutputType>
     <UseWPF>true</UseWPF>
-    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>
-
-  <ItemGroup>
-    <Compile Include="TestEnvironment.cs" />
-    <Compile Include="CommandLineTests.cs" />
-    <Compile Include="ComInteropTests.cs" />
-    <Compile Include="ClipboardStorageTests.cs" />
-    <Compile Include="CoreServiceTests.cs" />
-    <Compile Include="ConcurrencyAndLifecycleTests.cs" />
-    <Compile Include="ConfigPersistenceTests.cs" />
-    <Compile Include="HostServiceTests.cs" />
-    <Compile Include="LocalizationContractTests.cs" />
-    <Compile Include="ScreenLockWindowTests.cs" />
-    <Compile Include="ScreenLockSecurityTests.cs" />
-    <Compile Include="TaskRunnerTests.cs" />
-    <Compile Include="TaskPersistentRunTests.cs" />
-    <Compile Include="TaskStateMachineTests.cs" />
-    <Compile Include="TaskRowFormatTests.cs" />
-    <Compile Include="CarroDeskContractTests.cs" />
-    <Compile Include="MonitorProfileTests.cs" />
-    <Compile Include="JsonMigrationTests.cs" />
-    <Compile Include="AwakeModuleTests.cs" />
-    <Compile Include="ProcessHelperTests.cs" />
-    <Compile Include="PinServiceTests.cs" />
-    <Compile Include="PinCredentialTests.cs" />
-    <Compile Include="TaskBatch2FieldsTests.cs" />
-    <Compile Include="AwakeMarshallingTests.cs" />
-    <Compile Include="CronHelperTests.cs" />
-    <Compile Include="TemplateExpanderTests.cs" />
-    <Compile Include="ModuleManagerTests.cs" />
-    <Compile Include="TaskConditionEvaluatorTests.cs" />
-    <Compile Include="SystemIdleServiceTests.cs" />
-    <Compile Include="AppAutoMuteModuleTests.cs" />
-    <Compile Include="ConfigAndTriggerTests.cs" />
-    <Compile Include="ClipboardHistoryModuleTests.cs" />
-    <Compile Include="ClipboardFilterTests.cs" />
-    <Compile Include="UiRenderingTests.cs" />
-    <Compile Include="CommandHostTests.cs" />
-    <Compile Include="IpcPipeTests.cs" />
-    <Compile Include="ControlArgsTests.cs" />
-    <Compile Include="PipeRpcClientTests.cs" />
-    <Compile Include="McpStdioTests.cs" />
-    <Compile Include="ServiceControlModuleTests.cs" />
-    <Compile Include="HostCommandsTests.cs" />
-    <Compile Include="AwakeCapabilityTests.cs" />
-    <Compile Include="DevicePresenceAndAutoLockTests.cs" />
-    <Compile Include="MemoryOptimizerTests.cs" />
-    <Compile Include="AudioDeviceChangeTests.cs" />
-    <Compile Include="SingleInstanceTests.cs" />
-    <Compile Include="AboutAndAppInfoTests.cs" />
-  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="MSTest" Version="3.4.3" />

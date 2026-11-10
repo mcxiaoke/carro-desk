@@ -51,7 +51,10 @@ namespace CarroDesk
             string currentProcessName;
             try
             {
-                currentProcessName = Process.GetCurrentProcess().ProcessName;
+                using (var current = Process.GetCurrentProcess())
+                {
+                    currentProcessName = current.ProcessName;
+                }
             }
             catch
             {

@@ -42,6 +42,12 @@ namespace CarroDesk.Modules.Awake.Models
         /// <summary>目标进程退出后延迟恢复的时间（秒），防止批处理或多任务频繁启停（默认 120 秒，0 为立即恢复）</summary>
         public int AutoAwakeExitDelaySeconds { get; set; } = 120;
 
+        /// <summary>
+        /// “保持唤醒至指定时刻”子菜单的目标小时（0-23，默认 18/20/22）。
+        /// 允许用户按自己的作息修改，越界项在菜单构建时被过滤（L2）。
+        /// </summary>
+        public List<int> UntilHourOptions { get; set; } = new List<int> { 18, 20, 22 };
+
         public AwakeConfig Clone()
         {
             return new AwakeConfig
@@ -57,7 +63,8 @@ namespace CarroDesk.Modules.Awake.Models
                 CustomPresets = CustomPresets != null ? new System.Collections.Generic.List<int>(CustomPresets) : new System.Collections.Generic.List<int>(),
                 ProcessLinkEnabled = ProcessLinkEnabled,
                 AutoAwakeProcesses = AutoAwakeProcesses != null ? new System.Collections.Generic.List<string>(AutoAwakeProcesses) : new System.Collections.Generic.List<string>(),
-                AutoAwakeExitDelaySeconds = AutoAwakeExitDelaySeconds
+                AutoAwakeExitDelaySeconds = AutoAwakeExitDelaySeconds,
+                UntilHourOptions = UntilHourOptions != null ? new System.Collections.Generic.List<int>(UntilHourOptions) : new System.Collections.Generic.List<int>()
             };
         }
 

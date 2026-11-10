@@ -57,6 +57,7 @@ CarroDesk（标题）
 | `KeepDisplayOn` | true | 是否同时阻止熄屏 |
 | `DisableOnBattery` / `BatteryThreshold` | true / 20 | 电池供电且电量低于阈值时暂停 |
 | `ProcessLinkEnabled` / `AutoAwakeProcesses` / `AutoAwakeExitDelaySeconds` | true / [] / 120 | 进程联动：目标进程前台运行自动保持唤醒，退出延迟后恢复 |
+| `UntilHourOptions` | [18, 20, 22] | “保持唤醒至指定时刻”托盘子菜单的目标小时（0-23，越界项自动过滤） |
 
 > 「机器睡眠导致远程失联」的正解是 Awake 无限期保持（或进程联动盯住远程助手进程），而不是依赖单次调用。
 

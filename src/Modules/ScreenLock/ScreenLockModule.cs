@@ -49,7 +49,9 @@ namespace CarroDesk.Modules.ScreenLock
                 () => Context?.GetService<IPinService>(),
                 () => Config,
                 // 惰性解析（M6）：构造早于 Context 注入，构造期求值恒为 null
-                () => Context?.GetService<ILoggerService>());
+                () => Context?.GetService<ILoggerService>(),
+                // UI 线程 Dispatcher 同样惰性解析（M33）：模块内不再直接依赖宿主全局单例
+                () => Context?.Dispatcher);
         }
 
         protected override void OnStart()

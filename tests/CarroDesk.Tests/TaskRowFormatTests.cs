@@ -47,6 +47,8 @@ namespace CarroDesk.Tests
         {
             Assert.AreEqual("0 秒", TaskRowViewModel.FormatDuration(-5));
             Assert.AreEqual("0 秒", TaskRowViewModel.FormatDuration(double.NaN));
+            Assert.AreEqual("0 秒", TaskRowViewModel.FormatDuration(double.PositiveInfinity));
+            Assert.AreEqual("0 秒", TaskRowViewModel.FormatDuration(double.NegativeInfinity));
         }
 
         [TestMethod]

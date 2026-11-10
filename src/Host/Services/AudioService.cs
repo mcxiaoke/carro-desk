@@ -78,12 +78,13 @@ namespace CarroDesk.Host.Services
         /// </summary>
         public void StartDeviceNotifications(Dispatcher dispatcher = null)
         {
-            var d = dispatcher ?? System.Windows.Application.Current?.Dispatcher;
+            // 由 Host 组合根显式传入 Dispatcher（M33）：不再回退 Application.Current，
+            // 避免测试/后台线程拿到属于已结束线程的 Dispatcher。
+            var d = dispatcher;
             if (d == null) return;
 
             // Dispatcher 已关闭时不能 Invoke：消息窗口本就需要活着的消息泵去投递
             // WM_DEVICECHANGE，此时创建窗口毫无意义，只会在别的线程上永久阻塞。
-            // （Application.Current 属于某个已结束的线程时就会命中这里。）
             if (d.HasShutdownStarted || d.HasShutdownFinished)
             {
                 Debug.WriteLine("[AudioService] StartDeviceNotifications skipped: dispatcher has shut down");

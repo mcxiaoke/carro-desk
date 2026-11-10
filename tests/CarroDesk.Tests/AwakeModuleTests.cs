@@ -30,6 +30,8 @@ namespace CarroDesk.Tests
             Assert.IsNotNull(config.CustomPresets);
             Assert.IsTrue(config.CustomPresets.Contains(30));
             Assert.IsNotNull(config.AutoAwakeProcesses);
+            CollectionAssert.AreEqual(new[] { 18, 20, 22 }, config.UntilHourOptions,
+                "“保持唤醒至指定时刻”默认提供 18/20/22 三个目标小时（L2）");
         }
 
         [TestMethod]

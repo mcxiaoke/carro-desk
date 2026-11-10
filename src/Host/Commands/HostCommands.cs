@@ -80,18 +80,20 @@ namespace CarroDesk.Host.Commands
                 Risk = CommandRisk.ReadOnly,
                 Handler = _ =>
                 {
-                    var process = Process.GetCurrentProcess();
-                    var uptimeMs = (long)(DateTime.Now - process.StartTime).TotalMilliseconds;
-                    var counts = CapabilityCounts(registry);
-                    return CommandResult.Success(new
+                    using (var process = Process.GetCurrentProcess())
                     {
-                        hostVersion = HostVersion(),
-                        processId = process.Id,
-                        startedAt = process.StartTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
-                        uptimeMs = uptimeMs,
-                        capabilityCount = registry.Count,
-                        modules = BuildModuleSummary(registry, counts, modules)
-                    });
+                        var uptimeMs = (long)(DateTime.Now - process.StartTime).TotalMilliseconds;
+                        var counts = CapabilityCounts(registry);
+                        return CommandResult.Success(new
+                        {
+                            hostVersion = HostVersion(),
+                            processId = process.Id,
+                            startedAt = process.StartTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
+                            uptimeMs = uptimeMs,
+                            capabilityCount = registry.Count,
+                            modules = BuildModuleSummary(registry, counts, modules)
+                        });
+                    }
                 }
             };
         }

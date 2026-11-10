@@ -989,7 +989,6 @@ namespace CarroDesk.Services.Tasks
 
             if (newState == TaskRuntimeState.MarkedFailed)
             {
-                bool notify;
                 lock (_lock)
                 {
                     SupervisionState sup;
@@ -1002,15 +1001,18 @@ namespace CarroDesk.Services.Tasks
                         sup = new SupervisionState();
                         _supervision[task.Name] = sup;
                     }
+                    // 最近事件、槽位收尾与熔断标记放进同一临界区（M8）：
+                    // 外部读取 GetSupervision()/GetRecent() 时不会再看到
+                    // “已标记熔断但最近事件里还没有 marked”的中间态。
+                    // AddRecent/RemoveSlot 内部同样 lock (_lock)，Monitor 可重入。
+                    AddRecent(task.Name, "marked");
+                    RemoveSlot(task.Name, slot);
                     sup.MarkedFailed = true;
                     sup.MarkedAt = DateTime.Now;
-                    notify = true;
                 }
-                RemoveSlot(task.Name, slot);
                 TaskLogger.Error(task.Name, "supervise: marked FAILED after " + failures + " consecutive failures (last " +
                     what + " exit=" + exitCode + "); auto-restart disabled until task is saved/reloaded or manually/hotkey run");
-                AddRecent(task.Name, "marked");
-                if (notify) NotifyMarkedFailed(task, failures);
+                NotifyMarkedFailed(task, failures);
                 return;
             }
 
@@ -1376,7 +1378,7 @@ namespace CarroDesk.Services.Tasks
             // SystemEvents 在专用线程上触发本回调，而 DispatcherTimer 必须在已启动消息泵的
             // UI 线程上创建：在 SystemEvents 线程上 new DispatcherTimer 会隐式创建该线程的
             // Dispatcher（没有 Run 循环），Tick 永远不会触发。
-            var dispatcher = _dispatcher ?? System.Windows.Application.Current?.Dispatcher;
+            var dispatcher = _dispatcher;
             if (dispatcher == null)
             {
                 TaskLogger.Warn("system", "resume catch-up skipped: no dispatcher available");

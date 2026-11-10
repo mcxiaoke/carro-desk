@@ -16,6 +16,12 @@ namespace CarroDesk.Services
         private readonly KeyboardBlocker _blocker;
         private readonly Func<ILoggerService> _loggerProvider;
 
+        /// <summary>
+        /// UI 线程 Dispatcher 由宿主经模块 Context 注入（M33）：不再回退宿主全局单例，
+        /// 测试/后台线程不会拿到属于已结束线程的 Dispatcher。为 null 时按当前线程直接执行。
+        /// </summary>
+        private readonly Func<System.Windows.Threading.Dispatcher> _dispatcherProvider;
+
         private const string LogModuleId = "ScreenLock";
 
         private readonly List<LockWindow> _lockWindows = new List<LockWindow>();
@@ -23,13 +29,15 @@ namespace CarroDesk.Services
 
         public event Action Unlocked;
 
-        public LockController(Func<IPinService> pinServiceProvider, Func<ScreenLockConfig> configProvider, Func<ILoggerService> loggerProvider = null)
+        public LockController(Func<IPinService> pinServiceProvider, Func<ScreenLockConfig> configProvider,
+            Func<ILoggerService> loggerProvider = null, Func<System.Windows.Threading.Dispatcher> dispatcherProvider = null)
         {
             _pinServiceProvider = pinServiceProvider;
             _configProvider = configProvider;
             // 日志器必须惰性解析（M6）：模块构造早于 Initialize/Context 注入，
             // 构造期立即求值恒为 null，锁定回滚等安全关键路径的日志全部丢失。
             _loggerProvider = loggerProvider;
+            _dispatcherProvider = dispatcherProvider;
             _blocker = new KeyboardBlocker();
             _pinGuard = new PinGuard(() => _pinServiceProvider?.Invoke());
             try { Microsoft.Win32.SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged; } catch { }
@@ -45,7 +53,9 @@ namespace CarroDesk.Services
             if (!_locked) return;
             try
             {
-                System.Windows.Application.Current?.Dispatcher?.BeginInvoke(new Action(() =>
+                var dispatcher = ResolveDispatcher();
+                if (dispatcher == null) return;   // 无 UI 线程（测试/关闭中）：无需重建屏幕
+                dispatcher.BeginInvoke(new Action(() =>
                 {
                     if (!_locked) return;
                     var oldWindows = new List<LockWindow>(_lockWindows);
@@ -104,14 +114,20 @@ namespace CarroDesk.Services
 
         public Func<bool> IsShuttingDownProvider { get; set; }
 
+        /// <summary>解析宿主注入的 UI Dispatcher；null 表示当前环境无 UI 线程。</summary>
+        private System.Windows.Threading.Dispatcher ResolveDispatcher()
+        {
+            try { return _dispatcherProvider?.Invoke(); } catch { return null; }
+        }
+
         /// <summary>
         /// 锁定/解锁涉及 WPF 窗口与全局键盘钩子，必须在 UI 线程执行。
         /// 本控制器会把 Lock/Unlock 暴露给 SystemEvents（会话/显示设置变更）与
         /// SystemIdleService（线程池）等非 UI 线程回调，因此入口统一封送。
         /// </summary>
-        private static void RunOnUiThread(Action action, Action<string, Exception> onError = null)
+        private void RunOnUiThread(Action action, Action<string, Exception> onError = null)
         {
-            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            var dispatcher = ResolveDispatcher();
             if (dispatcher == null || dispatcher.CheckAccess())
             {
                 action();
@@ -129,9 +145,9 @@ namespace CarroDesk.Services
         /// 同步版封送：离 UI 线程时用 Invoke 阻塞等待执行完成，供需要"确切结果"的调用方使用
         /// （如 LockSafe 必须知道锁定到底成功与否）。仅限非 UI 线程、且不会与 UI 线程互等时使用。
         /// </summary>
-        private static void RunOnUiThreadSync(Action action, Action<string, Exception> onError = null)
+        private void RunOnUiThreadSync(Action action, Action<string, Exception> onError = null)
         {
-            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            var dispatcher = ResolveDispatcher();
             if (dispatcher == null || dispatcher.CheckAccess())
             {
                 action();

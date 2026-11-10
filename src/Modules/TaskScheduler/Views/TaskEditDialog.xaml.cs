@@ -435,9 +435,11 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             // detach 测试运行没有可取消的等待循环，直接终止进程（句柄在启动成功时保存）
             var handle = _testRunHandle;
             _testRunHandle = null;
-            if (handle != null && handle.HasExited != true)
+            if (handle != null)
             {
-                try { handle.Stop(); } catch { }
+                try { if (handle.HasExited != true) handle.Stop(); } catch { }
+                // M22：停止后必须释放句柄，否则进程/作业对象/互斥体会在反复测试后泄漏
+                try { handle.Dispose(); } catch { }
             }
             DisposeTestCts();
             if (IsLoaded) TestStatusText.Text = Loc.T("Tasks.TestRunStopping");
@@ -495,9 +497,10 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             {
                 var handle = _testRunHandle;
                 _testRunHandle = null;
-                if (handle != null && handle.HasExited != true)
+                if (handle != null)
                 {
-                    try { handle.Stop(); } catch { }
+                    try { if (handle.HasExited != true) handle.Stop(); } catch { }
+                    try { handle.Dispose(); } catch { }   // M22：关窗同样释放句柄
                 }
                 try { _testCts?.Cancel(); } catch { }
                 DisposeTestCts();

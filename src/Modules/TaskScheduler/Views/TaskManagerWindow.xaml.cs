@@ -984,7 +984,8 @@ namespace CarroDesk.Modules.TaskScheduler.Views
 
         internal static string FormatDuration(double totalSeconds)
         {
-            if (double.IsNaN(totalSeconds) || totalSeconds < 0) totalSeconds = 0;
+            // Infinity 转 long 会饱和成极大值，显示荒谬天数；与 NaN/负数一样按 0 处理（L3）
+            if (double.IsNaN(totalSeconds) || double.IsInfinity(totalSeconds) || totalSeconds < 0) totalSeconds = 0;
             long sec = (long)totalSeconds;
 
             if (sec < 60) return Loc.T("Tasks.DurationSeconds", "{0} 秒", sec);
