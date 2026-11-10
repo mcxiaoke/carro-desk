@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -674,6 +675,56 @@ namespace CarroDesk.Modules.TaskScheduler.Views
     /// </summary>
     public class TaskRowViewModel : INotifyPropertyChanged
     {
+        // ---- 画刷缓存（M24）----
+        // 列表定时刷新时这些 getter 每秒会被绑定多次调用，每次 new SolidColorBrush
+        // 都在制造短命对象并增加 GC 压力。统一使用冻结的静态实例；
+        // 同时把色值收敛到一处，便于后续接入主题资源（H9）。
+        private static Brush Frozen(byte r, byte g, byte b)
+        {
+            var brush = new SolidColorBrush(Color.FromRgb(r, g, b));
+            brush.Freeze();
+            return brush;
+        }
+
+        private static readonly Brush BadgeOnBg = Frozen(236, 253, 245);
+        private static readonly Brush BadgeOffBg = Frozen(241, 245, 249);
+        private static readonly Brush BadgeOnFg = Frozen(5, 150, 105);
+        private static readonly Brush Slate500 = Frozen(100, 116, 139);
+        private static readonly Brush Slate400 = Frozen(148, 163, 184);
+        private static readonly Brush Slate800 = Frozen(51, 65, 85);
+        private static readonly Brush Blue700 = Frozen(29, 78, 216);
+        private static readonly Brush Emerald500 = Frozen(16, 185, 129);
+        private static readonly Brush Blue500 = Frozen(59, 130, 246);
+        private static readonly Brush Red500 = Frozen(239, 68, 68);
+        private static readonly Brush Amber500 = Frozen(245, 158, 11);
+        private static readonly Brush Red600 = Frozen(220, 38, 38);
+        private static readonly Brush Emerald700 = Frozen(4, 120, 87);
+        private static readonly Brush Red700 = Frozen(185, 28, 28);
+        private static readonly Brush Amber700 = Frozen(180, 83, 9);
+        private static readonly Brush Red800 = Frozen(153, 27, 27);
+
+        private static readonly ConcurrentDictionary<string, Brush> ParsedBrushes =
+            new ConcurrentDictionary<string, Brush>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>按颜色字符串解析并缓存冻结画刷（触发器徽章色来自任务定义）。</summary>
+        private static Brush ParseFrozen(string color)
+        {
+            if (string.IsNullOrWhiteSpace(color)) return Brushes.Transparent;
+            return ParsedBrushes.GetOrAdd(color, c =>
+            {
+                try
+                {
+                    var brush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(c));
+                    brush.Freeze();
+                    return brush;
+                }
+                catch
+                {
+                    return Brushes.Transparent;
+                }
+            });
+        }
+
         public TaskDefinition Task { get; }
         private TaskStateSnapshot _snapshot;
         private long? _memoryBytes;   // 物理工作集，仅窗口可见时由采样器回填
@@ -724,15 +775,13 @@ namespace CarroDesk.Modules.TaskScheduler.Views
         // ---- 启用 / 常驻（配置态，值统一为 是 / 否） ----
 
         public string EnabledBadgeText => Task.Enabled ? Loc.T("Tasks.Yes", "是") : Loc.T("Tasks.No", "否");
-        public Brush EnabledBadgeBg => Task.Enabled ? new SolidColorBrush(Color.FromRgb(236, 253, 245)) : new SolidColorBrush(Color.FromRgb(241, 245, 249));
-        public Brush EnabledBadgeFg => Task.Enabled ? new SolidColorBrush(Color.FromRgb(5, 150, 105)) : new SolidColorBrush(Color.FromRgb(100, 116, 139));
+        public Brush EnabledBadgeBg => Task.Enabled ? BadgeOnBg : BadgeOffBg;
+        public Brush EnabledBadgeFg => Task.Enabled ? BadgeOnFg : Slate500;
 
         /// <summary>常驻守护（options.isDetach，进程退出自动重启）。原“模式”列。</summary>
         public bool IsResident => Task.Options?.IsDetach == true;
         public string ResidentText => IsResident ? Loc.T("Tasks.Yes", "是") : Loc.T("Tasks.No", "否");
-        public Brush ResidentTextBrush => IsResident
-            ? new SolidColorBrush(Color.FromRgb(29, 78, 216))
-            : new SolidColorBrush(Color.FromRgb(148, 163, 184));
+        public Brush ResidentTextBrush => IsResident ? Blue700 : Slate400;
 
         public string TriggerSummary
         {
@@ -756,8 +805,8 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             }
         }
 
-        public Brush TriggerBadgeBg => new SolidColorBrush((Color)ColorConverter.ConvertFromString(Task.TriggerBadgeBg));
-        public Brush TriggerBadgeFg => new SolidColorBrush((Color)ColorConverter.ConvertFromString(Task.TriggerBadgeFg));
+        public Brush TriggerBadgeBg => ParseFrozen(Task.TriggerBadgeBg);
+        public Brush TriggerBadgeFg => ParseFrozen(Task.TriggerBadgeFg);
 
         // ---- 运行时列（PID / 已运行 / 内存占用） ----
 
@@ -773,9 +822,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             }
         }
 
-        public Brush PidTextBrush => IsRunning && _snapshot.Pid.HasValue
-            ? new SolidColorBrush(Color.FromRgb(51, 65, 85))
-            : new SolidColorBrush(Color.FromRgb(148, 163, 184));
+        public Brush PidTextBrush => IsRunning && _snapshot.Pid.HasValue ? Slate800 : Slate400;
 
         /// <summary>已运行时长，人类可读：45 秒 / 12 分 30 秒 / 3 小时 7 分 / 2 天 8 小时。</summary>
         public string DurationDisplayText => _snapshot.StartedAt.HasValue
@@ -792,9 +839,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             }
         }
 
-        public Brush MemoryTextBrush => _memoryBytes.HasValue && IsRunning
-            ? new SolidColorBrush(Color.FromRgb(51, 65, 85))
-            : new SolidColorBrush(Color.FromRgb(148, 163, 184));
+        public Brush MemoryTextBrush => _memoryBytes.HasValue && IsRunning ? Slate800 : Slate400;
 
         /// <summary>由窗口的性能采样器回填（null = 读不到/未运行）。</summary>
         public void SetMemoryBytes(long? bytes)
@@ -892,17 +937,17 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                 switch (_snapshot.State)
                 {
                     case TaskRuntimeState.Running:
-                        return new SolidColorBrush(Color.FromRgb(16, 185, 129)); // Emerald Green
+                        return Emerald500;
                     case TaskRuntimeState.Starting:
-                        return new SolidColorBrush(Color.FromRgb(59, 130, 246)); // Blue
+                        return Blue500;
                     case TaskRuntimeState.Stopping:
-                        return new SolidColorBrush(Color.FromRgb(239, 68, 68));  // Red
+                        return Red500;
                     case TaskRuntimeState.WaitingRetry:
-                        return new SolidColorBrush(Color.FromRgb(245, 158, 11)); // Amber
+                        return Amber500;
                     case TaskRuntimeState.MarkedFailed:
-                        return new SolidColorBrush(Color.FromRgb(220, 38, 38));  // Dark Red
+                        return Red600;
                     default:
-                        return new SolidColorBrush(Color.FromRgb(148, 163, 184)); // Slate 400
+                        return Slate400;
                 }
             }
         }
@@ -914,17 +959,17 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                 switch (_snapshot.State)
                 {
                     case TaskRuntimeState.Running:
-                        return new SolidColorBrush(Color.FromRgb(4, 120, 87));
+                        return Emerald700;
                     case TaskRuntimeState.Starting:
-                        return new SolidColorBrush(Color.FromRgb(29, 78, 216));
+                        return Blue700;
                     case TaskRuntimeState.Stopping:
-                        return new SolidColorBrush(Color.FromRgb(185, 28, 28));
+                        return Red700;
                     case TaskRuntimeState.WaitingRetry:
-                        return new SolidColorBrush(Color.FromRgb(180, 83, 9));
+                        return Amber700;
                     case TaskRuntimeState.MarkedFailed:
-                        return new SolidColorBrush(Color.FromRgb(153, 27, 27));
+                        return Red800;
                     default:
-                        return new SolidColorBrush(Color.FromRgb(100, 116, 139));
+                        return Slate500;
                 }
             }
         }
