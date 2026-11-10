@@ -12,6 +12,8 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
         private readonly List<ClipboardItem> _items = new List<ClipboardItem>();
         private readonly object _lock = new object();
         private readonly IClipboardHistoryStorage _storage;
+        /// <summary>内存中所有条目 FullText 的 UTF-8 字节数合计，用于总预算淘汰（H8）。</summary>
+        private long _totalBytes;
         // 配置重载（后台/IPC）与 RecordText（UI 线程）并发，引用写入必须可见。
         private volatile ClipboardHistoryConfig _config;
         private string _suppressedHash;
@@ -56,9 +58,11 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
 
                 var loaded = _storage.Load();
                 _items.Clear();
+                _totalBytes = 0;
                 if (loaded != null && loaded.Count > 0)
                 {
                     _items.AddRange(loaded);
+                    foreach (var item in _items) _totalBytes += ByteSize(item);
                     ApplyCleanupRulesLocked();
                 }
                 // 保持既有语义：启动/配置变更不自动改写历史（避免"配置一变历史就没了"）。
@@ -95,6 +99,11 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
             if (string.IsNullOrWhiteSpace(rawText)) return;
             if (_config != null && (!_config.Enabled || !_config.AutoRecord)) return;
 
+            // 先消费自环抑制（M18）：若程序自己写入的内容恰好命中敏感过滤，
+            // 旧实现会在过滤分支提前 return，抑制哈希残留到 2 秒窗口结束，
+            // 导致用户随后真实复制相同内容被误判为自环而丢弃。
+            if (ConsumeSelfEcho(rawText)) return;
+
             // 敏感信息过滤：必须在 MaxTextLength 截断之前按原始文本匹配，
             // 否则关键字落在被截掉的尾部会漏检。命中即整条丢弃：不入内存、不落盘。
             // 本路径只拦新记录；历史中已存在条目由用户显式调用 PurgeSensitiveHistory()
@@ -120,17 +129,7 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
 
             lock (_lock)
             {
-                // 1. 防自环检查：若是刚刚双击选中的条目，抑制本次广播
-                if (!string.IsNullOrEmpty(_suppressedHash))
-                {
-                    bool withinWindow = DateTime.Now <= _suppressedUntil;
-                    bool matches = _suppressedHash == hash;
-                    _suppressedHash = null;
-                    _suppressedUntil = DateTime.MinValue;
-                    if (withinWindow && matches) return;
-                }
-
-                // 2. 去重与 MRU 提升：若已有该条目，则刷新时间戳并移到顶端
+                // 1. 去重与 MRU 提升：若已有该条目，则刷新时间戳并移到顶端
                 int existingIndex = _items.FindIndex(x => x.Hash == hash);
                 if (existingIndex >= 0)
                 {
@@ -155,6 +154,7 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
                     };
 
                     _items.Insert(0, item);
+                    _totalBytes += ByteSize(item);
                 }
 
                 // 4. 清理规则触发（最大条数与保留天数）
@@ -172,6 +172,27 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
             {
                 _suppressedHash = ComputeHash(text);
                 _suppressedUntil = DateTime.Now.AddSeconds(2);
+            }
+        }
+
+        /// <summary>
+        /// 若本次文本正是程序刚写入剪贴板的内容（2 秒窗口内），消费抑制并返回 true。
+        /// 无论是否命中窗口，只要存在抑制状态就一并清空，避免陈旧哈希影响后续真实复制。
+        /// </summary>
+        private bool ConsumeSelfEcho(string rawText)
+        {
+            // 快速路径：没有抑制时不做哈希（绝大多数复制都走这里）
+            if (string.IsNullOrEmpty(_suppressedHash)) return false;
+
+            string hash = ComputeHash(rawText);
+            lock (_lock)
+            {
+                if (string.IsNullOrEmpty(_suppressedHash)) return false;
+                bool withinWindow = DateTime.Now <= _suppressedUntil;
+                bool matches = _suppressedHash == hash;
+                _suppressedHash = null;
+                _suppressedUntil = DateTime.MinValue;
+                return withinWindow && matches;
             }
         }
 
@@ -203,11 +224,12 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
             {
                 if (preservePinned)
                 {
-                    _items.RemoveAll(x => !x.IsPinned);
+                    RemoveWhereLocked(x => !x.IsPinned);
                 }
                 else
                 {
                     _items.Clear();
+                    _totalBytes = 0;
                 }
                 _storage.Save(_items);
             }
@@ -222,7 +244,7 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
             lock (_lock)
             {
                 int countBefore = _items.Count;
-                _items.RemoveAll(x => x.Id == id);
+                RemoveWhereLocked(x => x.Id == id);
                 if (_items.Count != countBefore)
                 {
                     _storage.Save(_items);
@@ -271,18 +293,12 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
             var filter = _filter;
             if (filter == null || !filter.IsActive) return 0;
 
-            int removed = 0;
-            for (int i = _items.Count - 1; i >= 0; i--)
+            int removed = RemoveWhereLocked(item =>
             {
-                var item = _items[i];
-                if (item == null || string.IsNullOrEmpty(item.FullText)) continue;
+                if (item == null || string.IsNullOrEmpty(item.FullText)) return false;
                 ClipboardFilterRule hit;
-                if (filter.TryMatch(item.FullText, out hit))
-                {
-                    _items.RemoveAt(i);
-                    removed++;
-                }
-            }
+                return filter.TryMatch(item.FullText, out hit);
+            });
 
             if (removed > 0)
             {
@@ -302,7 +318,7 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
                 // 让整个剪贴板模块进入 Faulted。
                 int retentionDays = Math.Min(_config.RetentionDays, 3650);
                 var cutoff = DateTime.Now.AddDays(-retentionDays);
-                _items.RemoveAll(x => !x.IsPinned && x.CopiedAt < cutoff);
+                RemoveWhereLocked(x => !x.IsPinned && x.CopiedAt < cutoff);
             }
 
             // 规则 2：最大条数截断（保留最新，从最末尾倒序淘汰未置顶的最老项）
@@ -310,18 +326,53 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
             {
                 for (int i = _items.Count - 1; i >= 0 && _items.Count > _config.MaxItems; i--)
                 {
-                    if (!_items[i].IsPinned)
-                    {
-                        _items.RemoveAt(i);
-                    }
+                    if (_items[i].IsPinned) continue;
+                    RemoveAtLocked(i);
                 }
 
                 // 极端情况：若置顶项本身就超过 MaxItems，直接截断
-                if (_items.Count > _config.MaxItems)
+                for (int i = _items.Count - 1; i >= _config.MaxItems; i--)
                 {
-                    _items.RemoveRange(_config.MaxItems, _items.Count - _config.MaxItems);
+                    RemoveAtLocked(i);
                 }
             }
+
+            // 规则 3：总字节预算（H8）。从最旧的未置顶条目倒序淘汰；
+            // 置顶项受用户显式保护，即使超预算也保留。
+            if (_config.MaxTotalBytes > 0)
+            {
+                for (int i = _items.Count - 1; i >= 0 && _totalBytes > _config.MaxTotalBytes; i--)
+                {
+                    if (_items[i].IsPinned) continue;
+                    RemoveAtLocked(i);
+                }
+            }
+        }
+
+        private static long ByteSize(ClipboardItem item)
+        {
+            if (item == null || string.IsNullOrEmpty(item.FullText)) return 0;
+            return Encoding.UTF8.GetByteCount(item.FullText);
+        }
+
+        private void RemoveAtLocked(int index)
+        {
+            if (index < 0 || index >= _items.Count) return;
+            _totalBytes -= ByteSize(_items[index]);
+            if (_totalBytes < 0) _totalBytes = 0;
+            _items.RemoveAt(index);
+        }
+
+        private int RemoveWhereLocked(Func<ClipboardItem, bool> predicate)
+        {
+            int removed = 0;
+            for (int i = _items.Count - 1; i >= 0; i--)
+            {
+                if (!predicate(_items[i])) continue;
+                RemoveAtLocked(i);
+                removed++;
+            }
+            return removed;
         }
 
         /// <summary>

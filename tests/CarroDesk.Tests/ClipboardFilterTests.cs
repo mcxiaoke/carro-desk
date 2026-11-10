@@ -347,5 +347,65 @@ namespace CarroDesk.Tests
             Assert.AreEqual("ordinary text", service.GetItems()[0].FullText);
             Assert.AreEqual(1, storage.SavedItems.Count, "显式清理结果必须立即落盘");
         }
+
+        // ===== H8 / M18（docs/OPEN-ISSUES-20261110.md）回归 =====
+
+        /// <summary>
+        /// M18：程序自写内容命中敏感过滤时，自环抑制也必须在过滤前被消费；
+        /// 否则随后 2 秒内用户真实复制相同内容会被误判为自环而丢弃。
+        /// </summary>
+        [TestMethod]
+        public void RecordText_SelfEchoThatIsFiltered_ConsumesSuppression()
+        {
+            var config = ConfigWith("secret");
+            var service = new ClipboardHistoryService(new MemoryClipboardStorage());
+            service.Start(config);
+
+            // 程序内部写入剪贴板会先 SuppressNext，随后广播触发 RecordText
+            service.SuppressNext("secret-value");
+            service.RecordText("secret-value");
+            Assert.AreEqual(0, service.Count, "命中过滤规则的内容仍应被拒绝");
+
+            // 关闭过滤后，同内容在抑制窗口内的真实复制不应再被当作自环
+            var off = config.Clone();
+            off.FilterEnabled = false;
+            service.ApplyConfig(off);
+            service.RecordText("secret-value");
+            Assert.AreEqual(1, service.Count, "自环抑制必须已被消费，不能残留到真实复制");
+        }
+
+        /// <summary>H8：总字节预算超限时从最旧的未置顶条目开始淘汰。</summary>
+        [TestMethod]
+        public void RecordText_TotalBytesBudget_EvictsOldestUnpinned()
+        {
+            var config = new ClipboardHistoryConfig { MaxItems = 100, MaxTotalBytes = 130 };
+            var service = new ClipboardHistoryService(new MemoryClipboardStorage());
+            service.Start(config);
+
+            service.RecordText(new string('a', 50));
+            service.RecordText(new string('b', 50));
+            service.RecordText(new string('c', 50));   // 150 > 130 → 淘汰最旧的 a
+
+            Assert.AreEqual(2, service.Count, "超预算必须淘汰，而不是无限增长");
+            var items = service.GetItems();
+            Assert.AreEqual(new string('c', 50), items[0].FullText);
+            Assert.AreEqual(new string('b', 50), items[1].FullText);
+        }
+
+        /// <summary>H8：置顶条目受保护，不参与总字节预算淘汰。</summary>
+        [TestMethod]
+        public void RecordText_TotalBytesBudget_KeepsPinnedItems()
+        {
+            var config = new ClipboardHistoryConfig { MaxItems = 100, MaxTotalBytes = 60 };
+            var service = new ClipboardHistoryService(new MemoryClipboardStorage());
+            service.Start(config);
+
+            service.RecordText(new string('a', 50));
+            service.TogglePin(service.GetItems()[0].Id);
+            service.RecordText(new string('b', 50));   // 100 > 60：a 置顶保留，只能淘汰 b
+
+            Assert.AreEqual(1, service.Count);
+            Assert.AreEqual(new string('a', 50), service.GetItems()[0].FullText, "置顶条目不得被预算淘汰");
+        }
     }
 }

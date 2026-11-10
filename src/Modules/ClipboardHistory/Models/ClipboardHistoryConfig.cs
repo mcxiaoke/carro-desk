@@ -26,6 +26,18 @@ namespace CarroDesk.Modules.ClipboardHistory.Models
         /// <summary>最大保留历史条数</summary>
         public int MaxItems { get; set; } = 1000;
 
+        /// <summary>
+        /// 历史内容总字节预算（UTF-8，默认 50 MB；0 = 不限制）。
+        /// 条数与天数之外的第二道闸：MaxItems=1000 × MaxTextLength=1M 字符最坏可达 2 GB，
+        /// 仅靠条数无法约束内存与落盘体积（H8）。超预算时从最旧的未置顶条目开始淘汰。
+        /// </summary>
+        public int MaxTotalBytes { get; set; } = DefaultMaxTotalBytes;
+
+        public const int DefaultMaxTotalBytes = 50 * 1024 * 1024;
+
+        /// <summary>总预算允许配置的上限（MB），同时防止 int 乘法溢出。</summary>
+        public const int MaxTotalMegabytes = 1024;
+
         /// <summary>历史记录最大保留天数（天）</summary>
         public int RetentionDays { get; set; } = 90;
 

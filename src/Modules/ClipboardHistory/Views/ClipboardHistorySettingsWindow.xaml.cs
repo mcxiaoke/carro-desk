@@ -39,6 +39,7 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
             TxtMaxItems.Text = config.MaxItems.ToString();
             TxtRetentionDays.Text = config.RetentionDays.ToString();
             TxtMaxPreviewChars.Text = config.MaxPreviewChars.ToString();
+            TxtMaxTotalMb.Text = (config.MaxTotalBytes / (1024 * 1024)).ToString();
             TxtHotkey.Text = config.Hotkey ?? "Win+Alt+V";
             ChkEncryptStorage.IsChecked = config.EncryptStorage;
         }
@@ -60,6 +61,12 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
                 MessageBox.Show(Loc.T("Clipboard.InvalidMaxPreview", "预览最大字符数必须是大于 0 的整数。"), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
+            if (!int.TryParse(TxtMaxTotalMb.Text.Trim(), out int maxTotalMb) ||
+                maxTotalMb < 0 || maxTotalMb > ClipboardHistoryConfig.MaxTotalMegabytes)
+            {
+                MessageBox.Show(Loc.T("Clipboard.InvalidMaxTotalMb", "总存储上限必须是 0 到 1024 之间的整数（MB，0 = 不限制）。"), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
 
             var configMgr = _configManager;
             var config = _module?.Config
@@ -70,6 +77,7 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
             config.MaxItems = maxItems;
             config.RetentionDays = retentionDays;
             config.MaxPreviewChars = maxPreview;
+            config.MaxTotalBytes = maxTotalMb * 1024 * 1024;
             string hotkey = TxtHotkey.Text.Trim();
             if (!string.IsNullOrWhiteSpace(hotkey) && !HotkeyHelper.Validate(hotkey, out string hkErr))
             {
@@ -119,6 +127,7 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
                 config.MaxItems = previous.MaxItems;
                 config.RetentionDays = previous.RetentionDays;
                 config.MaxPreviewChars = previous.MaxPreviewChars;
+                config.MaxTotalBytes = previous.MaxTotalBytes;
                 config.Hotkey = previous.Hotkey;
                 if (config.EncryptStorage != previous.EncryptStorage)
                 {
