@@ -110,13 +110,7 @@ namespace CarroDesk.Views
 
         private void OnOpenConfigDirClick(object sender, RoutedEventArgs e)
         {
-            try
-            {
-                var dir = ConfigService.DirPath;
-                if (!System.IO.Directory.Exists(dir)) System.IO.Directory.CreateDirectory(dir);
-                System.Diagnostics.Process.Start(dir);
-            }
-            catch { }
+            HostMenuActions.OpenConfigDirectory();
         }
 
         private void OnResetDefaultsClick(object sender, RoutedEventArgs e)

@@ -840,6 +840,7 @@
   },
   "Msg": {
     "DiagnosticsCopied": "诊断信息已复制到剪贴板",
+    "OpenDirFailed": "无法打开配置目录，详见日志",
     "FormatError": "格式错误",
     "NameDuplicate": "名称重复",
     "ConfirmClear": "确认清空",

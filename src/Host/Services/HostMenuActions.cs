@@ -1,6 +1,8 @@
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Windows;
+using CarroDesk.Common;
 using CarroDesk.Core;
 using CarroDesk.Services;
 using CarroDesk.Services.Localization;
@@ -70,13 +72,34 @@ namespace CarroDesk.Host.Services
             catch { }
         }
 
-        public static void OpenConfigDirectory()
+        /// <summary>
+        /// 在资源管理器中打开配置目录。
+        /// .NET (Core) 起 Process.Start(string) 默认 UseShellExecute=false，
+        /// 直接传目录会抛 Win32Exception（拒绝访问），必须显式走 shell。
+        /// </summary>
+        public static bool OpenConfigDirectory(ServiceContainer services = null)
         {
+            string dir = null;
             try
             {
-                Process.Start(ConfigService.DirPath);
+                dir = ConfigService.DirPath;
+                if (string.IsNullOrWhiteSpace(dir)) return false;
+                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = dir,
+                    UseShellExecute = true
+                });
+                return true;
             }
-            catch { }
+            catch (Exception ex)
+            {
+                services?.GetService<ILoggerService>()?.LogError("HostMenu", "打开配置目录失败: " + dir, ex);
+                if (services == null) StaticLog.Warn("HostMenu", "打开配置目录失败: " + dir + " -> " + ex.Message);
+                else services.GetService<INotificationService>()?.Show(Loc.T("Msg.OpenDirFailed", "无法打开配置目录，详见日志"), "CarroDesk");
+                return false;
+            }
         }
 
         public static void SetLanguage(ConfigManager configManager, ServiceContainer services, string lang, Action onLanguageChanged = null)

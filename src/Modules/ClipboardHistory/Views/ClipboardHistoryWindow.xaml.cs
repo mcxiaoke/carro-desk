@@ -50,6 +50,13 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
                 return;
             }
 
+            // 确认框属于本窗口的模态子级，弹出期间会触发 Deactivated；
+            // 此时若照常 Hide()，用户确认后主窗口已消失（表现为界面一闪而过）。
+            if (_isModalOpen)
+            {
+                return;
+            }
+
             // 治本方案：若当前窗口内部仍具有键盘焦点（如正在使用输入法 IME 组合、选中文本），绝不误隐
             if (IsKeyboardFocusWithin)
             {
@@ -414,6 +421,9 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
 
         private bool IsClosing { get; set; }
 
+        /// <summary>本窗口正显示模态确认框时，失焦不得触发自动隐藏。</summary>
+        private bool _isModalOpen;
+
         private void BtnItemPin_Click(object sender, RoutedEventArgs e)
         {
             if (sender is Button btn && btn.Tag is ClipboardItem item)
@@ -445,11 +455,28 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
                 : Loc.T("Clipboard.ClearConfirm", "确定要清空全部剪贴板历史记录吗？此操作不可撤销。");
 
             string title = Loc.T("Common.Confirm", "确认");
-            if (MessageBox.Show(prompt, title, MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
+            bool confirmed;
+            _isModalOpen = true;
+            try
             {
-                _service.ClearAll(preservePinned: true);
-                RefreshList();
+                confirmed = MessageBox.Show(this, prompt, title, MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes;
             }
+            finally
+            {
+                _isModalOpen = false;
+            }
+
+            if (!confirmed) return;
+
+            _service.ClearAll(preservePinned: true);
+            RefreshList();
+
+            // 确认框关闭后保持浮窗可用（即使期间因其它原因被隐藏也重新显示）。
+            if (!IsVisible)
+            {
+                Show();
+            }
+            Activate();
         }
 
         private void BtnClose_Click(object sender, RoutedEventArgs e)

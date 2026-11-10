@@ -840,6 +840,7 @@
   },
   "Msg": {
     "DiagnosticsCopied": "Diagnostic report copied to clipboard",
+    "OpenDirFailed": "Could not open the configuration folder. See the log for details.",
     "FormatError": "Invalid format",
     "NameDuplicate": "Duplicate name",
     "ConfirmClear": "Confirm clear",
