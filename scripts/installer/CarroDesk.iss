@@ -91,6 +91,10 @@ chinesesimplified.AppRunningWarning=检测到 %1 正在运行。%n%n安装/升�
 chinesesimplified.AppRunningUninstallWarning=检测到 %1 正在运行。%n%n卸载需要先结束相关进程。%n%n是否现在立即结束这些进程并继续？
 chinesesimplified.OpenInstallDir=打开安装目录
 chinesesimplified.UninstallRetainData=检测到用户数据目录（app_data 或 %%APPDATA%%\%1）中仍有配置或日志文件，已为您妥善保留。如需彻底清除请手动删除。
+chinesesimplified.KillAppFailed=无法结束运行中的进程，请手动关闭后再试。
+chinesesimplified.InstallCancelled=安装已取消：请先退出正在运行的程序。
+chinesesimplified.AppUninstallBlocked=仍有进程正在运行，卸载终止。请手动关闭后再试。
+chinesesimplified.DotNetMissing=未检测到 .NET 10 桌面运行时（Microsoft.WindowsDesktop.App 10.x）。%n%nCarroDesk 需要该运行时才能启动。%n下载地址：%1%n%n是否仍要继续安装？（选择“是”继续，稍后自行安装运行时；选择“否”退出安装）
 
 english.DataModeTitle=Data Mode Selection
 english.DataModeSubTitle=Choose where CarroDesk stores configurations and data
@@ -105,6 +109,10 @@ english.AppRunningWarning=%1 is currently running.%n%nSetup needs to close runni
 english.AppRunningUninstallWarning=%1 is currently running.%n%nUninstall needs to close running processes.%n%nDo you want to close these processes and continue?
 english.OpenInstallDir=Open installation folder
 english.UninstallRetainData=User configuration and task data (in app_data or %%APPDATA%%\%1) have been preserved. You can delete them manually if no longer needed.
+english.KillAppFailed=Unable to terminate the running processes. Please close them manually and try again.
+english.InstallCancelled=Installation cancelled: please exit the running application first.
+english.AppUninstallBlocked=Some processes are still running; uninstallation aborted. Please close them manually and try again.
+english.DotNetMissing=.NET 10 Desktop Runtime (Microsoft.WindowsDesktop.App 10.x) was not detected.%n%nCarroDesk requires it to start.%nDownload: %1%n%nContinue installation anyway? (Yes to continue and install the runtime later; No to exit setup)
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked; Check: IsRoamingMode
@@ -179,6 +187,39 @@ begin
   Exec(ExpandConstant('{cmd}'), '/c taskkill /F /T /IM "{#AppExeName}"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Exec(ExpandConstant('{cmd}'), '/c taskkill /F /T /IM "{#AppCliExeName}"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Sleep(500);
+end;
+
+// ================================================================
+// 运行时检测：目标机必须装有 .NET 10 桌面运行时（框架依赖发布）
+// ================================================================
+
+function IsDesktopRuntimeInstalled(): Boolean;
+var
+  TempFile, Cmd: string;
+  Output: AnsiString;
+  ResultCode: Integer;
+begin
+  Result := False;
+  TempFile := ExpandConstant('{tmp}\dotnet_runtimes.txt');
+  Cmd := '/c dotnet --list-runtimes > "' + TempFile + '" 2>nul';
+  if Exec(ExpandConstant('{cmd}'), Cmd, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+  begin
+    if LoadStringFromFile(TempFile, Output) then
+      Result := Pos('Microsoft.WindowsDesktop.App 10.', string(Output)) > 0;
+    DeleteFile(TempFile);
+  end;
+end;
+
+function InitializeSetup(): Boolean;
+begin
+  Result := True;
+  if not IsDesktopRuntimeInstalled() then
+  begin
+    // 缺失时明确告知并给出下载地址，用户可选择继续（稍后自行安装）或退出
+    if MsgBox(FmtMessage(CustomMessage('DotNetMissing'), ['https://dotnet.microsoft.com/download/dotnet/10.0']),
+      mbError, MB_YESNO or MB_DEFBUTTON1) <> IDYES then
+      Result := False;
+  end;
 end;
 
 // ================================================================
@@ -259,12 +300,12 @@ begin
       KillAppProcesses();
       if AnyAppRunning() then
       begin
-        Result := '无法结束运行中的进程，请手动关闭后再试。';
+        Result := CustomMessage('KillAppFailed');
       end;
     end
     else
     begin
-      Result := '安装已取消：请先退出正在运行的程序。';
+      Result := CustomMessage('InstallCancelled');
     end;
   end;
 end;
@@ -458,6 +499,22 @@ end;
 // 数据迁移逻辑（模式切换时）
 // ================================================================
 
+function CopyDirectoryRecursive(const SrcDir, DstDir: string): Boolean;
+var
+  ResultCode: Integer;
+begin
+  // xcopy 系统自带：/E 含空子目录，/I 目标按目录处理，/D 仅复制比目标新的文件，/Y 免覆盖确认
+  Result := Exec(ExpandConstant('{cmd}'),
+    '/c xcopy "' + SrcDir + '\*.*" "' + DstDir + '\" /E /I /D /Y /Q >nul',
+    '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  // 0=有文件被复制；1=没有需要复制的文件（目录已就绪）；其它为失败
+  if not (Result and ((ResultCode = 0) or (ResultCode = 1))) then
+  begin
+    Log('scripts migration failed: xcopy exit code=' + IntToStr(ResultCode));
+    Result := False;
+  end;
+end;
+
 procedure MigrateDataIfNeeded();
 var
   TargetDir, RoamingDir, PortableDir: string;
@@ -490,9 +547,12 @@ begin
       CopyFile(SrcDir + '\config.json', DstDir + '\config.json', False);
     if FileExists(SrcDir + '\tasks.json') then
       CopyFile(SrcDir + '\tasks.json', DstDir + '\tasks.json', False);
-    if DirExists(SrcDir + '\scripts') and (not DirExists(DstDir + '\scripts')) then
+    if DirExists(SrcDir + '\scripts') then
     begin
+      // 递归迁移脚本：只 force 建空目录会让 tasks.json 里的脚本路径全部失效（H5）。
+      // 目标已存在时合并复制，/D 只覆盖源比目标新的文件，保留用户较新的脚本。
       ForceDirectories(DstDir + '\scripts');
+      CopyDirectoryRecursive(SrcDir + '\scripts', DstDir + '\scripts');
     end;
   end;
 end;
@@ -629,7 +689,7 @@ begin
       KillAppProcesses();
       if AnyAppRunning() then
       begin
-        MsgBox('仍有进程正在运行，卸载终止。请手动关闭后再试。', mbError, MB_OK);
+        MsgBox(CustomMessage('AppUninstallBlocked'), mbError, MB_OK);
         Result := False;
       end;
     end
