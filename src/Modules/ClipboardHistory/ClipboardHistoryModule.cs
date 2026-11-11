@@ -404,6 +404,31 @@ namespace CarroDesk.Modules.ClipboardHistory
             int count = _service?.Count ?? 0;
             if (count == 0) return;
 
+            // 托盘/浮窗菜单项在 Popup 窗口中执行，Click 返回后菜单窗口随即销毁。
+            // 实测：菜单内同步弹出的无 owner MessageBox 会被菜单窗口隐式拥有
+            // （GetWindow(GW_OWNER) 即菜单 HWND），菜单销毁时对话框一并消失，表现为"一闪而过"。
+            // 因此等菜单窗口真正关闭后再创建确认框，此时它不再从属于菜单。
+            var dispatcher = Context?.Dispatcher;
+            if (dispatcher == null)
+            {
+                ConfirmAndClearHistory();
+                return;
+            }
+
+            var delay = new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(250)
+            };
+            delay.Tick += (s, e) =>
+            {
+                delay.Stop();
+                ConfirmAndClearHistory();
+            };
+            delay.Start();
+        }
+
+        private void ConfirmAndClearHistory()
+        {
             if (System.Windows.MessageBox.Show(Loc.T("Clipboard.ClearConfirmKeepPinned", "确定要清空剪贴板历史记录吗？\n\n(已固定的记录将被安全保留)"), Loc.T("Clipboard.ClearConfirmCaption", "清空确认"), System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Question) == System.Windows.MessageBoxResult.Yes)
             {
                 _service?.ClearAll(preservePinned: true);
