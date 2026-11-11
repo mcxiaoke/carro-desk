@@ -7,6 +7,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 using CarroDesk.Modules.ClipboardHistory.Models;
 using CarroDesk.Modules.ClipboardHistory.Services;
 using CarroDesk.Services.Localization;
@@ -29,6 +30,21 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
         [DllImport("user32.dll")]
         private static extern IntPtr GetForegroundWindow();
 
+        [DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+
+        /// <summary>
+        /// 失焦后的延迟判定窗口：托盘菜单关闭、模态确认框关闭都会短暂改变前台窗口，
+        /// 在 Deactivated 里同步 Hide() 会让浮窗表现为"一闪而过"。
+        /// </summary>
+        private static readonly TimeSpan DeactivateHideDelay = TimeSpan.FromMilliseconds(180);
+
+        private readonly uint _currentProcessId = (uint)System.Diagnostics.Process.GetCurrentProcess().Id;
+        private DispatcherTimer _deactivateHideTimer;
+
+        /// <summary>本次 Show 之后是否已经真正获得过激活（菜单仍在关闭时可能尚未激活）。</summary>
+        private bool _hasActivatedSinceShow;
+
         public bool AutoCloseOnDeactivate { get; set; } = true;
 
         public ClipboardHistoryWindow(IClipboardHistoryService service)
@@ -43,30 +59,91 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
             KeyDown += ClipboardHistoryWindow_KeyDown;
         }
 
+        protected override void OnActivated(EventArgs e)
+        {
+            _hasActivatedSinceShow = true;
+            CancelDeactivateHide();
+            base.OnActivated(e);
+        }
+
         private void OnWindowDeactivated(object sender, EventArgs e)
         {
-            if (!AutoCloseOnDeactivate)
+            if (!AutoCloseOnDeactivate || !IsVisible)
             {
                 return;
             }
 
             // 确认框属于本窗口的模态子级，弹出期间会触发 Deactivated；
-            // 此时若照常 Hide()，用户确认后主窗口已消失（表现为界面一闪而过）。
-            if (_isModalOpen)
+            // 键盘焦点仍在窗口内部（IME 组合、选中文本）时同理，都不代表用户离开了浮窗。
+            if (_isModalOpen || IsKeyboardFocusWithin)
             {
                 return;
             }
 
-            // 治本方案：若当前窗口内部仍具有键盘焦点（如正在使用输入法 IME 组合、选中文本），绝不误隐
-            if (IsKeyboardFocusWithin)
+            // 从托盘菜单/热键唤出时，菜单关闭可能打断首次激活；
+            // 尚未真正激活过就收到的 Deactivated 不能当作"用户切走"。
+            if (!_hasActivatedSinceShow)
             {
                 return;
             }
 
-            if (IsVisible)
+            ScheduleDeactivateHide();
+        }
+
+        /// <summary>
+        /// 延迟判定失焦：只有用户确实把前台切到其它进程时才隐藏。
+        /// 菜单关闭、确认框关闭、详情窗激活等本进程内部的前台变化一律保持可见。
+        /// </summary>
+        private void ScheduleDeactivateHide()
+        {
+            if (_deactivateHideTimer == null)
             {
-                Hide();
+                _deactivateHideTimer = new DispatcherTimer { Interval = DeactivateHideDelay };
+                _deactivateHideTimer.Tick += (s, e) => VerifyDeactivateAndHide();
             }
+            _deactivateHideTimer.Stop();
+            _deactivateHideTimer.Start();
+        }
+
+        private void CancelDeactivateHide()
+        {
+            _deactivateHideTimer?.Stop();
+        }
+
+        private void VerifyDeactivateAndHide()
+        {
+            CancelDeactivateHide();
+
+            if (!IsVisible || IsActive)
+            {
+                return;
+            }
+
+            if (_isModalOpen || IsKeyboardFocusWithin)
+            {
+                return;
+            }
+
+            if (IsForegroundOwnedByCurrentProcess())
+            {
+                return;
+            }
+
+            Hide();
+        }
+
+        /// <summary>前台窗口是否属于本进程（确认框、详情窗、托盘菜单等自属窗口）。</summary>
+        private bool IsForegroundOwnedByCurrentProcess()
+        {
+            IntPtr foreground = GetForegroundWindow();
+            if (foreground == IntPtr.Zero)
+            {
+                return false;
+            }
+
+            uint processId;
+            GetWindowThreadProcessId(foreground, out processId);
+            return processId == _currentProcessId;
         }
 
         public void ShowAndActivate()
@@ -93,6 +170,7 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
                 {
                     _pasteTargetWindow = GetForegroundWindow();
                 }
+                _hasActivatedSinceShow = false;
                 Show();
             }
 
@@ -100,9 +178,26 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
             Topmost = true;
             Activate();
             Focus();
+            _hasActivatedSinceShow = IsActive;
 
             SearchBox.Focus();
             SearchBox.SelectAll();
+
+            if (!_hasActivatedSinceShow)
+            {
+                // 托盘菜单仍在关闭时激活可能被打断：等消息队列空闲后再补一次激活，
+                // 避免窗口处于"已显示但未激活"的中间态被后续 Deactivated 误隐。
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    if (!IsVisible || IsActive)
+                    {
+                        return;
+                    }
+                    Activate();
+                    Focus();
+                    _hasActivatedSinceShow = IsActive;
+                }), DispatcherPriority.ApplicationIdle);
+            }
         }
 
         private void ApplyPosition()
@@ -471,11 +566,7 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
             _service.ClearAll(preservePinned: true);
             RefreshList();
 
-            // 确认框关闭后保持浮窗可用（即使期间因其它原因被隐藏也重新显示）。
-            if (!IsVisible)
-            {
-                Show();
-            }
+            // 确认框关闭后把激活交还浮窗，保证清空后仍可继续操作。
             Activate();
         }
 
@@ -554,6 +645,7 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
 
         protected override void OnClosed(EventArgs e)
         {
+            CancelDeactivateHide();
             _service.HistoryChanged -= OnServiceHistoryChanged;
 
             // 浮窗关闭时同步关掉详情窗口，避免模块停止后残留幽灵窗口
