@@ -104,6 +104,11 @@ src/
 | `options.mode` | string | "wait" | `wait`=启动后等待退出（现状语义）；`detach`=启动即返回、进程后台常驻。见 §4.7 常驻任务 |
 | `options.killWithHost` | bool | true | 宿主退出时是否连带终止该任务进程树。常驻任务若需跨宿主存活须显式 false（注意孤儿/重复实例风险，推荐用 startup+detach+killWithHost=true 组合实现"宿主重启自动拉起+天然单实例"） |
 | `options.singleInstance` | bool | false | 任务级命名 mutex 单实例互斥（规划中，尚未生效） |
+| `options.maxRunsPerDay` | int | 0 | 每天最多触发次数，0=不限（1-1000），本地自然日 00:00 归零 |
+| `options.minIntervalSec` | int | 0 | 两次触发最短间隔秒数，0=不限（0-86400），支持 `"30m"` 形式 |
+| `options.limitScope` | string | "auto" | `auto`=人工类触发绕过限制；`all`=全部触发受限。见 [TASK-FIRE-LIMITER-DESIGN-20261114.md](TASK-FIRE-LIMITER-DESIGN-20261114.md) |
+
+> 频率限制状态按任务名聚合，存放在数据目录 `task-fire-state.json`，配置重载与宿主重启后仍生效；配额按触发次数计，`retry` 与 detach 守护重启不消耗配额。
 
 ### 4.2 Trigger
 
@@ -115,7 +120,7 @@ src/
 | `cron` | `expr: "30 2 * * *"` | 5 字段 cron（分 时 日 月 周），按分钟精度 |
 | `sessionLock` | - | 系统会话锁定（Win+L / 超时锁）时 |
 | `sessionUnlock` | - | 会话解锁时 |
-| `idle` | `afterMinutes: int` | 系统空闲达到阈值时（复用 IdleDetector 阈值或独立阈值） |
+| `idle` | `afterMinutes: int` | 系统空闲达到阈值时；每个空闲周期最多触发一次，可用 `options` 频率限制约束每天次数与最短间隔（冷却恢复后仍在空闲则自动补触发） |
 | `manual` | - | 仅手动（托盘 `任务→手动运行` 点击触发），替代 AHK 托盘启动器 |
 | `hotkey` | `hotkey: "Ctrl+Alt+Q"` | 全局热键触发，`Ctrl/Alt/Shift/Win + A-Z/0-9/F1-24`，`RegisterHotKey` 实现 |
 | `watch` | `path: string, filter?: "*.ext", event?: "created\|changed\|deleted\|renamed\|all"` | 文件/目录监听，`FileSystemWatcher` 防抖 500ms |

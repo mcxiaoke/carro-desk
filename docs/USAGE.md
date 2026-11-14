@@ -90,7 +90,7 @@ CarroDesk（标题）
 | `daily` | `{"type":"daily","at":"02:30"}` | 每天固定时间，休眠错过 5s 补执行 |
 | `cron` | `{"type":"cron","expr":"0 9 * * 1"}` | 5 字段 cron（分 时 日 月 周） |
 | `sessionLock` / `sessionUnlock` | `{"type":"sessionLock"}` | 锁屏/解锁时 |
-| `idle` | `{"type":"idle","afterMinutes":10}` | 空闲后 |
+| `idle` | `{"type":"idle","afterMinutes":10}` | 空闲后；建议配合 `options` 频率限制（见 §4.3.1） |
 | `manual` | `{"type":"manual"}` | 托盘手动运行 |
 | `hotkey` | `{"type":"hotkey","hotkey":"Ctrl+Alt+Q"}` | 全局热键（重启宿主生效） |
 | `watch` | `{"type":"watch","path":"%USERPROFILE%/Downloads","filter":"*.zip","event":"created"}` | 文件监听（防抖 500ms） |
@@ -130,8 +130,31 @@ CarroDesk（标题）
 | `allowConcurrent` | false | wait | 允许同一任务并发多实例 |
 | `workDir` | "" | — | 工作目录（裸名任务默认 `scripts/`） |
 | `notifyOnFailure` | true | — | 失败气泡通知 |
+| `maxRunsPerDay` | 0 | — | 每天最多触发次数（0=不限，1-1000），本地自然日 00:00 归零 |
+| `minIntervalSec` | 0 | — | 两次触发最短间隔秒数（0=不限，可写 `"30m"` / `"1h30m"`），0-86400 |
+| `limitScope` | `auto` | — | `auto`=手动运行/重启/热键不受限；`all`=全部触发受限 |
 
 > detach 任务不支持 `timeoutSec/retry/allowConcurrent`（校验直接拒绝）。任务编辑器底部实时显示选中任务的运行状态（`运行中 pid=x`）并提供 **停止任务** 按钮；**测试运行** 对 detach 任务不等待、有 10s 兜底超时和独立停止按钮。
+
+### 4.3.1 频率限制（触发配额）
+
+`idle`（反复离开工位）、`interval`（短周期）、`watch`（批量文件落地）的触发次数可能远超预期。上面三个 `options` 字段对**任意触发器类型**统一限制频率，配置重载与宿主重启后仍然有效：
+
+```json
+{
+  "name": "idle-clean",
+  "trigger": { "type": "idle", "afterMinutes": 10 },
+  "action": { "file": "clean.ps1" },
+  "options": { "maxRunsPerDay": 3, "minIntervalSec": 1800, "limitScope": "auto" }
+}
+```
+
+- 配额按**触发次数**计：被 `when` 条件、并发槽、单实例互斥拒绝的触发也会消耗一次（保守策略，宁可少跑不会超跑）。
+- `retry` 重试与 detach `restart=on-failure` 守护重启是同一实例的恢复，**不消耗配额**。
+- `idle` 在配额或冷却未恢复时不会触发；恢复后若仍处于空闲，最多 1 秒自动补触发，无需再次「回座 → 离开」。
+- 状态保存在数据目录 `task-fire-state.json`（原子写）；写入失败降级为进程内计数并记 WARN，绝不阻断任务。
+- 被限流记 `skipped(<reason>) fire limit: ...` 到 `logs/tasks.log`，并出现在「最近运行」。
+- 完整设计与边界见 [TASK-FIRE-LIMITER-DESIGN-20261114.md](TASK-FIRE-LIMITER-DESIGN-20261114.md)。
 
 ### 4.4 条件 when 与模板
 
