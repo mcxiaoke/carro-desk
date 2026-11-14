@@ -149,7 +149,8 @@ src/
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| `when.onlyIdle` | bool | 仅空闲 >60s 时执行 |
+| `when.onlyIdle` | bool | 仅空闲超过阈值时执行，空闲值取自 `IIdleService.RawIdle`（与触发器同源） |
+| `when.onlyIdleSec` | int | 阈值秒数，默认 60（0 视为 60，0..86400） |
 | `when.acPower` | bool | 仅交流供电时 |
 | `when.networkAvailable` | bool | 仅有网络时 |
 | `when.fileExists` | string | 仅当文件/目录存在时（支持 `%VAR%` 与 `scripts/` 裸名） |

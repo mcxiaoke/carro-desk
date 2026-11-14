@@ -51,6 +51,9 @@ namespace CarroDesk.Services.Tasks
         /// 上限只拦新实例，不影响已跑着的实例被查询/停止。
         /// </summary>
         private const int MaxConcurrentInstances = 5;
+
+        /// <summary>全局并发实例上限：防 watch 风暴 / 多任务同时触发打满线程池。</summary>
+        private const int MaxGlobalConcurrentInstances = 20;
         private bool _started;
         private bool _globalEnabled = true;
 
@@ -514,7 +517,7 @@ namespace CarroDesk.Services.Tasks
             if (!task.Enabled) return false;
             // check condition
             string skip;
-            if (!TaskConditionEvaluator.ShouldRun(task, out skip))
+            if (!TaskConditionEvaluator.ShouldRun(task, _idleService, out skip))
             {
                 TaskLogger.Warn(task.Name, "manual skipped: " + skip);
                 return false;
@@ -724,7 +727,7 @@ namespace CarroDesk.Services.Tasks
 
             // condition check
             string skipReason;
-            if (!TaskConditionEvaluator.ShouldRun(task, out skipReason))
+            if (!TaskConditionEvaluator.ShouldRun(task, _idleService, out skipReason))
             {
                 fsm.OnAbandon();
                 NotifyStateChanged(task.Name);
@@ -935,11 +938,8 @@ namespace CarroDesk.Services.Tasks
             lock (_lock)
             {
                 List<RunSlot> slots;
-                if (!_running.TryGetValue(name, out slots))
-                {
-                    slots = new List<RunSlot>();
-                    _running[name] = slots;
-                }
+                bool isNew = !_running.TryGetValue(name, out slots);
+                if (isNew) slots = new List<RunSlot>();
 
                 if (slots.Count > 0)
                 {
@@ -955,10 +955,29 @@ namespace CarroDesk.Services.Tasks
                     }
                 }
 
+                // 全局上限直接对 _running 求和，不维护独立计数器：
+                // ApplyCoreLocked 会直接 _running.Remove(name) 清理被删除任务的实例，
+                // 独立计数必然与它不同步。任务数很少，锁内遍历开销可忽略。
+                int total = 0;
+                foreach (var pair in _running) total += pair.Value.Count;
+                if (total >= MaxGlobalConcurrentInstances)
+                {
+                    reason = "global instance limit reached (" + total + "/" + MaxGlobalConcurrentInstances + ")";
+                    return false;
+                }
+
+                // 所有检查通过后才登记，避免被拒时留下空的同名条目
+                if (isNew) _running[name] = slots;
                 slots.Add(slot);
                 reason = null;
                 return true;
             }
+        }
+
+        /// <summary>供单测构造全局并发压力场景，不启动真实进程。</summary>
+        internal bool TryOccupySlotForTest(string name, bool allowConcurrent, out string reason)
+        {
+            return TryOccupySlot(name, allowConcurrent, new RunSlot(), out reason);
         }
 
         /// <summary>该任务名下是否仍登记着这个槽：只有真正出册（停止/退出/被替换）才会消失。</summary>

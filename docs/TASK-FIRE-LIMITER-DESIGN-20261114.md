@@ -2,7 +2,7 @@
 
 > 版本：v1 · 2026-11-14 · 基线 commit `cb4289b` · 基线测试 445/445 通过
 > 适用模块：`src/Modules/TaskScheduler/`
-> 状态：**已实施**（2026-11-14，按 §6 分 6 批提交，逐批验证记录见 `docs/CHANGES-20261114.md`）；本次范围**不含**附录 B 列出的其它触发器缺陷修复。
+> 状态：**已实施**（2026-11-14）：主需求按 §6 分 6 批提交，附录 B 的缺陷另分 5 批实施，逐批验证记录见 `docs/CHANGES-20261114.md`。附录 B 中 2 项（新特性 / 破坏性架构变更）未纳入，见 B.0。
 
 ---
 
@@ -168,7 +168,7 @@ Fired?.Invoke(Task, "idle:" + afterMinutes + "m");
 
 **批次 2 的解耦约定**：`TaskFireLimiter` 只依赖独立的 `FireLimitPolicy` 结构（策略值由调用方传入），**不直接读 `TaskOptions` 新字段**，因此批次 2 可独立编译通过；批次 3 加入字段后，批次 4 在服务层构造 policy 并接入。
 
-**实施状态（2026-11-14）**：6 个批次已全部落地并分批提交，每批均通过构建与全量测试；逐批验证记录见 `docs/CHANGES-20261114.md`。最终 `dotnet test` **475 通过 / 0 失败 / 0 跳过**（基线 445，新增 30 项），`dotnet build CarroDesk.slnx -c Release` **0 警告 0 错误**。附录 B 的问题清单仍为待办，未纳入本次改动。
+**实施状态（2026-11-14）**：主需求 6 个批次全部落地并分批提交，完成时 `dotnet test` **475 通过 / 0 失败 / 0 跳过**（基线 445，新增 30 项）。随后附录 B 另分 5 批实施，最终 `dotnet test` **512 通过 / 0 失败 / 0 跳过**，`dotnet build CarroDesk.slnx -c Release` **0 警告 0 错误**。逐批验证记录见 `docs/CHANGES-20261114.md`，附录 B 对照表见 B.0。
 
 ## 7. 测试矩阵
 
@@ -208,7 +208,32 @@ Fired?.Invoke(Task, "idle:" + afterMinutes + "m");
 | `Views/TaskEditDialog.xaml:242-248` / `.xaml.cs:85,617` | idle 面板与表单读写 |
 | `Views/TaskManagerWindow.xaml.cs:895-916` | 触发器描述 |
 
-## 附录 B：其它调度器问题清单（本次**不实施**，供后续立项）
+## 附录 B：其它调度器问题清单（已于 2026-11-14 分批实施）
+
+### B.0 实施结果对照
+
+| 条目 | 处理方式 | 批次 / commit |
+|---|---|---|
+| watcher 复活竞态 | `_lifecycleLock` + 单调 generation，自愈任务重建前校验代数 | 批次 7 `7889ae5` |
+| 防抖 `AddOrUpdate` 竞态 | 普通 `Dictionary` + `_debounceLock` 原子读-判-写 | 批次 7 |
+| startup 延迟随 Apply 重启 | 宿主启动时刻作绝对到期基准，服务层只记录一次 | 批次 8 `e62b3ab` |
+| 触发器状态放实例字段 | `ITriggerStateStore` 持久化，Daily/Cron/Interval/Startup 共享 | 批次 9 `c0c39db`、批次 10 `3ab8bb5` |
+| hotkey `userDriven` 精确匹配偏差 | `TriggerReason` 统一前缀判定 | 批次 8 |
+| `DailyTrigger` 注释与实现不符 | 删除误导注释，明确「触发即已跑」为有意取舍 | 批次 9 |
+| `ManualTrigger.TriggerManual()` 死代码 | 删除，`Fired` 改显式空访问器避免 CS0067 | 批次 8 |
+| 旁路 / reason 散落判定 | 限流门统一入口 + `TriggerReason.Parse` 结构化信息（**未改 `Fired` 签名**） | 批次 4 / 8 |
+| Interval 相位重置、Resume 无补偿 | 绝对 `nextFire` 持久化 + `CheckCatchUp()` 接入 | 批次 10 |
+| `NextFireAt` 可观测 | `ITrigger` 默认接口成员 + `GetNextFireTimes()` 默认实现 | 批次 10 |
+| 全局并发上限 | `_running` 求和的 20 实例上限，与孤儿清理天然同步 | 批次 11 |
+| watch 硬编码阈值 | `debounceMs` / `includeSubdirs` / `readyTimeoutMs` | 批次 7 |
+| `onlyIdle` 双数据源 + 60s 硬编码 | 统一 `IIdleService.RawIdle` + `onlyIdleSec` 配置 | 批次 11 |
+| Cron 预测在 UI 线程长循环 | 分钟位掩码跳跃 + 50 万次迭代上限 + 耗时告警 | 批次 11 |
+| daily 多时间点 / session 更多事件 | **未纳入**：属新特性而非缺陷，需先定义产品语义 | — |
+| 全局后台调度泵（去 DispatcherTimer） | **未纳入**：改动 10 个触发器的计时模型，属破坏性架构变更，建议单独立项 | — |
+
+> Cron 计算未改为异步：异步重排会让 `Start()` / `CheckCatchUp()` 失去同步语义，且在无消息泵的测试线程上 Dispatcher 封送会永久挂起。改为把最坏迭代从分钟级压到小时级，保持线程模型不变，效果等价且风险更低。
+
+以下 B.1~B.3 为原始问题记录，保留供追溯。
 
 ### P0 缺陷
 

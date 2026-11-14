@@ -62,7 +62,18 @@ namespace CarroDesk.Services.Tasks.Triggers
             Stop();
 
             var now = DateTime.Now;
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             var next = CronHelper.GetNextOccurrence(_expr, now);
+            sw.Stop();
+            if (sw.ElapsedMilliseconds > 100)
+            {
+                try
+                {
+                    TaskLogger.Warn(Task != null ? Task.Name : "cron",
+                        "cron next-occurrence computation took " + sw.ElapsedMilliseconds + "ms");
+                }
+                catch { }
+            }
             if (!next.HasValue)
             {
                 // 表达式合法但未来八年内没有任何触发点（例如 2 月 30 日）：不再空转，但必须留痕

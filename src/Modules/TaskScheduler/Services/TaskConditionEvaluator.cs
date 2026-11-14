@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
+using CarroDesk.Core;
 using CarroDesk.Models;
 
 namespace CarroDesk.Services.Tasks
@@ -22,7 +23,17 @@ namespace CarroDesk.Services.Tasks
         [DllImport("kernel32.dll")]
         private static extern bool GetSystemPowerStatus(out SystemPowerStatus status);
 
+        /// <summary>旧重载：没有 IIdleService 时退回本地 IdleDetector，保持既有调用方与单测兼容。</summary>
         public static bool ShouldRun(TaskDefinition task, out string skipReason)
+        {
+            return ShouldRun(task, null, out skipReason);
+        }
+
+        /// <summary>
+        /// 传入 IIdleService 时与触发器共用同一份 RawIdle（SystemIdleService 1s 扇出），
+        /// 消除「触发器判空闲、条件判不空闲」的双数据源窗口（附录 B）。
+        /// </summary>
+        public static bool ShouldRun(TaskDefinition task, IIdleService idleService, out string skipReason)
         {
             skipReason = null;
             if (task == null || task.When == null || !task.When.HasAny()) return true;
@@ -32,11 +43,13 @@ namespace CarroDesk.Services.Tasks
             {
                 try
                 {
-                    uint idleMs = IdleDetector.GetIdleMilliseconds();
-                    // consider idle if > 60s without input
-                    if (idleMs < 60 * 1000)
+                    int threshold = c.OnlyIdleSec > 0 ? c.OnlyIdleSec : 60;
+                    double idleSec = idleService != null
+                        ? idleService.RawIdle.TotalSeconds
+                        : IdleDetector.GetIdleMilliseconds() / 1000.0;
+                    if (idleSec < threshold)
                     {
-                        skipReason = "when.onlyIdle: idle " + (idleMs / 1000) + "s < 60s";
+                        skipReason = "when.onlyIdle: idle " + (long)idleSec + "s < " + threshold + "s";
                         return false;
                     }
                 }

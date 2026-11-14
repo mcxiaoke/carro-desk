@@ -540,6 +540,7 @@ namespace CarroDesk.Services.Tasks
             var o = new JObject();
             if (w == null) return o;
             if (w.OnlyIdle) o["onlyIdle"] = true;
+            if (w.OnlyIdleSec != 60) o["onlyIdleSec"] = w.OnlyIdleSec;
             if (w.AcPower) o["acPower"] = true;
             if (w.NetworkAvailable) o["networkAvailable"] = true;
             if (!string.IsNullOrWhiteSpace(w.FileExists)) o["fileExists"] = w.FileExists;
@@ -726,6 +727,7 @@ namespace CarroDesk.Services.Tasks
                 {
                     var cond = new TaskCondition();
                     cond.OnlyIdle = GetBool(wd, false, "onlyIdle");
+                    cond.OnlyIdleSec = GetInt(wd, 60, "onlyIdleSec", "idleSec");
                     cond.AcPower = GetBool(wd, false, "acPower");
                     cond.FileExists = GetStr(wd, "fileExists");
                     cond.FileNotExists = GetStr(wd, "fileNotExists");

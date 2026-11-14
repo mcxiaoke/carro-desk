@@ -95,6 +95,8 @@ CarroDesk（标题）
 | `hotkey` | `{"type":"hotkey","hotkey":"Ctrl+Alt+Q"}` | 全局热键（重启宿主生效） |
 | `watch` | `{"type":"watch","path":"%USERPROFILE%/Downloads","filter":"*.zip","event":"created"}` | 文件监听；可选 `debounceMs`（默认 500，0=关闭）、`includeSubdirs`（默认 false）、`readyTimeoutMs`（默认 3000，0=不等待文件可读）；`event` 支持 `all` / `*` |
 
+> `interval` / `daily` / `cron` 的下次触发时刻可由 `ITaskSchedulerService.GetNextFireTimes()` 查询（本地时间）。三者相位跨配置重载与宿主重启保留，休眠恢复补一次漏跑；`interval` 的相位由 `task-trigger-state.json` 保管。全局并发实例上限 20（单任务 5），超限记 `skipped(...) global instance limit reached`。
+
 ### 4.3 运行选项 options（重点：wait / detach）
 
 ```json
@@ -168,7 +170,7 @@ CarroDesk（标题）
 }
 ```
 
-`when` 不满足则记 `skipped(condition)`：`onlyIdle`（空闲>60s）、`acPower`（交流供电）、`networkAvailable`、`fileExists`/`fileNotExists`。
+`when` 不满足则记 `skipped(condition)`：`onlyIdle`（默认空闲 >60s，可用 `onlyIdleSec` 调整，0..86400，空闲值取自 `IIdleService.RawIdle`，与触发器同源）、`acPower`（交流供电）、`networkAvailable`、`fileExists`/`fileNotExists`。
 
 `file/args/workDir` 支持模板：`{{date}}` `{{time}}` `{{datetime}}`、`{{yyyyMMdd}}` 等任意 `yMdHms` 格式、`{{task}}`、`{{scripts}}` `{{logs}}` `{{dir}}`、`{{ENVVAR}}`。
 

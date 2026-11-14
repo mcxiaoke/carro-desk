@@ -302,7 +302,10 @@ namespace CarroDesk.Services.Tasks
             // 需覆盖 2 月 29 日（相邻两次最长可相隔四年）；八年也可识别常见永不可达日期。
             DateTime limit = cur.AddYears(8);
 
-            while (cur < limit)
+            // 防御性迭代上限：即便未来表达式语义变化，也不能在 UI 线程上无限循环。
+            // 按小时跳跃后 8 年最多约 7 万次迭代，远低于此上限。
+            int iterations = 0;
+            while (cur < limit && iterations++ < 500000)
             {
                 // 1. 月份不匹配 -> 直接跳跃至下月 1 日 00:00
                 if (((1 << cur.Month) & compiled.MonthMask) == 0)
@@ -325,16 +328,28 @@ namespace CarroDesk.Services.Tasks
                     continue;
                 }
 
-                // 4. 分钟匹配判定
-                if (((1L << cur.Minute) & compiled.MinuteMask) != 0)
-                {
-                    return cur;
-                }
+                // 4. 分钟匹配：用位掩码直接定位本小时内的下一个匹配分钟，
+                // 不再 AddMinutes(1) 逐分钟步进（最坏迭代从 O(分钟数) 降到 O(小时数)）。
+                // 该方法始终在 Dispatcher 线程同步调用；把计算压到微秒级比改成异步重排
+                // DispatcherTimer 更稳妥（异步化会破坏 Start/CheckCatchUp 的同步语义）。
+                int nextMinute = FindNextMinuteInHour(compiled.MinuteMask, cur.Minute);
+                if (nextMinute >= 0)
+                    return new DateTime(cur.Year, cur.Month, cur.Day, cur.Hour, nextMinute, 0);
 
-                cur = cur.AddMinutes(1);
+                cur = new DateTime(cur.Year, cur.Month, cur.Day, cur.Hour, 0, 0).AddHours(1);
             }
 
             return null;
+        }
+
+        /// <summary>返回 [from, 59] 区间内第一个在分钟掩码中置位的分钟，无则 -1。</summary>
+        private static int FindNextMinuteInHour(long minuteMask, int from)
+        {
+            for (int m = from; m <= 59; m++)
+            {
+                if (((1L << m) & minuteMask) != 0) return m;
+            }
+            return -1;
         }
 
         public static string ExplainCron(string expr)

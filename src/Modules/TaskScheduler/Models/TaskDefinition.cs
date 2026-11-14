@@ -53,6 +53,10 @@ namespace CarroDesk.Models
     public class TaskCondition
     {
         public bool OnlyIdle { get; set; } = false;
+
+        /// <summary>onlyIdle 判定的空闲秒数阈值（默认 60，0 视为 60，0..86400）。</summary>
+        public int OnlyIdleSec { get; set; } = 60;
+
         public bool AcPower { get; set; } = false;
         public string FileExists { get; set; } = "";
         public string FileNotExists { get; set; } = "";
@@ -359,6 +363,8 @@ namespace CarroDesk.Models
                 if (Options.RestartLimit < 1 || Options.RestartLimit > 100) return "restartLimit must be 1..100";
                 if (Options.StableUptimeSec < 0 || Options.StableUptimeSec > 86400) return "stableUptimeSec must be 0..86400";
             }
+            if (When != null && (When.OnlyIdleSec < 0 || When.OnlyIdleSec > 86400))
+                return "when.onlyIdleSec must be 0..86400";
             return null;
         }
 
