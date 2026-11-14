@@ -75,6 +75,22 @@ namespace CarroDesk.Models
         public bool RunAtStartup { get; set; } = false;
         public bool CatchUpMissed { get; set; } = false;
 
+        /// <summary>每天最多触发次数（0=不限，1..1000）。本地自然日 00:00 归零。见 TASK-FIRE-LIMITER-DESIGN-20261114.md。</summary>
+        public int MaxRunsPerDay { get; set; } = 0;
+
+        /// <summary>两次触发最短间隔秒数（0=不限，0..86400）。支持 "30m" / "1h30m"（由 GetInt 解析）。</summary>
+        public int MinIntervalSec { get; set; } = 0;
+
+        /// <summary>限流作用域："auto"（人工类触发绕过，默认）| "all"（全部触发受限）。</summary>
+        public string LimitScope { get; set; } = "auto";
+
+        /// <summary>服务层据此决定人工类触发是否也要经过限流门。</summary>
+        [JsonIgnore]
+        public bool LimitAppliesToUserDriven
+        {
+            get { return string.Equals(LimitScope, "all", StringComparison.OrdinalIgnoreCase); }
+        }
+
         /// <summary>
         /// 运行模式："wait"（默认，启动后等待退出，现状语义）| "detach"（启动即返回，进程后台常驻）。
         /// 用字符串而非枚举：tasks.json 是可手改文件，保持与既有小写键风格一致且无转换器依赖。
@@ -287,6 +303,15 @@ namespace CarroDesk.Models
             }
             if (Options != null && Options.TimeoutSec < 0) return "timeoutSec invalid";
             if (Options != null && Options.Retry < 0) return "retry invalid";
+            if (Options != null && (Options.MaxRunsPerDay < 0 || Options.MaxRunsPerDay > 1000))
+                return "options.maxRunsPerDay must be 0..1000";
+            if (Options != null && (Options.MinIntervalSec < 0 || Options.MinIntervalSec > 86400))
+                return "options.minIntervalSec must be 0..86400";
+            if (Options != null && !string.IsNullOrWhiteSpace(Options.LimitScope))
+            {
+                string scope = Options.LimitScope.Trim().ToLowerInvariant();
+                if (scope != "auto" && scope != "all") return "options.limitScope invalid (auto|all)";
+            }
             if (Options != null && !string.IsNullOrWhiteSpace(Options.Encoding))
             {
                 // 与 TaskRunner 的消费集合保持一致（未知值会静默按 UTF-8 处理，配置期就拒绝更友好）

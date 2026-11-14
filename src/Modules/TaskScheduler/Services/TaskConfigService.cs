@@ -495,7 +495,8 @@ namespace CarroDesk.Services.Tasks
             "notifyOnFailure", "notify", "mode", "killWithHost", "singleInstance", "restart",
             "restartDelaySec", "restartDelay", "restartLimit", "maxRestarts",
             "stableUptimeSec", "minUptimeSec", "encoding", "outputEncoding",
-            "runAtStartup", "runOnStart", "catchUpMissed", "catchUp"
+            "runAtStartup", "runOnStart", "catchUpMissed", "catchUp",
+            "maxRunsPerDay", "maxRuns", "minIntervalSec", "minInterval", "limitScope"
         };
 
         private static JObject SerializeOptionsToken(TaskOptions op)
@@ -521,6 +522,12 @@ namespace CarroDesk.Services.Tasks
             if (!string.IsNullOrWhiteSpace(op.Encoding)) o["encoding"] = op.Encoding.Trim().ToLowerInvariant();
             if (op.RunAtStartup) o["runAtStartup"] = true;
             if (op.CatchUpMissed) o["catchUpMissed"] = true;
+            // 频率限制：非缺省值才落盘，保持旧 tasks.json 形态不变（M11 同款策略）
+            if (op.MaxRunsPerDay != 0) o["maxRunsPerDay"] = op.MaxRunsPerDay;
+            if (op.MinIntervalSec != 0) o["minIntervalSec"] = op.MinIntervalSec;
+            if (!string.IsNullOrWhiteSpace(op.LimitScope) &&
+                !string.Equals(op.LimitScope, "auto", StringComparison.OrdinalIgnoreCase))
+                o["limitScope"] = op.LimitScope.Trim().ToLowerInvariant();
             return o;
         }
 
@@ -688,6 +695,11 @@ namespace CarroDesk.Services.Tasks
                     opt.Encoding = GetStr(od, "encoding", "outputEncoding");
                     opt.RunAtStartup = GetBool(od, false, "runAtStartup", "runOnStart");
                     opt.CatchUpMissed = GetBool(od, false, "catchUpMissed", "catchUp");
+                    // 频率限制（S3 同款：读取端与写入端必须成对，否则手改 JSON 无效）
+                    opt.MaxRunsPerDay = GetInt(od, 0, "maxRunsPerDay", "maxRuns");
+                    opt.MinIntervalSec = GetInt(od, 0, "minIntervalSec", "minInterval");
+                    opt.LimitScope = GetStr(od, "limitScope");
+                    if (string.IsNullOrWhiteSpace(opt.LimitScope)) opt.LimitScope = "auto";
 
                     // 未识别字段原样保留，供保存时回写（M11）
                     foreach (var prop in od.Properties())
