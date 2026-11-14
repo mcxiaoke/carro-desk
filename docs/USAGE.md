@@ -182,6 +182,8 @@ CarroDesk（标题）
 
 日志：`logs/tasks.log` 汇总调度事件；`logs/task-<name>.log` 记录 `triggered → started pid → OUT/ERR → finished exitCode/duration`。单文件 5MB 轮转保留 3 档。
 
+任务管理窗口的列：状态、PID、已运行、名称、启用、常驻、触发方式、内存、执行动作、最近运行、最近结果。**触发方式**列只显示短标签（如 `空闲 10m`、`02:30`、`Cron`），完整触发描述与频率限制摘要在悬停提示里；**最近运行**显示上一次真正启动的时刻（`MM-dd HH:mm`，悬停看完整时间），持久化在 `task-last-run.json`，宿主重启后仍保留。双击某一行才会打开编辑器，双击空白区域 / 列头不会误开上次选中的任务。
+
 ### 4.6 常见示例
 
 ```json

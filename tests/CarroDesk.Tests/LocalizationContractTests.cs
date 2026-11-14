@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -68,6 +69,43 @@ namespace CarroDesk.Tests
                 {
                     target[key] = prop.Value == null ? string.Empty : prop.Value.ToString();
                 }
+            }
+        }
+
+        /// <summary>
+        /// 同一对象内的重复键会被 JObject.Parse 静默保留最后一个。
+        /// 实测过 Tasks.TriggerXxx 被「编辑器下拉框说明」覆盖成 "cron - Cron 表达式调度"，
+        /// 导致管理窗口的触发描述丢了 {0} 参数。
+        /// </summary>
+        [TestMethod]
+        public void Locales_ContainNoDuplicateKeysWithinSameObject()
+        {
+            foreach (var code in new[] { "zh-CN", "en-US" })
+            {
+                string path = Path.Combine(FindSourceRoot(), "Assets", "Locales", code + ".json");
+                Assert.IsTrue(File.Exists(path), "语言包不存在: " + path);
+
+                var duplicates = new List<string>();
+                var scopes = new Stack<HashSet<string>>();
+                using (var sr = new StringReader(File.ReadAllText(path)))
+                using (var reader = new JsonTextReader(sr))
+                {
+                    while (reader.Read())
+                    {
+                        if (reader.TokenType == JsonToken.StartObject)
+                            scopes.Push(new HashSet<string>(StringComparer.Ordinal));
+                        else if (reader.TokenType == JsonToken.EndObject)
+                            scopes.Pop();
+                        else if (reader.TokenType == JsonToken.PropertyName && scopes.Count > 0)
+                        {
+                            string name = reader.Value != null ? reader.Value.ToString() : "";
+                            if (!scopes.Peek().Add(name)) duplicates.Add(name);
+                        }
+                    }
+                }
+
+                Assert.AreEqual(0, duplicates.Count,
+                    code + " 存在重复键（后者会静默覆盖前者）: " + string.Join(", ", duplicates.Distinct()));
             }
         }
 

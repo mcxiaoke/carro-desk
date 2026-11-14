@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -46,7 +47,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
         /// <summary>与 XAML 中任务列表列顺序一一对应的排序键（GridViewColumn 无 Tag）。</summary>
         private static readonly string[] ColumnSortKeys =
         {
-            "state", "pid", "duration", "name", "enabled", "resident", "trigger", "memory", "action", "outcome"
+            "state", "pid", "duration", "name", "enabled", "resident", "trigger", "memory", "action", "lastrun", "outcome"
         };
 
         public TaskManagerWindow(ITaskSchedulerService scheduler, Action onTasksChanged = null)
@@ -352,11 +353,13 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             var selectedName = GetSelectedTask()?.Name;
 
             var states = _scheduler?.GetAllStates() ?? new Dictionary<string, TaskStateSnapshot>();
+            var lastRuns = _scheduler?.GetLastRunTimes() ?? new Dictionary<string, DateTime?>();
             var rows = new List<TaskRowViewModel>();
             foreach (var t in filtered)
             {
                 states.TryGetValue(t.Name, out var snap);
-                rows.Add(new TaskRowViewModel(t, snap));
+                lastRuns.TryGetValue(t.Name, out DateTime? lastRun);
+                rows.Add(new TaskRowViewModel(t, snap, lastRun));
             }
 
             // 未点列头：运行中 → 启用 → 名称；点了列头：按该列排序（M26）
@@ -454,6 +457,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                 case "trigger": cmp = (a, b) => string.Compare(a.TriggerSummary, b.TriggerSummary, StringComparison.OrdinalIgnoreCase); break;
                 case "memory": cmp = (a, b) => Nullable.Compare(a.MemoryBytes, b.MemoryBytes); break;
                 case "action": cmp = (a, b) => string.Compare(a.ActionSummary, b.ActionSummary, StringComparison.OrdinalIgnoreCase); break;
+                case "lastrun": cmp = (a, b) => Nullable.Compare(a.LastRunAt, b.LastRunAt); break;
                 case "outcome": cmp = (a, b) => string.Compare(a.OutcomeDisplayText, b.OutcomeDisplayText, StringComparison.OrdinalIgnoreCase); break;
                 default: return rows;
             }
@@ -523,10 +527,22 @@ namespace CarroDesk.Modules.TaskScheduler.Views
 
         private void TaskListView_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
-            if (GetSelectedRow() != null)
-            {
-                OnEditClick(sender, e);
-            }
+            // 双击空白区域 / 列头 / 滚动条时，SelectedItem 仍是上次选中的行；
+            // 旧实现只判断 SelectedItem 会误打开另一个任务的编辑器。
+            // 用命中测试确认双击点确实落在某个 ListViewItem 内。
+            var source = e.OriginalSource as DependencyObject;
+            var clickedRow = source != null
+                ? ItemsControl.ContainerFromElement(TaskListView, source) as ListViewItem
+                : null;
+
+            if (!ShouldOpenEditorOnDoubleClick(clickedRow != null, GetSelectedRow() != null)) return;
+            OnEditClick(sender, e);
+        }
+
+        /// <summary>抽成纯逻辑便于单测：命中行 + 有选中项，两个条件缺一不可。</summary>
+        internal static bool ShouldOpenEditorOnDoubleClick(bool clickedOnRow, bool hasSelection)
+        {
+            return clickedOnRow && hasSelection;
         }
 
         private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -832,13 +848,16 @@ namespace CarroDesk.Modules.TaskScheduler.Views
         public TaskDefinition Task { get; }
         private TaskStateSnapshot _snapshot;
         private long? _memoryBytes;   // 物理工作集，仅窗口可见时由采样器回填
+        private readonly DateTime? _lastRun;
 
         public event PropertyChangedEventHandler PropertyChanged;
 
-        public TaskRowViewModel(TaskDefinition task, TaskStateSnapshot snapshot)
+        /// <summary>lastRun 为最近一次真正启动的时刻（本地时间，持久化）；可选参数保持既有调用方兼容。</summary>
+        public TaskRowViewModel(TaskDefinition task, TaskStateSnapshot snapshot, DateTime? lastRun = null)
         {
             Task = task ?? new TaskDefinition();
             _snapshot = snapshot ?? new TaskStateSnapshot();
+            _lastRun = lastRun;
         }
 
         public void UpdateSnapshot(TaskStateSnapshot snapshot)
@@ -886,6 +905,41 @@ namespace CarroDesk.Modules.TaskScheduler.Views
         public bool IsResident => Task.Options?.IsDetach == true;
         public string ResidentText => IsResident ? Loc.T("Tasks.Yes", "是") : Loc.T("Tasks.No", "否");
         public Brush ResidentTextBrush => IsResident ? Blue700 : Slate400;
+
+        /// <summary>
+        /// 触发方式列的极简短标签。完整描述（含频率限制摘要）仍由 TriggerSummary 提供，
+        /// 移到 ToolTip，避免长 Cron 表达式 / 限流后缀把列撑爆。
+        /// 类型名复用 TaskDefinition.TriggerBadgeText（已有本地化短标签）。
+        /// </summary>
+        public string TriggerShortText
+        {
+            get
+            {
+                if (Task.Trigger == null) return Loc.T("Tasks.Unknown", "未知");
+                string badge = Task.TriggerBadgeText;
+                switch (Task.Trigger.Type)
+                {
+                    case TaskTriggerType.Startup:
+                        return badge + " " + Task.Trigger.DelaySec + "s";
+                    case TaskTriggerType.Interval:
+                    {
+                        int sec = Task.GetIntervalSeconds();
+                        if (sec <= 0) return badge;
+                        if (sec % 3600 == 0) return badge + " " + (sec / 3600) + "h";
+                        if (sec % 60 == 0) return badge + " " + (sec / 60) + "m";
+                        return badge + " " + sec + "s";
+                    }
+                    case TaskTriggerType.Daily:
+                        return string.IsNullOrWhiteSpace(Task.Trigger.At) ? badge : Task.Trigger.At.Trim();
+                    case TaskTriggerType.Cron:
+                        return "Cron";
+                    case TaskTriggerType.Idle:
+                        return badge + " " + Task.Trigger.AfterMinutes + "m";
+                    default:
+                        return badge;
+                }
+            }
+        }
 
         public string TriggerSummary
         {
@@ -955,7 +1009,19 @@ namespace CarroDesk.Modules.TaskScheduler.Views
         public Brush TriggerBadgeBg => ParseFrozen(Task.TriggerBadgeBg);
         public Brush TriggerBadgeFg => ParseFrozen(Task.TriggerBadgeFg);
 
-        // ---- 运行时列（PID / 已运行 / 内存占用） ----
+        // ---- 运行时列（PID / 已运行 / 内存占用 / 最近运行） ----
+
+        /// <summary>排序列使用的原始时刻；从未运行为 null。</summary>
+        public DateTime? LastRunAt => _lastRun;
+
+        /// <summary>列内短格式，完整时间放 ToolTip。</summary>
+        public string LastRunDisplayText => _lastRun.HasValue
+            ? _lastRun.Value.ToString("MM-dd HH:mm", CultureInfo.InvariantCulture)
+            : "--";
+
+        public string LastRunToolTip => _lastRun.HasValue
+            ? _lastRun.Value.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)
+            : "";
 
         public int? Pid => _snapshot.Pid;
 
@@ -1009,6 +1075,9 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             OnPropertyChanged(nameof(EnabledBadgeText));
             OnPropertyChanged(nameof(ResidentText));
             OnPropertyChanged(nameof(TriggerSummary));
+            OnPropertyChanged(nameof(TriggerShortText));
+            OnPropertyChanged(nameof(LastRunDisplayText));
+            OnPropertyChanged(nameof(LastRunToolTip));
             OnPropertyChanged(nameof(PidDisplayText));
             OnPropertyChanged(nameof(DurationDisplayText));
             OnPropertyChanged(nameof(MemoryDisplayText));

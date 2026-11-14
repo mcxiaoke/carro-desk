@@ -76,6 +76,9 @@ namespace CarroDesk.Services.Tasks
         /// <summary>触发器 last-fired 状态仓库，服务层持有，不随 Apply 重建触发器而丢失。</summary>
         private readonly ITriggerStateStore _triggerState;
 
+        /// <summary>各任务上一次真正启动的时刻，供管理窗口「最近运行」列读取。</summary>
+        private readonly TaskLastRunStore _lastRunStore;
+
         public bool GlobalEnabled => _globalEnabled;
         public bool IsGlobalEnabled => _globalEnabled;
         public IReadOnlyList<TaskDefinition> Tasks
@@ -116,6 +119,21 @@ namespace CarroDesk.Services.Tasks
             }
         }
 
+        /// <summary>供管理窗口「最近运行」列读取；persisted by TaskLastRunStore，跨宿主重启有效。</summary>
+        public IReadOnlyDictionary<string, DateTime?> GetLastRunTimes()
+        {
+            lock (_lock)
+            {
+                var dict = new Dictionary<string, DateTime?>(StringComparer.OrdinalIgnoreCase);
+                foreach (var t in _tasks)
+                {
+                    if (string.IsNullOrEmpty(t.Name)) continue;
+                    dict[t.Name] = _lastRunStore.Get(t.Name);
+                }
+                return dict;
+            }
+        }
+
         /// <summary>供管理窗口 / CLI 展示各任务下次触发时刻，排障不必靠猜。</summary>
         public IReadOnlyDictionary<string, DateTime?> GetNextFireTimes()
         {
@@ -147,7 +165,8 @@ namespace CarroDesk.Services.Tasks
             IHotkeyService hotkeyService = null,
             Dispatcher dispatcher = null,
             TaskFireLimiter fireLimiter = null,
-            ITriggerStateStore triggerState = null)
+            ITriggerStateStore triggerState = null,
+            TaskLastRunStore lastRunStore = null)
         {
             _idleService = idleService;
             _configManager = configManager;
@@ -157,6 +176,7 @@ namespace CarroDesk.Services.Tasks
             _dispatcher = dispatcher;
             _fireLimiter = fireLimiter ?? new TaskFireLimiter(TaskFireLimiter.DefaultStatePath);
             _triggerState = triggerState ?? new PersistentTriggerStateStore();
+            _lastRunStore = lastRunStore ?? new TaskLastRunStore();
         }
 
         public void Start()
@@ -340,6 +360,7 @@ namespace CarroDesk.Services.Tasks
                 .ToArray();
             _fireLimiter.ForgetRemovedTasks(activeNames);
             _triggerState.ForgetRemoved(activeNames);
+            _lastRunStore.ForgetRemoved(activeNames);
 
             var toKill = new List<KeyValuePair<string, TaskProcessHandle>>();
 
@@ -791,6 +812,8 @@ namespace CarroDesk.Services.Tasks
                     }
                     return;
                 }
+                // detach 启动成功：记录「上一次真正启动」，供管理窗口最近运行列读取
+                _lastRunStore.Record(task.Name, DateTime.Now);
                 AttachDetached(task, slot, handle);
                 return;
             }
@@ -822,6 +845,8 @@ namespace CarroDesk.Services.Tasks
                             reason + (attempt > 1 ? " retry#" + attempt : ""),
                             CancellationToken.None, null,
                             h => {
+                                // 进程 spawn 成功才记账：限流拒绝 / 条件不满足 / 启动失败均不误记
+                                _lastRunStore.Record(task.Name, DateTime.Now);
                                 // 启动窗口期停止竞态（H2）：TryStop 可能在进程 spawn 完成前
                                 // 摘除槽并置位 StopRequested——此时必须立即终止刚启动的进程，
                                 // 不得登记回运行表（否则脱离注册：GetRunning 看不到、TryStop

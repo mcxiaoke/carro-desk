@@ -282,11 +282,11 @@
                             </GridViewColumn>
 
                             <!-- 列 7: 触发条件徽标 -->
-                            <GridViewColumn Header="{loc:Loc Tasks.MgrTrigger, Default='触发方式'}" Width="118">
+                            <GridViewColumn Header="{loc:Loc Tasks.MgrTrigger, Default='触发方式'}" Width="88">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
-                                        <Border Background="{Binding TriggerBadgeBg}" CornerRadius="4" Padding="7,2" HorizontalAlignment="Left" VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding TriggerSummary}" Foreground="{Binding TriggerBadgeFg}" FontSize="11" FontWeight="SemiBold"/>
+                                        <Border Background="{Binding TriggerBadgeBg}" CornerRadius="4" Padding="7,2" HorizontalAlignment="Left" VerticalAlignment="Center" ToolTip="{Binding TriggerSummary}">
+                                            <TextBlock Text="{Binding TriggerShortText}" TextTrimming="CharacterEllipsis" Foreground="{Binding TriggerBadgeFg}" FontSize="11" FontWeight="SemiBold"/>
                                         </Border>
                                     </DataTemplate>
                                 </GridViewColumn.CellTemplate>
@@ -313,7 +313,16 @@
                                 </GridViewColumn.CellTemplate>
                             </GridViewColumn>
 
-                            <!-- 列 10: 最近运行结果 -->
+                            <!-- 列 10: 最近运行时间（上一次真正启动的时刻，持久化） -->
+                            <GridViewColumn Header="{loc:Loc Tasks.MgrLastRun, Default='最近运行'}" Width="110">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding LastRunDisplayText}" Foreground="#FF64748B" FontFamily="Consolas" FontSize="11" VerticalAlignment="Center" ToolTip="{Binding LastRunToolTip}"/>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+
+                            <!-- 列 11: 最近运行结果 -->
                             <GridViewColumn Header="{loc:Loc Tasks.MgrLastResult, Default='最近结果'}" Width="125">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
