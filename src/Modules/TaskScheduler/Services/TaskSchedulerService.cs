@@ -60,6 +60,13 @@ namespace CarroDesk.Services.Tasks
         private readonly IHotkeyService _hotkeyService;
         private readonly Dispatcher _dispatcher;
 
+        /// <summary>
+        /// 任务级触发频率限制。必须由服务层单例持有：ApplyCoreLocked 每次配置重载都会
+        /// 整体重建触发器，状态放触发器实例里会被清空（保存一次任务即可绕过限流）。
+        /// 构造可注入以便单测使用纯内存态。
+        /// </summary>
+        private readonly TaskFireLimiter _fireLimiter;
+
         public bool GlobalEnabled => _globalEnabled;
         public bool IsGlobalEnabled => _globalEnabled;
         public IReadOnlyList<TaskDefinition> Tasks
@@ -114,7 +121,8 @@ namespace CarroDesk.Services.Tasks
             INotificationService notificationService = null,
             Action<string> balloonNotifier = null,
             IHotkeyService hotkeyService = null,
-            Dispatcher dispatcher = null)
+            Dispatcher dispatcher = null,
+            TaskFireLimiter fireLimiter = null)
         {
             _idleService = idleService;
             _configManager = configManager;
@@ -122,6 +130,7 @@ namespace CarroDesk.Services.Tasks
             _balloonNotifier = balloonNotifier;
             _hotkeyService = hotkeyService;
             _dispatcher = dispatcher;
+            _fireLimiter = fireLimiter ?? new TaskFireLimiter(TaskFireLimiter.DefaultStatePath);
         }
 
         public void Start()
@@ -293,6 +302,14 @@ namespace CarroDesk.Services.Tasks
         {
             StopTriggers();
             var newTasks = result.Tasks ?? new List<TaskDefinition>();
+
+            // 频率限制状态按任务名聚合、跨 Apply 存活：这里只清理已删除任务的条目，
+            // 绝不清空额度，否则「保存任务 / 配置热重载」就能绕过每日上限。
+            // 放在锁外：ForgetRemovedTasks 可能落盘，不应持 _lock 做文件 IO。
+            _fireLimiter.ForgetRemovedTasks(newTasks
+                .Where(t => t != null && t.Enabled && !string.IsNullOrEmpty(t.Name))
+                .Select(t => t.Name));
+
             var toKill = new List<KeyValuePair<string, TaskProcessHandle>>();
 
             lock (_lock)
@@ -474,6 +491,14 @@ namespace CarroDesk.Services.Tasks
                 TaskLogger.Warn(task.Name, "manual skipped: " + skip);
                 return false;
             }
+            // RunManual 不经过 OnTriggerFired，limitScope=all 时必须在这里补上门。
+            string fireRefusal;
+            if (!TryPassFireLimit(task, "manual", out fireRefusal))
+            {
+                TaskLogger.Info(task.Name, "skipped(manual) fire limit: " + fireRefusal);
+                AddRecent(task.Name, "throttled");
+                return false;
+            }
             Task.Run(() => ExecuteAsync(task, "manual"));
             return true;
         }
@@ -487,6 +512,15 @@ namespace CarroDesk.Services.Tasks
                 foreach (var t in _tasks) if (string.Equals(t.Name, name, StringComparison.OrdinalIgnoreCase)) { task = t; break; }
             }
             if (task == null || !_globalEnabled || !task.Enabled) return false;
+
+            // 同步入口先判限流：被拒时不应先停掉旧实例再告知用户失败。
+            string fireRefusal;
+            if (!TryPassFireLimit(task, "restart", out fireRefusal))
+            {
+                TaskLogger.Info(task.Name, "skipped(restart) fire limit: " + fireRefusal);
+                AddRecent(task.Name, "throttled");
+                return false;
+            }
 
             var restartTask = task;
             _ = Task.Run(async () =>
@@ -601,10 +635,43 @@ namespace CarroDesk.Services.Tasks
                 }
             }
 
+            // 频率限制统一门：插在 startup/daily 会话记录之后、Task.Run 之前。
+            // 被限流的 startup:catchup 仍记为「本会话已尝试补跑」，语义与 _firedStartupTasks 一致。
+            string fireRefusal;
+            if (!TryPassFireLimit(task, reason, out fireRefusal))
+            {
+                TaskLogger.Info(task.Name, "skipped(" + reason + ") fire limit: " + fireRefusal);
+                AddRecent(task.Name, "throttled");
+                return;
+            }
+
             // dispatch to thread pool, avoid blocking trigger thread (especially UI timer)
             var t = task;
             var r = reason;
             Task.Run(() => ExecuteAsync(t, r));
+        }
+
+        /// <summary>
+        /// 所有触发（含 RunManual / RestartTask 旁路）共用的限流准入。
+        /// internal 以便单测直接验证策略分流，不触发真实进程启动。
+        /// </summary>
+        internal bool TryPassFireLimit(TaskDefinition task, string reason, out string refusal)
+        {
+            refusal = null;
+            if (task == null || task.Options == null) return true;
+
+            var policy = new FireLimitPolicy
+            {
+                MaxRunsPerDay = task.Options.MaxRunsPerDay,
+                MinIntervalSec = task.Options.MinIntervalSec
+            };
+            if (policy.IsUnlimited) return true;
+
+            // limitScope=auto：人工类触发绕过且不消耗配额；all：全部触发受限。
+            if (TaskFireLimiter.IsUserDrivenReason(reason) && !task.Options.LimitAppliesToUserDriven)
+                return true;
+
+            return _fireLimiter.TryAcquire(task.Name, policy, reason, out refusal);
         }
 
         private async Task ExecuteAsync(TaskDefinition task, string reason)
