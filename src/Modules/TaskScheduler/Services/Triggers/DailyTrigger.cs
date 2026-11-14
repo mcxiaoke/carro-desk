@@ -44,6 +44,16 @@ namespace CarroDesk.Services.Tasks.Triggers
             set { _state.Set(Task.Name, LastDateKey, value); }
         }
 
+        public DateTime? NextFireAt
+        {
+            get
+            {
+                var now = DateTime.Now;
+                var todayAt = now.Date + _at;
+                return todayAt > now ? todayAt : todayAt.AddDays(1);
+            }
+        }
+
         public void Start()
         {
             Stop();

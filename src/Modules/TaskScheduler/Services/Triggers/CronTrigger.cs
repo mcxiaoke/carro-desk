@@ -39,6 +39,11 @@ namespace CarroDesk.Services.Tasks.Triggers
         /// <summary>当前定时器所指向的目标触发时刻，用于休眠恢复后的漏触发补偿。</summary>
         private DateTime? _scheduledFor;
 
+        public DateTime? NextFireAt
+        {
+            get { return _scheduledFor; }
+        }
+
         public CronTrigger(TaskDefinition task, ITriggerStateStore stateStore = null)
         {
             Task = task;

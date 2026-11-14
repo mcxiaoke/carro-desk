@@ -113,6 +113,21 @@ namespace CarroDesk.Services.Tasks
             }
         }
 
+        /// <summary>供管理窗口 / CLI 展示各任务下次触发时刻，排障不必靠猜。</summary>
+        public IReadOnlyDictionary<string, DateTime?> GetNextFireTimes()
+        {
+            lock (_lock)
+            {
+                var dict = new Dictionary<string, DateTime?>(StringComparer.OrdinalIgnoreCase);
+                foreach (var trig in _triggers)
+                {
+                    if (trig == null || trig.Task == null || string.IsNullOrEmpty(trig.Task.Name)) continue;
+                    dict[trig.Task.Name] = trig.NextFireAt;
+                }
+                return dict;
+            }
+        }
+
         public void NotifyStateChanged(string taskName)
         {
             if (string.IsNullOrEmpty(taskName)) return;
@@ -458,7 +473,7 @@ namespace CarroDesk.Services.Tasks
                             return null;
                     }
                     return new StartupTrigger(task, _hostStartedAt);
-                case TaskTriggerType.Interval: return new IntervalTrigger(task);
+                case TaskTriggerType.Interval: return new IntervalTrigger(task, _triggerState);
                 case TaskTriggerType.Daily: return new DailyTrigger(task, _triggerState);
                 case TaskTriggerType.Cron: return new CronTrigger(task, _triggerState);
                 case TaskTriggerType.SessionLock:
@@ -1487,6 +1502,8 @@ namespace CarroDesk.Services.Tasks
                             if (d != null) d.CheckCatchUp();
                             var c = trig as CronTrigger;
                             if (c != null) c.CheckCatchUp();
+                            var i = trig as IntervalTrigger;
+                            if (i != null) i.CheckCatchUp();
                         }
                     }
                     TaskLogger.Info("system", "resume catch-up checked");

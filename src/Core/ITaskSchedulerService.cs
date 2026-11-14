@@ -76,6 +76,12 @@ namespace CarroDesk.Core
         /// <summary>获取所有任务的运行状态快照表。</summary>
         IReadOnlyDictionary<string, TaskStateSnapshot> GetAllStates();
 
+        /// <summary>
+        /// 各任务的下次预计触发时刻（本地时间）；不支持时间预测的触发器为 null。
+        /// 默认实现返回空表，避免破坏既有的测试替身/其它实现者。
+        /// </summary>
+        IReadOnlyDictionary<string, DateTime?> GetNextFireTimes() => new Dictionary<string, DateTime?>();
+
         /// <summary>任务运行时状态跃迁事件（任务名, 新状态, 快照）。</summary>
         event Action<string, TaskRuntimeState, TaskStateSnapshot> StateChanged;
 
