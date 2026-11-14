@@ -125,6 +125,10 @@ namespace CarroDesk.Modules.TaskScheduler.Views
 
             // Options
             var opt = task.Options ?? new TaskOptions();
+            MaxRunsPerDayBox.Text = opt.MaxRunsPerDay.ToString();
+            MinIntervalSecBox.Text = opt.MinIntervalSec.ToString();
+            SelectComboByTag(LimitScopeBox, string.IsNullOrWhiteSpace(opt.LimitScope)
+                ? "auto" : opt.LimitScope.Trim().ToLowerInvariant());
             HiddenBox.IsChecked = opt.Hidden;
             RunAtStartupBox.IsChecked = opt.RunAtStartup;
             CatchUpMissedBox.IsChecked = opt.CatchUpMissed;
@@ -581,6 +585,10 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                 if (!TryReadInt(RestartLimitBox, 1, 100, Loc.T("Tasks.MgrMaxFailureBudget", "最大失败预算"), out error)) return false;
             }
 
+            // 频率限制对 wait/detach 都生效，两种模式都需校验；非法值不得静默回退为 0（M16）
+            if (!TryReadInt(MaxRunsPerDayBox, 0, 1000, Loc.T("Tasks.MgrMaxRunsPerDay", "每天最多次数"), out error)) return false;
+            if (!TryReadInt(MinIntervalSecBox, 0, 86400, Loc.T("Tasks.MgrMinIntervalSec", "最短间隔(秒)"), out error)) return false;
+
             error = null;
             return true;
         }
@@ -621,6 +629,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                 Name = NameBox.Text.Trim(),
                 Enabled = EnabledBox.IsChecked ?? true
             };
+            string limitScope = GetSelectedComboTag(LimitScopeBox);
 
             // Trigger
             string trigType = GetSelectedComboTag(TriggerTypeBox);
@@ -685,7 +694,10 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                 SingleInstance = isDetach && (SingleInstanceBox.IsChecked ?? false),
                 Restart = isDetach && (RestartOnFailureBox.IsChecked ?? false) ? "on-failure" : "none",
                 RestartDelaySec = int.TryParse(RestartDelayBox.Text.Trim(), out var rdelay) ? rdelay : 5,
-                RestartLimit = int.TryParse(RestartLimitBox.Text.Trim(), out var rlimit) ? rlimit : 3
+                RestartLimit = int.TryParse(RestartLimitBox.Text.Trim(), out var rlimit) ? rlimit : 3,
+                MaxRunsPerDay = int.TryParse(MaxRunsPerDayBox.Text.Trim(), out var maxRuns) ? maxRuns : 0,
+                MinIntervalSec = int.TryParse(MinIntervalSecBox.Text.Trim(), out var minInterval) ? minInterval : 0,
+                LimitScope = string.IsNullOrWhiteSpace(limitScope) ? "auto" : limitScope.Trim().ToLowerInvariant()
             };
             // 编辑既有任务时保留 UI 未暴露的选项字段，否则会被上面的默认值静默覆盖（H1，同旧编辑器 TaskEditorWindow 的防线）：
             // stableUptimeSec（守护计数复位阈值，0=永不复位）没有对应控件，必须从源任务透传。

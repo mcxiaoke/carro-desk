@@ -359,6 +359,27 @@
                             <TextBlock Text="{loc:Loc Tasks.MgrRequireFileToBe, Default='需不存在文件'}" Grid.Column="2" VerticalAlignment="Center" Margin="10,0,0,0" Foreground="#FF334155"/>
                             <TextBox x:Name="FileNotExistsBox" Grid.Column="3" Height="24" Margin="0,2" Padding="4,2" TextChanged="OnFormFieldChanged"/>
                         </Grid>
+
+                        <!-- 触发频率限制 (Fire Limit) -->
+                        <Separator Margin="0,12,0,10"/>
+                        <TextBlock Text="{loc:Loc Tasks.MgrFireLimitOptional, Default='触发频率限制 (可选)'}" FontWeight="SemiBold" FontSize="12" Foreground="#FF475569" Margin="0,0,0,6"/>
+                        <Grid Margin="0,2">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="90"/><ColumnDefinition Width="140"/><ColumnDefinition Width="90"/><ColumnDefinition Width="140"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="{loc:Loc Tasks.MgrMaxRunsPerDay, Default='每天最多次数'}" VerticalAlignment="Center" Foreground="#FF334155"/>
+                            <TextBox x:Name="MaxRunsPerDayBox" Grid.Column="1" Height="26" Padding="5,2" Text="0" TextChanged="OnFormFieldChanged"/>
+                            <TextBlock Text="{loc:Loc Tasks.MgrMinIntervalSec, Default='最短间隔(秒)'}" Grid.Column="2" VerticalAlignment="Center" Margin="10,0,0,0" Foreground="#FF334155"/>
+                            <TextBox x:Name="MinIntervalSecBox" Grid.Column="3" Height="26" Padding="5,2" Text="0" TextChanged="OnFormFieldChanged"/>
+                            <TextBlock Grid.Column="4" Text="{loc:Loc Tasks.MgrFireLimitZeroHint, Default='0 = 不限；单位秒（JSON 中可写 30m）'}" VerticalAlignment="Center" Margin="10,0,0,0" Foreground="#FF94A3B8" FontSize="11"/>
+                        </Grid>
+                        <Grid Margin="0,4">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="90"/><ColumnDefinition Width="180"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="{loc:Loc Tasks.MgrLimitScope, Default='限制范围'}" VerticalAlignment="Center" Foreground="#FF334155"/>
+                            <ComboBox x:Name="LimitScopeBox" Grid.Column="1" Height="26" SelectionChanged="OnFormFieldChanged">
+                                <ComboBoxItem Content="{loc:Loc Tasks.MgrLimitScopeAuto, Default='auto (人工运行不受限)'}" Tag="auto" IsSelected="True"/>
+                                <ComboBoxItem Content="{loc:Loc Tasks.MgrLimitScopeAll, Default='all (全部触发受限)'}" Tag="all"/>
+                            </ComboBox>
+                            <TextBlock Grid.Column="2" Text="{loc:Loc Tasks.MgrFireLimitHint, Default='状态跨配置重载与宿主重启保留；守护重启不消耗配额'}" VerticalAlignment="Center" Margin="10,0,0,0" Foreground="#FF94A3B8" FontSize="11"/>
+                        </Grid>
                     </StackPanel>
                 </Border>
             </StackPanel>

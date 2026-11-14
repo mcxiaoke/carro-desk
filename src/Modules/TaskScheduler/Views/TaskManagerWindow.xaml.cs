@@ -892,28 +892,63 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             get
             {
                 if (Task.Trigger == null) return Loc.T("Tasks.Unknown", "未知");
+                string summary;
                 switch (Task.Trigger.Type)
                 {
-                    case TaskTriggerType.Startup: return Loc.T("Tasks.TriggerStartup", "启动 {0}s", Task.Trigger.DelaySec);
+                    case TaskTriggerType.Startup:
+                        summary = Loc.T("Tasks.TriggerStartup", "启动 {0}s", Task.Trigger.DelaySec); break;
                     case TaskTriggerType.Interval:
                     {
                         // 显示真实单位：裸数字无法判断是 60 秒还是 60 分钟（M10）
                         int sec = Task.GetIntervalSeconds();
-                        if (sec <= 0) return Loc.T("Tasks.TriggerInterval", "间隔 {0}", Task.Trigger.Every);
-                        if (sec >= 60 && sec % 60 == 0)
-                            return Loc.T("Tasks.TriggerIntervalMinutes", "每 {0} 分钟", sec / 60);
-                        return Loc.T("Tasks.TriggerIntervalSeconds", "每 {0} 秒", sec);
+                        if (sec <= 0) summary = Loc.T("Tasks.TriggerInterval", "间隔 {0}", Task.Trigger.Every);
+                        else if (sec >= 60 && sec % 60 == 0)
+                            summary = Loc.T("Tasks.TriggerIntervalMinutes", "每 {0} 分钟", sec / 60);
+                        else
+                            summary = Loc.T("Tasks.TriggerIntervalSeconds", "每 {0} 秒", sec);
+                        break;
                     }
-                    case TaskTriggerType.Daily: return Loc.T("Tasks.TriggerDaily", "每天 {0}", Task.Trigger.At);
-                    case TaskTriggerType.Cron: return Loc.T("Tasks.TriggerCron", "Cron {0}", Task.Trigger.Expr);
-                    case TaskTriggerType.Watch: return Loc.T("Tasks.TriggerWatch", "监听 {0}", Task.Trigger.WatchFilter);
-                    case TaskTriggerType.SessionLock: return Loc.T("Tasks.TriggerSessionLock", "锁屏时");
-                    case TaskTriggerType.SessionUnlock: return Loc.T("Tasks.TriggerSessionUnlock", "解锁时");
-                    case TaskTriggerType.Idle: return Loc.T("Tasks.TriggerIdle", "空闲 {0}m", Task.Trigger.AfterMinutes);
-                    case TaskTriggerType.Manual: return Loc.T("Tasks.TriggerManual", "手动运行");
-                    case TaskTriggerType.Hotkey: return Loc.T("Tasks.TriggerHotkey", "热键 {0}", Task.Trigger.Hotkey);
-                    default: return Task.Trigger.Type.ToString();
+                    case TaskTriggerType.Daily:
+                        summary = Loc.T("Tasks.TriggerDaily", "每天 {0}", Task.Trigger.At); break;
+                    case TaskTriggerType.Cron:
+                        summary = Loc.T("Tasks.TriggerCron", "Cron {0}", Task.Trigger.Expr); break;
+                    case TaskTriggerType.Watch:
+                        summary = Loc.T("Tasks.TriggerWatch", "监听 {0}", Task.Trigger.WatchFilter); break;
+                    case TaskTriggerType.SessionLock:
+                        summary = Loc.T("Tasks.TriggerSessionLock", "锁屏时"); break;
+                    case TaskTriggerType.SessionUnlock:
+                        summary = Loc.T("Tasks.TriggerSessionUnlock", "解锁时"); break;
+                    case TaskTriggerType.Idle:
+                        summary = Loc.T("Tasks.TriggerIdle", "空闲 {0}m", Task.Trigger.AfterMinutes); break;
+                    case TaskTriggerType.Manual:
+                        summary = Loc.T("Tasks.TriggerManual", "手动运行"); break;
+                    case TaskTriggerType.Hotkey:
+                        summary = Loc.T("Tasks.TriggerHotkey", "热键 {0}", Task.Trigger.Hotkey); break;
+                    default:
+                        summary = Task.Trigger.Type.ToString(); break;
                 }
+                // 频率限制摘要直接挂在触发描述后，用户无需打开编辑器即可看出约束
+                return summary + FireLimitSuffix;
+            }
+        }
+
+        private string FireLimitSuffix
+        {
+            get
+            {
+                var opt = Task.Options;
+                if (opt == null) return "";
+                string suffix = "";
+                if (opt.MaxRunsPerDay > 0)
+                    suffix += " · " + Loc.T("Tasks.ThrottleDailyCap", "每天≤{0}次", opt.MaxRunsPerDay);
+                if (opt.MinIntervalSec > 0)
+                {
+                    string gap = (opt.MinIntervalSec >= 60 && opt.MinIntervalSec % 60 == 0)
+                        ? (opt.MinIntervalSec / 60) + "m"
+                        : opt.MinIntervalSec + "s";
+                    suffix += " · " + Loc.T("Tasks.ThrottleMinInterval", "间隔≥{0}", gap);
+                }
+                return suffix;
             }
         }
 

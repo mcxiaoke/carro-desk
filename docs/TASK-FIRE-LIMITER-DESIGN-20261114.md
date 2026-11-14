@@ -2,7 +2,7 @@
 
 > 版本：v1 · 2026-11-14 · 基线 commit `cb4289b` · 基线测试 445/445 通过
 > 适用模块：`src/Modules/TaskScheduler/`
-> 状态：设计已定稿，按 §6 分批实施；本次范围**不含**附录 B 列出的其它触发器缺陷修复。
+> 状态：**已实施**（2026-11-14，按 §6 分 6 批提交，逐批验证记录见 `docs/CHANGES-20261114.md`）；本次范围**不含**附录 B 列出的其它触发器缺陷修复。
 
 ---
 
@@ -167,6 +167,8 @@ Fired?.Invoke(Task, "idle:" + afterMinutes + "m");
 | 6 | UI / i18n / 收尾 | `TaskEditDialog.xaml(.cs)`、`TaskManagerWindow.xaml.cs`、`Assets/Locales/*.json`、文档收尾 | `feat(tasks): expose throttle options in task editor` |
 
 **批次 2 的解耦约定**：`TaskFireLimiter` 只依赖独立的 `FireLimitPolicy` 结构（策略值由调用方传入），**不直接读 `TaskOptions` 新字段**，因此批次 2 可独立编译通过；批次 3 加入字段后，批次 4 在服务层构造 policy 并接入。
+
+**实施状态（2026-11-14）**：6 个批次已全部落地并分批提交，每批均通过构建与全量测试；逐批验证记录见 `docs/CHANGES-20261114.md`。最终 `dotnet test` **475 通过 / 0 失败 / 0 跳过**（基线 445，新增 30 项），`dotnet build CarroDesk.slnx -c Release` **0 警告 0 错误**。附录 B 的问题清单仍为待办，未纳入本次改动。
 
 ## 7. 测试矩阵
 
