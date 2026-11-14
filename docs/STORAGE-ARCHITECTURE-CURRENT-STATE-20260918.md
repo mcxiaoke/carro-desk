@@ -27,8 +27,9 @@ graph TD
 
     LOG --> L1["log.txt (宿主常规运行日志)"]
     LOG --> L2["fatal.log (崩溃绝命日志)"]
-    LOG --> L3["logs/tasks.log (任务调度全局汇总)"]
-    LOG --> L4["logs/task-*.log (子进程流式输出与轮转)"]
+    LOG --> L3["logs/scheduler.log (调度管理事件)"]
+    LOG --> L4["logs/runs/history.jsonl (运行历史索引)"]
+    LOG --> L5["logs/runs/<task>/<yyyyMM>/<runId>.log (单次运行)"]
 
     EXT --> E1["scripts/ (自动化任务可执行脚本目录)"]
     EXT --> E2["lang/ (外置多语言本地化扩展包)"]
@@ -71,11 +72,12 @@ public static string DirPath => IsPortableMode ? PortableDataDirPath : AppDataDi
 │   └── ClipboardHistory/           # 剪贴板历史模块专属业务数据目录
 │       └── history.json            # 历史剪贴板条目（全文、预览、时间戳、MD5）
 │
-├── logs/                           # [任务进程日志目录]
-│   ├── tasks.log                   # 任务调度触发、跳过、退出码汇总日志
-│   ├── tasks.log.1 ~ .3            # 滚动轮转的历史备份文件（单文件上限 5MB）
-│   ├── task-{TaskName}.log         # 各独立任务进程的 stdout/stderr 流式捕获明细
-│   └── task-{TaskName}.log.1 ~ .3  # 独立任务日志的滚动备份
+├── logs/                           # [任务日志目录]
+│   ├── scheduler.log               # 调度管理事件（不含进程输出）
+│   ├── scheduler.log.1 ~ .3        # 轮转备份（单文件上限 5MB）
+│   └── runs/
+│       ├── history.jsonl           # 运行历史索引（start/end/abandoned 事件流）
+│       └── <TaskName>-<hash>/<yyyyMM>/<runId>.log  # 单次运行完整日志
 │
 ├── scripts/                        # [用户脚本库] 供 TaskScheduler 相对路径调用的脚本存放目录
 ├── lang/                           # [本地化扩展] 供用户外置投放的自定义 {lang}.json 语言包
@@ -191,8 +193,9 @@ CarroDesk 建立了三级完备的日志捕获机制：
 +-------------------+-----------------------------+----------------------------------------------+
 | 宿主常规运行日志   | <DirPath>/log.txt           | INFO, WARN, ERROR。单文件追加，跨线程互斥锁   |
 | 绝命致命崩溃日志   | <DirPath>/fatal.log         | FATAL。AppDomain/Dispatcher 未处理崩溃前急写   |
-| 任务调度运行日志   | <DirPath>/logs/tasks.log    | 汇总任务生命周期。5MB 触发滚动（保留 3 代）    |
-| 子进程标准输出日志 | <DirPath>/logs/task-*.log   | 区分 [OUT] 与 [ERR]。5MB 触发滚动（保留 3 代）|
+| 调度管理日志       | <DirPath>/logs/scheduler.log | INFO/WARN/ERROR + [task=]。5MB 触发滚动（保留 3 代） |
+| 单次运行日志       | <DirPath>/logs/runs/**/*.log | 命令、时间、OUT/ERR、退出码。按次独立文件，10MB 输出上限 |
+| 运行历史索引       | <DirPath>/logs/runs/history.jsonl | append-only 事件流，30 天 / 每任务 200 次 / 总 200MB 保留 |
 +-------------------+-----------------------------+----------------------------------------------+
 ```
 
@@ -205,14 +208,14 @@ CarroDesk 建立了三级完备的日志捕获机制：
 - **触发源**：`App.xaml.cs` 中的 `OnDispatcherUnhandledException` 与 `OnAppDomainException`；
 - **写入机制**：遇到严重不可恢复异常时，绕过常规服务容器直接同步裸写磁盘，随后调用 `Environment.FailFast` 终止进程，杜绝进程带毒僵死。
 
-### 6.3 任务调度日志 (`logs/`)
-- **实现类**：`CarroDesk.Services.Tasks.TaskLogger`；
-- **分级双写**：
-  1. 所有事件同步写入全局汇总文件 `logs/tasks.log`；
-  2. 针对指定任务，将输出按行拆分，分别打上 `[OUT]` 或 `[ERR]` 前缀独立写入 `logs/task-{SanitizedName}.log`；
-- **轮转算法 (`RotateIfNeeded`)**：
-  - 当日志文件体积达到 **5MB (`MaxFileBytes`)** 时自动触发 3 代轮转；
-  - 淘汰 `.3`，将 `.2` 移为 `.3`，`.1` 移为 `.2`，当前日志移为 `.1`，保证日志占用磁盘总体有界可控。
+### 6.3 任务日志 (`logs/`)
+- **实现类**：`CarroDesk.Services.Tasks.TaskLogger`（管理日志）、`RunContext` / `RunLogWriter`（单次运行）、`RunHistoryStore` + `TaskLogPaths`（索引与路径）。
+- **三条通道严格分离**：
+  1. `logs/scheduler.log`：调度器/任务管理事件，格式 `yyyy-MM-dd HH:mm:ss.fff [LEVEL] [task=<name>] message`，5MB 触发 3 代轮转；**不含** stdout/stderr。
+  2. `logs/runs/<task>-<hash>/<yyyyMM>/<runId>.log`：一次运行一个文件，`=== RUN START ===`（命令、参数、工作目录、触发原因、UTC/本地时间）→ `OUT`/`ERR` 逐行 → `=== RUN END ===`（结束时间、耗时、退出码、结果、输出统计）。内存缓冲批量追加 + `Flush()` 屏障，无常开写句柄。
+  3. `logs/runs/history.jsonl`：append-only 事件流（`run.start` / `run.end` / `run.abandoned`），宿主崩溃后重启自动补 `interrupted`；查询时按 runId 归并。
+- **保留算法 (`RunHistoryStore.Prune`)**：按 30 天 / 每任务 200 次 / `runs` 总计 200MB 三重约束淘汰旧运行，同步删除 run 文件并原子重写索引；活跃运行不淘汰。单次运行输出上限 10MB，超出截断留标记但继续读取管道。
+- **旧布局已移除**：`logs/tasks.log`、`logs/task-<name>.log`、`logs/task-system.log` 不再产生。
 
 ---
 

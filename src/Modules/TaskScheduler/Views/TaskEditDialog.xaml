@@ -143,7 +143,7 @@
                             <CheckBox x:Name="EnabledBox" Grid.Column="2" Content="{loc:Loc Tasks.MgrEnableThisTask, Default='启用此任务'}" VerticalAlignment="Center" Margin="14,0,0,0" IsChecked="True" Click="OnFormFieldChanged"/>
 
                             <TextBlock Text="{loc:Loc Tasks.MgrDescriptionHint, Default='说明提示'}" Grid.Row="1" VerticalAlignment="Center" Foreground="#FF64748B" FontSize="11"/>
-                            <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Text="唯一标识，日志将自动写入 logs/task-{name}.log" Foreground="#FF94A3B8" FontSize="11" Margin="0,3,0,0"/>
+                            <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Text="唯一标识，每次运行日志保存在 logs/runs/{name}-*/" Foreground="#FF94A3B8" FontSize="11" Margin="0,3,0,0"/>
                         </Grid>
                     </StackPanel>
                 </Border>

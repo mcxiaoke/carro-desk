@@ -1,0 +1,129 @@
+<Window x:Class="CarroDesk.Modules.TaskScheduler.Views.RunHistoryWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="clr-namespace:CarroDesk.Services.Localization"
+        Title="{loc:Loc Tasks.MgrRunHistory, Default='运行历史'}"
+        Height="480" Width="940" MinWidth="780" MinHeight="360"
+        WindowStartupLocation="CenterOwner" ResizeMode="CanResize" ShowInTaskbar="False"
+        Background="#FFF8FAFC">
+    <Window.Resources>
+        <Style TargetType="{x:Type Button}">
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="Foreground" Value="#FF1E293B"/>
+            <Setter Property="BorderBrush" Value="#FFCBD5E1"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="12,5"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Button}">
+                        <Border x:Name="border" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="5" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" RecognizesAccessKey="True"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="BorderBrush" Value="#FF94A3B8"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#FFF1F5F9"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Margin="2,0,2,10">
+            <TextBlock x:Name="TaskNameText" FontSize="15" FontWeight="SemiBold" Foreground="#FF0F172A"/>
+            <TextBlock Text="{loc:Loc Tasks.HistoryHint, Default='双击一行打开该次运行的日志'}"
+                       FontSize="11" Foreground="#FF94A3B8" Margin="0,3,0,0"/>
+        </StackPanel>
+
+        <Border Grid.Row="1" Background="White" CornerRadius="6" BorderBrush="#FFE2E8F0" BorderThickness="1">
+            <Grid>
+                <ListView x:Name="HistoryListView" BorderThickness="0" Background="Transparent"
+                          SelectionMode="Single" MouseDoubleClick="OnRowDoubleClick">
+                    <ListView.View>
+                        <GridView>
+                            <GridViewColumn Header="{loc:Loc Tasks.HistoryTime, Default='开始时间'}" Width="140">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding StartText}" FontFamily="Consolas" FontSize="12"
+                                                   VerticalAlignment="Center"/>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                            <GridViewColumn Header="{loc:Loc Tasks.MgrTrigger, Default='触发方式'}" Width="100">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Trigger}" FontSize="12" TextTrimming="CharacterEllipsis"
+                                                   ToolTip="{Binding Trigger}" VerticalAlignment="Center"/>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                            <GridViewColumn Header="{loc:Loc Tasks.HistoryCommand, Default='命令'}" Width="300">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding CommandDisplay}" FontFamily="Consolas" FontSize="12"
+                                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding CommandDisplay}"
+                                                   VerticalAlignment="Center"/>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                            <GridViewColumn Header="{loc:Loc Tasks.HistoryDuration, Default='耗时'}" Width="75">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding DurationText}" FontFamily="Consolas" FontSize="12"
+                                                   VerticalAlignment="Center"/>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                            <GridViewColumn Header="{loc:Loc Tasks.HistoryStatus, Default='结果'}" Width="100">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding StatusText}" FontFamily="Consolas" FontSize="12"
+                                                   VerticalAlignment="Center"/>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                            <GridViewColumn Header="{loc:Loc Tasks.HistoryOutput, Default='输出'}" Width="110">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding OutputText}" FontFamily="Consolas" FontSize="12"
+                                                   Foreground="#FF64748B" ToolTip="{Binding OutputText}"
+                                                   VerticalAlignment="Center"/>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                        </GridView>
+                    </ListView.View>
+                </ListView>
+                <TextBlock x:Name="EmptyHint" Visibility="Collapsed"
+                           Text="{loc:Loc Tasks.HistoryEmpty, Default='该任务还没有运行记录。'}"
+                           FontSize="13" Foreground="#FF94A3B8"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Grid>
+        </Border>
+
+        <DockPanel Grid.Row="2" Margin="2,10,2,0" LastChildFill="False">
+            <TextBlock x:Name="SummaryText" DockPanel.Dock="Left" FontSize="11" Foreground="#FF64748B"
+                       VerticalAlignment="Center"/>
+            <Button DockPanel.Dock="Right" Content="{loc:Loc Common.Close, Default='关闭'}"
+                    Click="OnCloseClick" Margin="8,0,0,0"/>
+            <Button DockPanel.Dock="Right" Content="{loc:Loc Tasks.MgrOpenLogFolder, Default='📂 打开日志目录'}"
+                    Click="OnOpenLogDirClick" Margin="8,0,0,0"/>
+            <Button DockPanel.Dock="Right" Content="{loc:Loc Tasks.MgrRefresh, Default='⟳ 刷新'}"
+                    Click="OnRefreshClick"/>
+        </DockPanel>
+    </Grid>
+</Window>

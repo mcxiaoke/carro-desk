@@ -123,6 +123,7 @@ namespace CarroDesk.Services.Tasks
         private static bool TryStart(TaskDefinition task, string reason, out TaskProcessHandle handle)
         {
             handle = null;
+            RunContext run = null;
             string workDir = task.EffectiveWorkDir();
             string file = task.Action != null ? task.Action.File : "";
             string args = task.Action != null ? task.Action.Args : "";
@@ -210,9 +211,16 @@ namespace CarroDesk.Services.Tasks
             {
                 try { workDir = Path.GetDirectoryName(Path.GetFullPath(file)); } catch { workDir = ""; }
             }
+            // 一次运行 = 一个 runId + 一个日志文件 + 一条历史记录。
+            // 启动前的校验失败也属于一次运行尝试，同样留痕（outcome=start-failed）。
+            try { run = RunContext.Begin(task.Name, reason, file, args, workDir, 1); }
+            catch { run = null; }
+
             if (string.IsNullOrWhiteSpace(workDir) || !Directory.Exists(workDir))
             {
-                TaskLogger.Error(task.Name, "workDir does not exist: " + (workDir ?? "<empty>"));
+                string detail = "workDir does not exist: " + (workDir ?? "<empty>");
+                if (run != null) { run.Event("ERROR", detail); run.Abandon("start-failed", "workDir missing"); }
+                else TaskLogger.Error(task.Name, detail);
                 return false;
             }
 
@@ -305,7 +313,14 @@ namespace CarroDesk.Services.Tasks
                 }
             }
 
-            TaskLogger.Info(task.Name, "triggered(" + reason + ") -> starting: " + psi.FileName + " " + psi.Arguments + " [workDir=" + workDir + "]");
+            // 运行期事件写入本次运行的 run 文件；RunContext 创建失败时退回管理日志，绝不丢事件。
+            void LogRun(string level, string message)
+            {
+                if (run != null) run.Event(level, message);
+                else TaskLogger.Write(task.Name, level, message);
+            }
+
+            LogRun("INFO", "triggered(" + reason + ") -> starting: " + psi.FileName + " " + psi.Arguments + " [workDir=" + workDir + "]");
 
             // proc/job/startedHandle 必须在 try 外声明：catch 分支要靠它们回收资源。
             // 进程在 proc.Start() 成功后即已存在，此后的任何异常（典型如进程瞬退时
@@ -320,21 +335,23 @@ namespace CarroDesk.Services.Tasks
             {
                 proc = new Process { StartInfo = psi, EnableRaisingEvents = true };
 
-                // 输出回调在线程池线程执行：只做逐行落日志（TaskLogger 自身保证线程安全）。
+                // 输出回调在线程池线程执行：只追加到本次 run 的内存缓冲（不碰磁盘、不写管理日志）。
+                // 回调必须尽快返回，否则 4KB 匿名管道写满会把子进程挂起。
                 proc.OutputDataReceived += (s, e) =>
                 {
                     if (e.Data == null) return;
-                    TaskLogger.WriteOutput(task.Name, "OUT", e.Data);
+                    if (run != null) run.Output("OUT", e.Data);
                 };
                 proc.ErrorDataReceived += (s, e) =>
                 {
                     if (e.Data == null) return;
-                    TaskLogger.WriteOutput(task.Name, "ERR", e.Data);
+                    if (run != null) run.Output("ERR", e.Data);
                 };
 
                 if (!proc.Start())
                 {
-                    TaskLogger.Error(task.Name, "failed to start process");
+                    LogRun("ERROR", "failed to start process");
+                    run?.Abandon("start-failed", "failed to start process");
                     try { proc.Dispose(); } catch { }
                     return false;
                 }
@@ -354,20 +371,22 @@ namespace CarroDesk.Services.Tasks
                     {
                         // 配置为 killWithHost=true 但作业对象不可用：退化为 taskkill 兜底，
                         // 宿主退出清理会按用户意图（KillWithHostRequested）终止进程树。
-                        TaskLogger.Warn(task.Name, "killWithHost=true but job object unavailable; host exit will fall back to taskkill /T /F");
+                        LogRun("WARN", "killWithHost=true but job object unavailable; host exit will fall back to taskkill /T /F");
                     }
                 }
 
-                startedHandle = new TaskProcessHandle(task, proc, job);
+                startedHandle = new TaskProcessHandle(task, proc, job, run);
                 handle = startedHandle;
-                TaskLogger.Info(task.Name, "started pid=" + handle.Pid + (job == null ? " [detached from host]" : ""));
+                run?.SetPid(handle.Pid);
+                LogRun("INFO", "started pid=" + handle.Pid + (job == null ? " [detached from host]" : ""));
                 proc.BeginOutputReadLine();
                 proc.BeginErrorReadLine();
                 return true;
             }
             catch (Exception ex)
             {
-                TaskLogger.Error(task.Name, "exception: " + ex);
+                LogRun("ERROR", "exception: " + ex);
+                run?.Abandon("start-failed", "exception");
                 handle = null;
                 // 回收已启动的进程与句柄，绝不把资源留给 GC（详见上方注释）
                 try
@@ -392,7 +411,7 @@ namespace CarroDesk.Services.Tasks
                 }
                 catch (Exception cleanupEx)
                 {
-                    TaskLogger.Warn(task.Name, "cleanup after start failure error: " + cleanupEx.Message);
+                    LogRun("WARN", "cleanup after start failure error: " + cleanupEx.Message);
                 }
                 return false;
             }

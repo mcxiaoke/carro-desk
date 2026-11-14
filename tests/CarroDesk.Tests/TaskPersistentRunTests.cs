@@ -76,8 +76,7 @@ namespace CarroDesk.Tests
 
         private static string ReadTaskLog(string taskName)
         {
-            string path = TaskLogger.GetTaskLogPath(taskName);
-            return File.Exists(path) ? File.ReadAllText(path, Encoding.UTF8) : string.Empty;
+            return TaskLogTestHelper.ReadAllRunLogs(taskName);
         }
 
         private static void WaitUntil(Func<bool> condition, TimeSpan timeout, string what)
@@ -399,9 +398,10 @@ namespace CarroDesk.Tests
                     Thread.Sleep(3000);
                     Assert.AreEqual(5, scheduler.GetRunning().Count, "超过上限后不得继续叠加实例");
 
-                    string log = ReadTaskLog("t_cap");
+                    // 并发上限拒绝是调度决策，属于管理日志而不是某次运行日志
+                    string log = TaskLogTestHelper.ReadSchedulerLogFor("t_cap");
                     StringAssert.Contains(log, "instance limit reached",
-                        "触顶时应写明原因，否则用户只看到任务\"没跑\". 任务日志:\n" + log);
+                        "触顶时应写明原因，否则用户只看到任务\"没跑\". 管理日志:\n" + log);
 
                     Assert.IsTrue(scheduler.TryStop("t_cap"), "停止应成功");
                     WaitUntil(() => !scheduler.IsRunning("t_cap"), TimeSpan.FromSeconds(20),
@@ -898,15 +898,22 @@ namespace CarroDesk.Tests
         {
             const string probe = "logdir-probe";
             TaskLogger.Info(probe, "first");
-            string logDir = ConfigService.LogsDirPath;
+            string logDir = TaskLogPaths.LogsDir;
             Assert.IsTrue(Directory.Exists(logDir));
 
             try { Directory.Delete(logDir, true); } catch { }
 
             TaskLogger.Info(probe, "second");
             Assert.IsTrue(Directory.Exists(logDir), "日志目录被删除后写入应重建目录");
-            Assert.IsTrue(File.Exists(TaskLogger.GetTaskLogPath(probe)), "重建后应成功写入任务日志");
-            StringAssert.Contains(File.ReadAllText(TaskLogger.GetTaskLogPath(probe), Encoding.UTF8), "second");
+            Assert.IsTrue(File.Exists(TaskLogger.LogPath), "重建后应成功写入管理日志");
+            StringAssert.Contains(File.ReadAllText(TaskLogger.LogPath, Encoding.UTF8), "second");
+
+            // 运行日志与历史索引目录同样要能重建
+            var run = RunContext.Begin(probe, "unit-test", "cmd.exe", "", logDir, 1, RunHistoryStore.Instance);
+            run.Event("INFO", "run-after-delete");
+            run.Complete(0, "ok", "exited");
+            Assert.IsTrue(File.Exists(run.FullLogPath), "目录重建后运行日志应可写");
+            StringAssert.Contains(File.ReadAllText(run.FullLogPath, Encoding.UTF8), "run-after-delete");
         }
     }
 }

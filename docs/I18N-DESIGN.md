@@ -139,7 +139,7 @@ public string Language { get; set; } = "auto";
    - 中文显示：`2026年9月16日 星期三`；英文显示：`Wednesday, September 16, 2026`。
 3. **不可翻译项边界**：
    - 任务触发器底层标识（`startup`, `interval`, `daily`, `lock`, `unlock`）保持代码常量不变，仅对下拉框 UI 显示文案做翻译。
-   - 日志文本（`task-*.log`、`log.txt`）保持程序级英文记录，确保工具链与解析器兼容。
+   - 日志文本（`scheduler.log`、`runs/**/*.log` 运行日志、`log.txt`）保持程序级英文记录，确保工具链与解析器兼容。
 
 ---
 

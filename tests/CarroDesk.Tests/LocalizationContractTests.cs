@@ -185,7 +185,7 @@ namespace CarroDesk.Tests
         /// </summary>
         private static readonly HashSet<string> AllowedBareXamlLiterals = new HashSet<string>(StringComparer.Ordinal)
         {
-            "唯一标识，日志将自动写入 logs/task-{name}.log",
+            "唯一标识，每次运行日志保存在 logs/runs/{name}-*/",
             "可在动作参数中使用 {{file}} 接收变动文件全路径，{{fileName}} 接收文件名",
             "格式：每行一个 KEY=VALUE，可在值中使用 {{date}} 等变量",
         };

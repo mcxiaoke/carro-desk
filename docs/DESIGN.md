@@ -148,7 +148,7 @@ CarroDesk.Cli --mcp ────┘       RpcProtocol：JSON-RPC 2.0 + pin/sourc
 
 `options.mode` 决定任务的运行形态：
 
-- **`wait`（默认）**：宿主拉起子进程并等待退出，受 `timeoutSec`/`retry`/`allowConcurrent` 约束，输出进任务日志
+- **`wait`（默认）**：宿主拉起子进程并等待退出，受 `timeoutSec`/`retry`/`allowConcurrent` 约束，输出进该次运行日志 `logs/runs/<task>/<yyyyMM>/<runId>.log`
 - **`detach`**：启动后立即返回，任务作为常驻后台进程存在；`timeoutSec/retry/allowConcurrent` 不可用（`Validate()` 拒绝）
   - `killWithHost`（默认 true）：经 Job Object 挂 kill-on-close，宿主退出子进程随之结束；false 时脱离（Stop 走 `taskkill /T /F` 降级链）
   - `singleInstance`（B2）：命名互斥体 `Local\CarroDesk.Task.<name>` 防重复拉起；进程内登记表先行防重入，AbandonedMutex 视为前任死亡安全接管，失败 fail-open

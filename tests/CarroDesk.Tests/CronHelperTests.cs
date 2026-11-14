@@ -299,8 +299,8 @@ namespace CarroDesk.Tests
             Assert.AreEqual(0, fired, "不可达表达式不应触发");
 
             // 必须留痕：否则触发器彻底静默失效，用户只看到"任务从不定时跑"
-            string logPath = TaskLogger.GetTaskLogPath("t_cron");
-            string log = System.IO.File.Exists(logPath) ? System.IO.File.ReadAllText(logPath) : string.Empty;
+            // 触发器告警属于管理事件，现在只进 scheduler.log（按任务名过滤）
+            string log = TaskLogTestHelper.ReadSchedulerLogFor("t_cron");
             StringAssert.Contains(log, "no occurrence within 8 years",
                 "不可达表达式必须写告警日志");
         }

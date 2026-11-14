@@ -77,7 +77,7 @@ CarroDesk（标题）
 
 1. 托盘 `自动化任务 → 任务编辑器...`
 2. `新增`，名称填 `hello`（仅 `a-z0-9_-`），触发器选 `manual`，文件选 `scripts/hello.js`（裸名自动在 `scripts/` 中查找）
-3. `保存并重载`，托盘 `自动化任务 → 手动运行 → hello` 即执行，日志在 `logs/task-hello.log`
+3. `保存并重载`，托盘 `自动化任务 → 手动运行 → hello` 即执行，每次运行日志在 `logs/runs/hello-*/<yyyyMM>/<runId>.log`
 
 裸文件名是推荐写法：`hello.js` / `sync.py` / `clean.ps1` / `backup.bat` 直接放 `scripts/`，JSON 中无需绝对路径，跨机器即拷即用。`action.file` 支持 `.exe .bat .cmd .ps1 .vbs .js .py/.pyw`，`.js` 用 PATH 中 `node.exe`，`.py` 用 `python/python3/py -u`，其余按 `.ps1→powershell -ExecutionPolicy Bypass`、`.bat→cmd /c` 包装；默认 `hidden:true` 全程隐藏黑窗口，输出进日志。
 
@@ -157,7 +157,7 @@ CarroDesk（标题）
 - `retry` 重试与 detach `restart=on-failure` 守护重启是同一实例的恢复，**不消耗配额**。
 - `idle` 在配额或冷却未恢复时不会触发；恢复后若仍处于空闲，最多 1 秒自动补触发，无需再次「回座 → 离开」。
 - 状态保存在数据目录 `task-fire-state.json`（原子写）；写入失败降级为进程内计数并记 WARN，绝不阻断任务。
-- 被限流记 `skipped(<reason>) fire limit: ...` 到 `logs/tasks.log`，并出现在「最近运行」。
+- 被限流记 `skipped(<reason>) fire limit: ...` 到 `logs/scheduler.log`，并出现在「最近运行」列。
 - **任务编辑器**：「高级选项」卡片底部的「触发频率限制 (可选)」分组可设置每天最多次数、最短间隔（秒）与限制范围；任务大盘的触发列会追加 `每天≤N次` / `间隔≥Xm` 摘要。编辑器输入为秒数，手写 `tasks.json` 时也可写 `"30m"` / `"1h30m"`。
 - 完整设计与边界见 [TASK-FIRE-LIMITER-DESIGN-20261114.md](TASK-FIRE-LIMITER-DESIGN-20261114.md)。
 
@@ -180,9 +180,17 @@ CarroDesk（标题）
 
 `自动化任务` 菜单：启用任务调度（勾选，持久化）、手动运行（枚举全部已启用任务）、最近运行（只读）、任务编辑器...、打开任务日志目录...、重载任务。
 
-日志：`logs/tasks.log` 汇总调度事件；`logs/task-<name>.log` 记录 `triggered → started pid → OUT/ERR → finished exitCode/duration`。单文件 5MB 轮转保留 3 档。
+日志分三类，互不混杂：
+
+- `logs/scheduler.log`：调度管理事件（启停、重载、触发注册、限流/条件/并发拒绝、重试、守护、状态持久化降级、宿主退出清理），**不含任何进程输出**；`[task=<名称>]` 标注归属，`system` 只是字段值、不产生文件。5MB 轮转保留 3 代。
+- `logs/runs/<任务名>-<hash>/<yyyyMM>/<runId>.log`：**一次运行一个文件**。`=== RUN START ===` 记录命令、参数、工作目录、触发原因、开始时间（UTC + 本地），随后是带时间戳与 `OUT`/`ERR` 流标记的输出，结尾 `=== RUN END ===` 记录结束时间、耗时、退出码、结果、输出统计。目录名带名字哈希，避免 Windows 大小写不敏感导致串写。
+- `logs/runs/history.jsonl`：运行历史索引（append-only `run.start` / `run.end` / `run.abandoned` 事件流）。宿主崩溃来不及写 footer 时，下次启动自动补 `run.abandoned`（outcome=interrupted），重启后仍可查命令、时间、耗时、退出码与日志路径。
+
+保留策略：30 天 / 每任务 200 次 / `runs` 目录总计 200MB；单次运行输出上限 10MB（超限截断留标记，但仍继续读取管道，不阻塞子进程）。管理日志与运行日志都无常开写句柄，任务管理器「日志」按钮会先 flush 缓冲再打开该任务最近一次运行文件。
 
 任务管理窗口的列：状态、PID、已运行、名称、启用、常驻、触发方式、内存、执行动作、最近运行、最近结果。**触发方式**列只显示短标签（如 `空闲 10m`、`02:30`、`Cron`），完整触发描述与频率限制摘要在悬停提示里；**最近运行**显示上一次真正启动的时刻（`MM-dd HH:mm`，悬停看完整时间），持久化在 `task-last-run.json`，宿主重启后仍保留。双击某一行才会打开编辑器，双击空白区域 / 列头不会误开上次选中的任务。
+
+行右键菜单：立即运行、停止运行、重启任务、启用 / 禁用、编辑、复制、查看任务日志、**运行历史**、打开日志目录、删除。**运行历史**打开只读对话框，每行一次运行记录，列出开始时间（本地）、触发方式、命令、耗时、结果与输出统计；运行中的实例显示 `running`、输出统计显示 `-`；双击某行用系统默认程序打开该次运行的日志文件，底部可刷新、打开日志目录或关闭。
 
 ### 4.6 常见示例
 
@@ -240,7 +248,7 @@ docs/remote-admin/grant-service-control.ps1 -Services TermService -DryRun   # �
 
 - **热键不生效？** 大概率被其他软件占用；宿主 `log.txt` 会记 WARN（含冲突原因），换组合后重载配置。
 - **watch 不触发？** 确认 `path` 存在、`filter` 匹配；`event` 默认 `created`，修改文件需设 `changed`。
-- **脚本找不到？** 裸名需放 `scripts/` 或写绝对路径；日志首行打印解析后的 `starting: ...`。
+- **脚本找不到？** 裸名需放 `scripts/` 或写绝对路径；该次运行日志的 `CMD` / `triggered` 行打印解析后的 `starting: ...`。
 - **中文路径 / tasks.json 乱码？** 全程 UTF-8，请以 UTF-8 保存（编辑器保存为标准 JSON 数组，手写支持 `//` 注释）。
 - **detach 任务重启太频繁？** 调大 `restartDelaySec`/`stableUptimeSec`，或检查脚本自身退出码；连续失败超过 `restartLimit` 会熔断，重新保存任务即可复位。
 - **CLI 报 -32020？** 宿主 CarroDesk.exe 没在运行，先启动托盘程序；CLI 下次调用即恢复，MCP 空工具表不再缓存、下次 `tools/list` 自动重试（无需重启客户端）。
@@ -249,8 +257,9 @@ docs/remote-admin/grant-service-control.ps1 -Services TermService -DryRun   # �
 
 | 文件 | 内容 |
 |---|---|
-| `logs/tasks.log` | 任务调度事件汇总 |
-| `logs/task-<name>.log` | 单任务输出 |
+| `logs/scheduler.log` | 调度管理事件（不含进程输出），5MB × 3 代轮转 |
+| `logs/runs/history.jsonl` | 运行历史索引（append-only 事件流） |
+| `logs/runs/<task>/<yyyyMM>/<runId>.log` | 单次运行：命令、时间、输出、退出码 |
 | `logs/ipc-audit.log` | IPC 调用审计（参数仅 SHA-256 摘要，口令不落盘） |
 
 ## 9. AI 助手接入（MCP）

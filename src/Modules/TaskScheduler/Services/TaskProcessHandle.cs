@@ -22,6 +22,7 @@ namespace CarroDesk.Services.Tasks
         private readonly TaskDefinition _task;
         private readonly Process _proc;
         private readonly ProcessJob _job;   // null = killWithHost=false（不挂作业对象）
+        private readonly RunContext _run;   // 本次运行的日志上下文（启动失败时为 null）
         private readonly Stopwatch _sw;
         private int _stopped;               // 0/1：是否被主动 Stop 过（用户或宿主退出清理）
         private int _exitWatchStarted;
@@ -37,11 +38,12 @@ namespace CarroDesk.Services.Tasks
         /// </summary>
         private readonly DateTime _procStartUtc;
 
-        internal TaskProcessHandle(TaskDefinition task, Process proc, ProcessJob job)
+        internal TaskProcessHandle(TaskDefinition task, Process proc, ProcessJob job, RunContext run = null)
         {
             _task = task;
             _proc = proc;
             _job = job;
+            _run = run;
             _sw = Stopwatch.StartNew();
             StartedAt = DateTime.Now;
             int pid = -1;
@@ -52,6 +54,14 @@ namespace CarroDesk.Services.Tasks
 
         // 属性名不能用 Task：会遮蔽 System.Threading.Tasks.Task 类型名，导致类内 Task.Run 等调用编译失败
         public TaskDefinition Definition { get { return _task; } }
+
+        /// <summary>运行期事件写本次 run 文件；无上下文时退回管理日志，绝不丢事件。</summary>
+        private void LogRun(string level, string message)
+        {
+            if (_run != null) _run.Event(level, message);
+            else TaskLogger.Write(_task?.Name, level, message);
+        }
+
         public int Pid { get; private set; }
         public DateTime StartedAt { get; private set; }
 
@@ -112,13 +122,15 @@ namespace CarroDesk.Services.Tasks
                                 outcome.Cancelled = cancelled;
                                 outcome.TimedOut = !cancelled;
                             }
-                            TaskLogger.Warn(_task.Name, (cancelled ? "stopped by request, killing pid=" : "timeout after " + timeoutSec + "s, killing pid=") + Pid);
+                            LogRun("WARN", (cancelled ? "stopped by request, killing pid=" : "timeout after " + timeoutSec + "s, killing pid=") + Pid);
                             Stop();
 
                             // 必须等 WaitForExit 任务真正结束，否则调用方 Dispose 时其仍挂起
                             try { await Task.WhenAny(waitTask, Task.Delay(TimeSpan.FromSeconds(5))).ConfigureAwait(false); } catch { }
 
-                            TaskLogger.Error(_task.Name, (cancelled ? "stopped by request" : "killed on timeout") + ", duration=" + _sw.Elapsed);
+                            LogRun("ERROR", (cancelled ? "stopped by request" : "killed on timeout") + ", duration=" + _sw.Elapsed);
+                            _run?.Complete(null, cancelled ? "cancelled" : "timedout",
+                                cancelled ? "stopped-by-request" : "timeout");
                             return -1;
                         }
 
@@ -144,18 +156,20 @@ namespace CarroDesk.Services.Tasks
                 try { exitCode = _proc.HasExited ? _proc.ExitCode : -1; } catch { }
 
                 _sw.Stop();
-                TaskLogger.Info(_task.Name, string.Format("finished pid={0} exitCode={1} duration={2:0.0}s", Pid, exitCode, _sw.Elapsed.TotalSeconds));
+                LogRun("INFO", string.Format("finished pid={0} exitCode={1} duration={2:0.0}s", Pid, exitCode, _sw.Elapsed.TotalSeconds));
                 if (exitCode != 0)
                 {
-                    TaskLogger.Warn(_task.Name, "non-zero exitCode=" + exitCode);
+                    LogRun("WARN", "non-zero exitCode=" + exitCode);
                 }
+                _run?.Complete(exitCode, exitCode == 0 ? "ok" : "fail:" + exitCode, "exited");
                 if (outcome != null) outcome.ExitCode = exitCode;
                 return exitCode;
             }
             catch (Exception ex)
             {
                 _sw.Stop();
-                TaskLogger.Error(_task.Name, "exception: " + ex + " duration=" + _sw.Elapsed);
+                LogRun("ERROR", "exception: " + ex + " duration=" + _sw.Elapsed);
+                _run?.Complete(null, "exception", "exception");
                 return -1;
             }
         }
@@ -209,7 +223,7 @@ namespace CarroDesk.Services.Tasks
         public void Stop()
         {
             if (Interlocked.Exchange(ref _stopped, 1) != 0) return;
-            TaskLogger.Warn(_task.Name, "stopping pid=" + Pid + " (killWithHost=" + KillWithHost + ")");
+            LogRun("WARN", "stopping pid=" + Pid + " (killWithHost=" + KillWithHost + ")");
             try
             {
                 if (_job != null) _job.Dispose();   // kill-on-close 连带整棵树
@@ -254,7 +268,7 @@ namespace CarroDesk.Services.Tasks
             try { handler(this, code); }
             catch (Exception ex)
             {
-                try { TaskLogger.Error(_task.Name, "exit handler error: " + ex); } catch { }
+                try { LogRun("ERROR", "exit handler error: " + ex); } catch { }
             }
         }
 
@@ -333,7 +347,7 @@ namespace CarroDesk.Services.Tasks
                 }
                 else
                 {
-                    TaskLogger.Warn(_task?.Name,
+                    LogRun("WARN",
                         "skip taskkill: pid " + pid + " no longer belongs to this task (process exited or pid recycled)");
                 }
                 try { if (_proc != null && !_proc.HasExited) _proc.Kill(); } catch { }

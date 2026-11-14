@@ -141,6 +141,7 @@
             <MenuItem Header="{loc:Loc Tasks.MgrDuplicateTask, Default='📋 复制任务'}" Click="OnDuplicateClick"/>
             <Separator/>
             <MenuItem Header="{loc:Loc Tasks.MgrViewTaskLog, Default='📄 查看任务日志'}" Click="OnViewLogClick"/>
+            <MenuItem Header="{loc:Loc Tasks.MgrRunHistory, Default='🕘 运行历史'}" Click="OnRunHistoryClick"/>
             <MenuItem Header="{loc:Loc Tasks.MgrOpenLogFolder, Default='📂 打开日志目录'}" Click="OnOpenLogDirClick"/>
             <Separator/>
             <MenuItem Header="{loc:Loc Tasks.MgrDeleteTask, Default='🗑️ 删除任务'}" Foreground="#FFDC2626" Click="OnDeleteClick"/>

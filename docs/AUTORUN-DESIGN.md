@@ -26,7 +26,7 @@
    - 安装模式：`%AppData%\ScreenLock\tasks.json` + `%AppData%\ScreenLock\logs/` + `%AppData%\ScreenLock\scripts/`
    - 判定逻辑与 `ConfigService.IsPortableMode / DirPath` 完全一致
  - **脚本目录**：`scripts/` 存放 `.ps1/.bat/.cmd/.js/.py` 等脚本，任务中 `action.file` 若为裸文件名（如 `hello.js`）自动在 `scripts/` 中解析，支持相对子路径。
- - **日志**：调度记录 + 进程 stdout/stderr 合并写入 `logs/task-<name>.log`（按任务分文件），另有 `logs/tasks.log` 汇总所有任务的调度事件。单文件 5MB 轮转，保留 3 个历史。
+ - **日志**：管理事件进 `logs/scheduler.log`；每次运行独立写 `logs/runs/<task>/<yyyyMM>/<runId>.log`（命令 + OUT/ERR + 退出码）；`logs/runs/history.jsonl` 是可查询的运行历史索引。30 天 / 每任务 200 次 / 总 200MB 保留，单次输出 10MB 截断。
 
 ## 3. 目录与文件
 
@@ -38,7 +38,11 @@ src/
    ConfigService.cs         // 已有，新增 LogsDirPath/ScriptsDirPath/TasksEnabled 辅助
    Tasks/
      TaskConfigService.cs   // tasks.json 读写、校验、Save
-     TaskLogger.cs          // 日志落盘与轮转
+     TaskLogger.cs          // 调度管理日志（scheduler.log）
+     Logging/TaskLogPaths.cs    // 路径与保留策略常量
+     Logging/RunContext.cs      // 一次运行上下文（runId + header/footer）
+     Logging/RunLogWriter.cs    // 单次运行文件写入（缓冲 + Flush 屏障）
+     Logging/RunHistoryStore.cs // history.jsonl 索引、崩溃恢复、保留清理
      ScriptResolver.cs      // 脚本路径解析（scripts/）+ PATH 中查找 node/python
      TemplateExpander.cs    // {{date}} 等变量模板展开
      TaskConditionEvaluator.cs // when 条件判定
@@ -65,8 +69,9 @@ src/
 ```
 <DirPath>/tasks.json              // 任务定义，主配置
 <DirPath>/tasks.sample.json       // 首次生成时的示例（若 tasks.json 不存在）
-<DirPath>/logs/tasks.log          // 调度汇总日志
-<DirPath>/logs/task-<name>.log    // 单任务执行日志（含 stdout/stderr）
+<DirPath>/logs/scheduler.log                       // 调度管理日志（无进程输出）
+<DirPath>/logs/runs/history.jsonl                  // 运行历史索引（append-only）
+<DirPath>/logs/runs/<task>/<yyyyMM>/<runId>.log    // 单次运行完整日志（含 stdout/stderr）
 <DirPath>/scripts/                // 脚本目录，裸文件名自动在此解析（.ps1/.bat/.js/.py 等）
 ```
 
@@ -92,7 +97,7 @@ src/
 
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|
-| `name` | string | 必填 | 唯一标识，`[a-zA-Z0-9_-]{1,64}`，用于日志文件名 `task-<name>.log` |
+| `name` | string | 必填 | 唯一标识，`[a-zA-Z0-9_-]{1,64}`，用于日志目录名 `runs/<name>-<hash>/` |
 | `enabled` | bool | true | 禁用后不调度，仍保留定义 |
 | `trigger` | object | 必填 | 见 §4.2 |
 | `action` | object | 必填 | 见 §4.3 |
@@ -125,7 +130,7 @@ src/
 | `hotkey` | `hotkey: "Ctrl+Alt+Q"` | 全局热键触发，`Ctrl/Alt/Shift/Win + A-Z/0-9/F1-24`，`RegisterHotKey` 实现 |
 | `watch` | `path: string, filter?: "*.ext", event?: "created\|changed\|deleted\|renamed\|all\|*", debounceMs?: int, includeSubdirs?: bool, readyTimeoutMs?: int` | 文件/目录监听；防抖窗口、递归子目录、等待文件可读超时均可配置（默认 500 / false / 3000） |
 
-`manual/hotkey/watch` 为 v0.4 新增，`hotkey` 注册失败记 `tasks.log`，`watch` 若 `path` 为文件则监听其目录。
+`manual/hotkey/watch` 为 v0.4 新增，`hotkey` 注册失败记 `scheduler.log`，`watch` 若 `path` 为文件则监听其目录。
 
 ### 4.3 Action
 
@@ -208,15 +213,16 @@ App.OnAppExit → Stop() // 停止所有 Trigger + UnregisterHotKey
 
 **关键策略**：并发跳过、超时杀树、休眠补偿、异常隔离同前；`when` 条件不满足记 `skipped(condition)`；`manual` 任务不参与自动调度，仅 `GetManualTasks()` 供托盘渲染。
 
-## 6. 日志设计 `TaskLogger`
+## 6. 日志设计
 
-- **路径**：`Path.Combine(ConfigService.DirPath, "logs")`，启动时 `Directory.CreateDirectory`。
-- **文件**：
-  - `tasks.log`：`[2026-08-29 10:00:00] [INFO] [backup-docs] triggered(daily) -> started pid=1234`
-  - `task-<name>.log`：同上 + 进程 stdout/stderr 逐行 + `exitCode/duration`
-- **格式**：`yyyy-MM-dd HH:mm:ss.fff [LEVEL] [name] message`，UTF-8。
-- **轮转**：写入前检查文件长度 >5MB，则重命名为 `*.1.log / *.2.log / *.3.log`，最多 3 档。
-- **并发**：`lock` + `FileShare.Read` 打开，允许多线程同时写不同任务文件。
+- **路径**：`ConfigService.LogsDirPath`（即 `<DirPath>/logs`），启动时由 `TaskLogPaths.EnsureDirs()` 创建。
+- **三条通道**：
+  - `logs/scheduler.log`：调度管理事件（`TaskLogger`，格式 `yyyy-MM-dd HH:mm:ss.fff [LEVEL] [task=<name>] message`，UTF-8，5MB × 3 代轮转）。`"system"` 只作为 `[task=system]` 字段，不再生成 `task-system.log`。
+  - `logs/runs/<task>-<hash>/<yyyyMM>/<runId>.log`：每次运行独立文件（`RunContext` + `RunLogWriter`）。header 记命令/参数/工作目录/触发原因/时间，逐行 `OUT`/`ERR` 输出，footer 记退出码、耗时、结果与输出统计。内存缓冲批量落盘 + 显式 `Flush()` 屏障：stdout 回调不碰磁盘、不会写满 4KB 管道，外部记事本与 `File.ReadAllText` 又能正常读取。
+  - `logs/runs/history.jsonl`：`RunHistoryStore` 维护的 append-only 运行历史索引，`run.start` 先写、`run.end` 收尾；崩溃遗留由启动时 `RecoverAbandoned()` 补 `run.abandoned`。
+- **输出保护**：单行 64KB 截断、单次运行 10MB 停止落盘（仍继续 drain 管道）；命令行参数按用户决策原样记录，不做脱敏。
+- **保留**：30 天 / 每任务 200 次 / `runs` 总计 200MB，`Prune()` 启动时与每日触发，删除文件的同时原子重写索引。活跃运行永不淘汰。
+- **兼容**：本次重构**不保留** `logs/tasks.log` / `logs/task-<name>.log` 兼容层，UI、测试、语言包与文档已同步迁移。升级前已存在的旧日志文件**保留在磁盘上、不自动删除也不迁移**（避免误删用户排障资料），需要时由用户自行清理。
 
 ## 7. 与现有功能交互
 

@@ -131,7 +131,7 @@ Fired?.Invoke(Task, "idle:" + afterMinutes + "m");
 
 - `CanFire` **不消耗**，仍由服务层 `OnTriggerFired` 的 `TryAcquire` 统一消耗，因此**不存在重复计数**，服务层也无需为 idle 开特例。`CanFire → Fired → OnTriggerFired` 是同一线程同步链，窗口内不会有同任务的其它触发插入。
 - `SystemIdleService` 每秒扇出一次 `IdleTick`，因此冷却/额度恢复后，只要用户仍处于空闲，最多 1 秒就会自动补触发；`_fired` 仍保证「每个空闲周期只跑一次」，用户活跃时照常重新武装。
-- **拒绝日志必须限频**：按「refusal 文本变化」或「距上条 ≥ 60s」记一条 `TaskLogger.Info`，否则 1 秒一 tick 会刷爆 5MB 轮转日志。
+- **拒绝日志必须限频**：按「refusal 文本变化」或「距上条 ≥ 60s」记一条 `TaskLogger.Info`，否则 1 秒一 tick 会刷爆管理日志（`scheduler.log` 5MB × 3 代轮转）。
 - 未注入 limiter（旧构造/单测）时 `CanFire` 恒放行，保持现有行为不变。
 
 ### 4.6 可观测性

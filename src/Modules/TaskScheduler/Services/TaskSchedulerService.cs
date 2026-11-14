@@ -183,6 +183,8 @@ namespace CarroDesk.Services.Tasks
         {
             if (_started) return;
             _started = true;
+            // 补齐上次宿主崩溃遗留的未闭合运行记录，并执行一次保留策略清理
+            try { RunHistoryStore.Instance.Initialize(); } catch { }
             // 只记录一次：Reload / SetGlobalEnabled 触发的 Apply 不得移动 startup 延迟基准
             if (!_hostStartedAt.HasValue) _hostStartedAt = DateTime.Now;
             _globalEnabled = GetCurrentTasksEnabled() ?? true;
@@ -606,7 +608,7 @@ namespace CarroDesk.Services.Tasks
             {
                 if (task.Options != null && !task.Options.NotifyOnFailure) return;
                 if (code == 0) return;
-                Notify(Loc.T("Tasks.RunFailed", "任务失败 [{0}] exit={1}，详见 logs/task-{2}.log", task.Name, code, task.Name));
+                Notify(Loc.T("Tasks.RunFailed", "任务失败 [{0}] exit={1}，详见 logs/runs/{2}-*/", task.Name, code, task.Name));
             }
             catch { }
         }

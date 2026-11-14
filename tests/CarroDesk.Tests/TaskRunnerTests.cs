@@ -77,28 +77,31 @@ namespace CarroDesk.Tests
 
         private static string ReadTaskLog(string taskName)
         {
-            string path = TaskLogger.GetTaskLogPath(taskName);
-            return File.Exists(path) ? File.ReadAllText(path, Encoding.UTF8) : string.Empty;
+            // 重构后单次运行一个文件，按任务名拼接全部 run 日志。
+            return TaskLogTestHelper.ReadAllRunLogs(taskName);
         }
 
         /// <summary>
-        /// 任务日志写入：写后必须可被普通读取方式读到，且并发写入不丢行、不串行。
+        /// 运行日志写入：Flush 屏障后必须可被普通读取方式读到、并发写入不丢行、
+        /// 且进程输出绝不进入管理日志。
         ///
         /// 三条约束都来自真实调用方：
-        ///   1. 读后写一致——"查看日志"与单测都在写入后立刻用 File.ReadAllText 读；
-        ///   2. 外部可读——常开写句柄会让 File.ReadAllText(FileShare.Read) 直接失败；
-        ///   3. 并发安全——WriteOutput 是子进程 stdout/stderr 的回调线程，多任务同时输出。
+        ///   1. 读后写一致——"查看日志"先 FlushActive() 再打开，单测同样用 File.ReadAllText；
+        ///   2. 外部可读——无常开写句柄，File.ReadAllText / 记事本都能直接打开；
+        ///   3. 并发安全——输出回调是子进程 stdout/stderr 的线程池线程，多任务同时输出。
         /// </summary>
         [TestMethod]
-        public void TaskLogger_AppendIsReadableAndConcurrencySafe()
+        public void RunLog_AppendIsReadableAndConcurrencySafe()
         {
-            string taskName = "t_logger_probe";
-            string path = TaskLogger.GetTaskLogPath(taskName);
-            try { File.Delete(path); } catch { }
+            const string taskName = "t_logger_probe";
+            var run = RunContext.Begin(taskName, "unit-test", "cmd.exe", "",
+                Path.GetTempPath(), 1, RunHistoryStore.Instance);
+            string path = run.FullLogPath;
 
-            TaskLogger.Info(taskName, "first-line");
+            run.Event("INFO", "first-line");
+            run.Flush();
             StringAssert.Contains(File.ReadAllText(path, Encoding.UTF8), "first-line",
-                "日志写入后必须立即可被 File.ReadAllText 读到（读后写一致）");
+                "Flush 屏障后必须立即可被 File.ReadAllText 读到（读后写一致）");
 
             const int threads = 8;
             const int perThread = 40;
@@ -114,9 +117,7 @@ namespace CarroDesk.Tests
                     {
                         barrier.Wait();
                         for (int i = 0; i < perThread; i++)
-                        {
-                            TaskLogger.WriteOutput(taskName, "OUT", "w" + id + "-l" + i);
-                        }
+                            run.Output("OUT", "w" + id + "-l" + i);
                     }
                     catch (Exception ex) { lock (failures) failures.Add(ex); }
                 });
@@ -129,6 +130,7 @@ namespace CarroDesk.Tests
 
             if (failures.Count > 0) Assert.Fail("并发写入抛异常: " + failures[0]);
 
+            run.Complete(0, "ok", "exited");
             string content = File.ReadAllText(path, Encoding.UTF8);
             for (int t = 0; t < threads; t++)
             {
@@ -139,9 +141,12 @@ namespace CarroDesk.Tests
                 }
             }
 
-            // 聚合日志同样必须落盘且含同一条记录
-            StringAssert.Contains(File.ReadAllText(TaskLogger.GetAggregateLogPath(), Encoding.UTF8), "first-line",
-                "聚合日志必须同步落盘");
+            StringAssert.Contains(content, "=== RUN START");
+            StringAssert.Contains(content, "=== RUN END");
+            Assert.IsFalse(content.Contains("[task="), "运行日志不应包含管理日志的 [task=] 前缀");
+
+            string scheduler = TaskLogTestHelper.ReadSchedulerLog();
+            Assert.IsFalse(scheduler.Contains("w0-l0"), "管理日志不得包含任何进程输出");
         }
 
         private static void AssertProbeReceived(string taskName, string expectedArgs)

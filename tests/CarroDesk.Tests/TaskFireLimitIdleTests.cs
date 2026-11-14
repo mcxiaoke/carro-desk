@@ -158,12 +158,10 @@ namespace CarroDesk.Tests
 
             Assert.AreEqual(0, _fired, "额度用尽后不应触发");
 
-            string path = TaskLogger.GetTaskLogPath(_name);
-            int lines = File.Exists(path)
-                ? File.ReadAllLines(path).Count(l => l.Contains("idle deferred by fire limit"))
-                : 0;
+            // 限流拒绝是调度决策，只进 scheduler.log；任务名每次测试唯一，按 task 过滤即可
+            int lines = TaskLogTestHelper.CountSchedulerLines(_name, "idle deferred by fire limit");
             Assert.IsTrue(lines <= 2,
-                "1s 一 tick 的拒绝必须限频，实际日志 " + lines + " 条: " + path);
+                "1s 一 tick 的拒绝必须限频，实际日志 " + lines + " 条: " + TaskLogger.LogPath);
         }
     }
 }
