@@ -5,20 +5,18 @@ using CarroDesk.Models;
 namespace CarroDesk.Services.Tasks.Triggers
 {
     /// <summary>
-    /// Cron 触发器。
+    /// Cron 触发器。计算下一次触发时刻并做一次性精确定时，触发后立即安排下一次。
     ///
-    /// 调度方式：不再用固定间隔"轮询当前这一分钟"，而是计算下一次触发时刻并做一次性精确定时，
-    /// 触发后立即安排下一次。
+    /// 已知限制：基于本地墙钟（DateTime.Now）。夏令时「春季前跳」会跳过不存在的
+    /// 那一小时内的触发点；「秋季回拨」的重复小时只触发一次。
     ///
-    /// 为什么改：原实现每 30 秒判断一次 `IsMatch(DateTime.Now)`，只认"当前这一分钟"，
-    /// 且没有任何补触发机制——UI 线程一旦被阻塞超过 60 秒（弹窗、编辑器、GC 卡顿），
-    /// 该分钟的 Cron 任务会被永久跳过且无任何日志。
-    ///
-    /// 已知限制：基于本地墙钟（DateTime.Now）计算。夏令时"春季前跳"会跳过不存在的
-    /// 那一小时内的触发点（属本地时间语义的固有歧义）；"秋季回拨"的重复小时只触发一次。
+    /// lastFiredMinute 改由服务层持有的状态仓库保管（附录 B P0）：触发器实例每次 Apply
+    /// 都会重建，放实例字段会让同一分钟的补触发判定在重载后失效。
     /// </summary>
     public class CronTrigger : ITrigger
     {
+        private const string LastMinuteKey = "cron:lastMinute";
+
         /// <summary>DispatcherTimer 的 Interval 上限约为 int.MaxValue 毫秒（约 24.8 天）。</summary>
         private static readonly TimeSpan MaxTimerInterval = TimeSpan.FromMilliseconds(int.MaxValue - 1000);
 
@@ -27,18 +25,25 @@ namespace CarroDesk.Services.Tasks.Triggers
 
         private DispatcherTimer _timer;
         private string _expr;
-        private DateTime _lastFiredMinute = DateTime.MinValue;
+        private readonly ITriggerStateStore _state;
 
-        /// <summary>不可达表达式只告警一次：<see cref="ScheduleNext"/> 每次重排都会走到这个分支。</summary>
+        private DateTime LastFiredMinute
+        {
+            get { return _state.Get(Task.Name, LastMinuteKey) ?? DateTime.MinValue; }
+            set { _state.Set(Task.Name, LastMinuteKey, value); }
+        }
+
+        /// <summary>不可达表达式只告警一次：ScheduleNext 每次重排都会走到这个分支。</summary>
         private bool _warnedUnreachable;
 
         /// <summary>当前定时器所指向的目标触发时刻，用于休眠恢复后的漏触发补偿。</summary>
         private DateTime? _scheduledFor;
 
-        public CronTrigger(TaskDefinition task)
+        public CronTrigger(TaskDefinition task, ITriggerStateStore stateStore = null)
         {
             Task = task;
             _expr = task.Trigger.Expr ?? "";
+            _state = stateStore ?? new InMemoryTriggerStateStore();
         }
 
         public void Start()
@@ -55,9 +60,7 @@ namespace CarroDesk.Services.Tasks.Triggers
             var next = CronHelper.GetNextOccurrence(_expr, now);
             if (!next.HasValue)
             {
-                // 表达式合法但未来八年内没有任何触发点（例如 2 月 30 日），不再空转。
-                // 必须留下痕迹：否则触发器彻底静默失效，用户只会看到"任务从不定时跑"，
-                // 而配置本身是合法的，编辑器也不会报错。
+                // 表达式合法但未来八年内没有任何触发点（例如 2 月 30 日）：不再空转，但必须留痕
                 if (!_warnedUnreachable)
                 {
                     _warnedUnreachable = true;
@@ -75,7 +78,6 @@ namespace CarroDesk.Services.Tasks.Triggers
 
             var delay = next.Value - now;
             if (delay < TimeSpan.Zero) delay = TimeSpan.Zero;
-            // 触发点可能超过定时器上限（如每年 1 月 1 日）：先早醒，醒来再重新计算
             if (delay > MaxTimerInterval) delay = MaxTimerInterval;
 
             _timer = new DispatcherTimer { Interval = delay };
@@ -90,20 +92,16 @@ namespace CarroDesk.Services.Tasks.Triggers
 
             var now = DateTime.Now;
             var minute = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, 0);
-            // 仅当越过原定分钟（休眠/UI 阻塞导致定时器迟到）才算漏触发；
-            // scheduled.Value 为分钟对齐值，正常到点时 minute == scheduled，不应误判为 catch-up。
             bool missed = scheduled.HasValue && minute > scheduled.Value;
             var firedMinute = missed ? scheduled.Value : minute;
 
-            if (_lastFiredMinute != firedMinute)
+            if (LastFiredMinute != firedMinute)
             {
                 try
                 {
-                    // 正常到点仍复检表达式；若 UI/Dispatcher 阻塞跨过了原定分钟，
-                    // 则依据已保存的 _scheduledFor 补触发一次，不能只检查恢复后的当前分钟。
                     if (missed || CronHelper.IsMatch(now, _expr))
                     {
-                        _lastFiredMinute = firedMinute;
+                        LastFiredMinute = firedMinute;
                         var handler = Fired;
                         if (handler != null)
                             handler(Task, missed ? "cron-catchup:" + _expr : "cron:" + _expr);
@@ -118,18 +116,16 @@ namespace CarroDesk.Services.Tasks.Triggers
             ScheduleNext();
         }
 
-        /// <summary>
-        /// 休眠/挂起恢复后的漏触发补偿：若睡眠期间错过了原定触发点，立即补触发一次。
-        /// </summary>
+        /// <summary>休眠/挂起恢复后的漏触发补偿。</summary>
         public void CheckCatchUp()
         {
             var scheduled = _scheduledFor;
             Stop();
 
             if (scheduled.HasValue && scheduled.Value <= DateTime.Now &&
-                (_lastFiredMinute == DateTime.MinValue || _lastFiredMinute < scheduled.Value))
+                (LastFiredMinute == DateTime.MinValue || LastFiredMinute < scheduled.Value))
             {
-                _lastFiredMinute = new DateTime(
+                LastFiredMinute = new DateTime(
                     scheduled.Value.Year, scheduled.Value.Month, scheduled.Value.Day,
                     scheduled.Value.Hour, scheduled.Value.Minute, 0);
 

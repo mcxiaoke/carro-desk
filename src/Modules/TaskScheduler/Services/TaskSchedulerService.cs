@@ -70,6 +70,9 @@ namespace CarroDesk.Services.Tasks
         /// </summary>
         private readonly TaskFireLimiter _fireLimiter;
 
+        /// <summary>触发器 last-fired 状态仓库，服务层持有，不随 Apply 重建触发器而丢失。</summary>
+        private readonly ITriggerStateStore _triggerState;
+
         public bool GlobalEnabled => _globalEnabled;
         public bool IsGlobalEnabled => _globalEnabled;
         public IReadOnlyList<TaskDefinition> Tasks
@@ -125,7 +128,8 @@ namespace CarroDesk.Services.Tasks
             Action<string> balloonNotifier = null,
             IHotkeyService hotkeyService = null,
             Dispatcher dispatcher = null,
-            TaskFireLimiter fireLimiter = null)
+            TaskFireLimiter fireLimiter = null,
+            ITriggerStateStore triggerState = null)
         {
             _idleService = idleService;
             _configManager = configManager;
@@ -134,6 +138,7 @@ namespace CarroDesk.Services.Tasks
             _hotkeyService = hotkeyService;
             _dispatcher = dispatcher;
             _fireLimiter = fireLimiter ?? new TaskFireLimiter(TaskFireLimiter.DefaultStatePath);
+            _triggerState = triggerState ?? new PersistentTriggerStateStore();
         }
 
         public void Start()
@@ -311,9 +316,12 @@ namespace CarroDesk.Services.Tasks
             // 频率限制状态按任务名聚合、跨 Apply 存活：这里只清理已删除任务的条目，
             // 绝不清空额度，否则「保存任务 / 配置热重载」就能绕过每日上限。
             // 放在锁外：ForgetRemovedTasks 可能落盘，不应持 _lock 做文件 IO。
-            _fireLimiter.ForgetRemovedTasks(newTasks
+            var activeNames = newTasks
                 .Where(t => t != null && t.Enabled && !string.IsNullOrEmpty(t.Name))
-                .Select(t => t.Name));
+                .Select(t => t.Name)
+                .ToArray();
+            _fireLimiter.ForgetRemovedTasks(activeNames);
+            _triggerState.ForgetRemoved(activeNames);
 
             var toKill = new List<KeyValuePair<string, TaskProcessHandle>>();
 
@@ -451,8 +459,8 @@ namespace CarroDesk.Services.Tasks
                     }
                     return new StartupTrigger(task, _hostStartedAt);
                 case TaskTriggerType.Interval: return new IntervalTrigger(task);
-                case TaskTriggerType.Daily: return new DailyTrigger(task);
-                case TaskTriggerType.Cron: return new CronTrigger(task);
+                case TaskTriggerType.Daily: return new DailyTrigger(task, _triggerState);
+                case TaskTriggerType.Cron: return new CronTrigger(task, _triggerState);
                 case TaskTriggerType.SessionLock:
                 case TaskTriggerType.SessionUnlock: return new SessionEventTrigger(task);
                 case TaskTriggerType.Idle: return new IdleTrigger(task, _idleService, _fireLimiter);

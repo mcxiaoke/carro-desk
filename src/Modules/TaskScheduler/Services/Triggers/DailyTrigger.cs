@@ -6,28 +6,42 @@ namespace CarroDesk.Services.Tasks.Triggers
 {
     public class DailyTrigger : ITrigger
     {
+        private const string LastDateKey = "daily:lastDate";
+
         public TaskDefinition Task { get; private set; }
         public event Action<TaskDefinition, string> Fired;
         private DispatcherTimer _timer;
         private TimeSpan _at;
-        private DateTime _lastFiredDate = DateTime.MinValue;
 
-        public DailyTrigger(TaskDefinition task)
+        /// <summary>
+        /// 当天是否已触发改由服务层持有的状态仓库保管：触发器实例每次 Apply 都会重建，
+        /// 放实例字段会被清零，重载后同一任务当天可能触发两次（附录 B P0）。
+        /// </summary>
+        private readonly ITriggerStateStore _state;
+
+        public DailyTrigger(TaskDefinition task, ITriggerStateStore stateStore = null)
         {
             Task = task;
+            _state = stateStore ?? new InMemoryTriggerStateStore();
             TimeSpan t;
             if (!TaskDefinition.TryParseTime(task.Trigger.At, out t))
                 t = new TimeSpan(2, 0, 0);
             _at = t;
-            // 防误触初始化：启动/重载时刻已晚于当天触发点时记为"今天已触发"。
-            // CatchUpMissed（错过补跑）改由 TaskSchedulerService 在 Apply 时按会话集合投递一次：
-            // 此前这里按 catchUp 跳过初始化、Start 立即补发，而触发器每次配置重载都会整体重建，
-            // 导致"错过补跑"退化为"每次重载都补跑"（docs/CODE-REVIEW-20261025.md M3）。
+
+            // 防误触初始化：启动/重载时刻已晚于当天触发点时记为「今天已触发」。
+            // 仅在仓库尚无记录时写入，避免每次重建都覆盖跨 Apply 保留下来的状态。
+            // CatchUpMissed 的补跑由 TaskSchedulerService 在 Apply 时按会话集合投递一次（M3）。
             var now = DateTime.Now;
-            if (now >= now.Date + _at)
+            if (!_state.Get(Task.Name, LastDateKey).HasValue && now >= now.Date + _at)
             {
-                _lastFiredDate = now.Date;
+                _state.Set(Task.Name, LastDateKey, now.Date);
             }
+        }
+
+        private DateTime LastFiredDate
+        {
+            get { return _state.Get(Task.Name, LastDateKey) ?? DateTime.MinValue; }
+            set { _state.Set(Task.Name, LastDateKey, value); }
         }
 
         public void Start()
@@ -36,8 +50,7 @@ namespace CarroDesk.Services.Tasks.Triggers
             _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
             _timer.Tick += OnTick;
             _timer.Start();
-            // 只有当天尚未记录执行时才启动立即检查
-            if (_lastFiredDate.Date != DateTime.Today)
+            if (LastFiredDate.Date != DateTime.Today)
             {
                 OnTick(null, null);
             }
@@ -47,20 +60,20 @@ namespace CarroDesk.Services.Tasks.Triggers
         {
             var now = DateTime.Now;
             var todayAt = now.Date + _at;
-            // fire if now >= todayAt and not yet fired today, and within 90s window or overdue
-            if (now >= todayAt && _lastFiredDate.Date != now.Date)
+
+            // 当天首次越过触发点即触发一次，包含休眠/UI 阻塞醒来后的延迟补跑。
+            // LastFiredDate 在 Fired 时置位：被 when 条件或并发槽拒绝也记为「今天已跑」。
+            // 这是明确的设计取舍（与 Windows 任务计划程序一致）：条件不满足时不整天反复重试。
+            // 旧注释写的「90s 窗口 / 至少 60s 之后」从未在代码中实现，已删除以免误导。
+            if (now >= todayAt && LastFiredDate.Date != now.Date)
             {
-                // overdue check: if now is more than 2 minutes past, still fire once (catch-up)
-                // but avoid double fire on timer jitter: require at least 60s after scheduled
-                _lastFiredDate = now.Date;
+                LastFiredDate = now.Date;
                 var h = Fired;
                 if (h != null) h(Task, "daily:" + _at);
             }
-            // also catch-up if we missed yesterday due to sleep and now is next day early morning before todayAt?
-            // not needed, daily is always next occurrence.
         }
 
-        // Called on resume to catch up missed run within same day
+        /// <summary>休眠恢复后由服务层调用，补当天漏掉的触发点。</summary>
         public void CheckCatchUp()
         {
             OnTick(null, null);
