@@ -460,6 +460,10 @@ namespace CarroDesk.Services.Tasks
                     o["path"] = tr.WatchPath ?? "";
                     if (!string.IsNullOrWhiteSpace(tr.WatchFilter) && tr.WatchFilter != "*.*") o["filter"] = tr.WatchFilter;
                     if (!string.IsNullOrWhiteSpace(tr.WatchEvent) && tr.WatchEvent != "created") o["event"] = tr.WatchEvent;
+                    // 非缺省值才落盘，保持旧 tasks.json 形态不变
+                    if (tr.WatchDebounceMs != 500) o["debounceMs"] = tr.WatchDebounceMs;
+                    if (tr.WatchIncludeSubdirs) o["includeSubdirs"] = true;
+                    if (tr.WatchReadyTimeoutMs != 3000) o["readyTimeoutMs"] = tr.WatchReadyTimeoutMs;
                     break;
             }
             return o;
@@ -638,6 +642,9 @@ namespace CarroDesk.Services.Tasks
                     if (string.IsNullOrWhiteSpace(trig.WatchFilter)) trig.WatchFilter = "*.*";
                     trig.WatchEvent = GetStr(td, "event", "watchEvent");
                     if (string.IsNullOrWhiteSpace(trig.WatchEvent)) trig.WatchEvent = "created";
+                    trig.WatchDebounceMs = GetInt(td, 500, "debounceMs", "debounce");
+                    trig.WatchIncludeSubdirs = GetBool(td, false, "includeSubdirs", "includeSubdirectories");
+                    trig.WatchReadyTimeoutMs = GetInt(td, 3000, "readyTimeoutMs", "fileReadyTimeoutMs");
                     task.Trigger = trig;
                 }
                 else if (trigToken != null && trigToken.Type == JTokenType.String)

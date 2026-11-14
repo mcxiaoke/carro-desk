@@ -37,6 +37,15 @@ namespace CarroDesk.Models
         public string WatchFilter { get; set; } = "*.*";
         public string WatchEvent { get; set; } = "created";
 
+        /// <summary>同一文件路径的防抖窗口毫秒数（默认 500，0=不去抖，0..60000）。</summary>
+        public int WatchDebounceMs { get; set; } = 500;
+
+        /// <summary>是否递归监听子目录（默认 false）。</summary>
+        public bool WatchIncludeSubdirs { get; set; } = false;
+
+        /// <summary>等待文件可读取的最长毫秒数（默认 3000，0=不等待，0..60000）。</summary>
+        public int WatchReadyTimeoutMs { get; set; } = 3000;
+
         [JsonIgnore]
         public string RawType { get; set; } = "";
     }
@@ -300,6 +309,10 @@ namespace CarroDesk.Models
             if (Trigger.Type == TaskTriggerType.Watch)
             {
                 if (string.IsNullOrWhiteSpace(Trigger.WatchPath)) return "watch path required";
+                if (Trigger.WatchDebounceMs < 0 || Trigger.WatchDebounceMs > 60000)
+                    return "watch debounceMs must be 0..60000";
+                if (Trigger.WatchReadyTimeoutMs < 0 || Trigger.WatchReadyTimeoutMs > 60000)
+                    return "watch readyTimeoutMs must be 0..60000";
             }
             if (Options != null && Options.TimeoutSec < 0) return "timeoutSec invalid";
             if (Options != null && Options.Retry < 0) return "retry invalid";

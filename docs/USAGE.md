@@ -93,7 +93,7 @@ CarroDesk（标题）
 | `idle` | `{"type":"idle","afterMinutes":10}` | 空闲后；建议配合 `options` 频率限制（见 §4.3.1） |
 | `manual` | `{"type":"manual"}` | 托盘手动运行 |
 | `hotkey` | `{"type":"hotkey","hotkey":"Ctrl+Alt+Q"}` | 全局热键（重启宿主生效） |
-| `watch` | `{"type":"watch","path":"%USERPROFILE%/Downloads","filter":"*.zip","event":"created"}` | 文件监听（防抖 500ms） |
+| `watch` | `{"type":"watch","path":"%USERPROFILE%/Downloads","filter":"*.zip","event":"created"}` | 文件监听；可选 `debounceMs`（默认 500，0=关闭）、`includeSubdirs`（默认 false）、`readyTimeoutMs`（默认 3000，0=不等待文件可读）；`event` 支持 `all` / `*` |
 
 ### 4.3 运行选项 options（重点：wait / detach）
 

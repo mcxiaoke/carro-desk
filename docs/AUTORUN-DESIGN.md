@@ -123,7 +123,7 @@ src/
 | `idle` | `afterMinutes: int` | 系统空闲达到阈值时；每个空闲周期最多触发一次，可用 `options` 频率限制约束每天次数与最短间隔（冷却恢复后仍在空闲则自动补触发） |
 | `manual` | - | 仅手动（托盘 `任务→手动运行` 点击触发），替代 AHK 托盘启动器 |
 | `hotkey` | `hotkey: "Ctrl+Alt+Q"` | 全局热键触发，`Ctrl/Alt/Shift/Win + A-Z/0-9/F1-24`，`RegisterHotKey` 实现 |
-| `watch` | `path: string, filter?: "*.ext", event?: "created\|changed\|deleted\|renamed\|all"` | 文件/目录监听，`FileSystemWatcher` 防抖 500ms |
+| `watch` | `path: string, filter?: "*.ext", event?: "created\|changed\|deleted\|renamed\|all\|*", debounceMs?: int, includeSubdirs?: bool, readyTimeoutMs?: int` | 文件/目录监听；防抖窗口、递归子目录、等待文件可读超时均可配置（默认 500 / false / 3000） |
 
 `manual/hotkey/watch` 为 v0.4 新增，`hotkey` 注册失败记 `tasks.log`，`watch` 若 `path` 为文件则监听其目录。
 
