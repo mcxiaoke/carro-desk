@@ -450,7 +450,7 @@ namespace CarroDesk.Services.Tasks
                 case TaskTriggerType.Cron: return new CronTrigger(task);
                 case TaskTriggerType.SessionLock:
                 case TaskTriggerType.SessionUnlock: return new SessionEventTrigger(task);
-                case TaskTriggerType.Idle: return new IdleTrigger(task, _idleService);
+                case TaskTriggerType.Idle: return new IdleTrigger(task, _idleService, _fireLimiter);
                 case TaskTriggerType.Manual: return new ManualTrigger(task);
                 case TaskTriggerType.Hotkey: return new HotkeyTrigger(task, _hotkeyService);
                 case TaskTriggerType.Watch: return new FileWatcherTrigger(task);
