@@ -53,6 +53,9 @@ namespace CarroDesk.Services.Tasks
         private const int MaxConcurrentInstances = 5;
         private bool _started;
         private bool _globalEnabled = true;
+
+        /// <summary>宿主本次会话的启动时刻，作为 startup 触发器 delaySec 的绝对基准（跨 Apply 不变）。</summary>
+        private DateTime? _hostStartedAt;
         private readonly IIdleService _idleService;
         private readonly IConfigManager _configManager;
         private readonly INotificationService _notificationService;
@@ -137,6 +140,8 @@ namespace CarroDesk.Services.Tasks
         {
             if (_started) return;
             _started = true;
+            // 只记录一次：Reload / SetGlobalEnabled 触发的 Apply 不得移动 startup 延迟基准
+            if (!_hostStartedAt.HasValue) _hostStartedAt = DateTime.Now;
             _globalEnabled = GetCurrentTasksEnabled() ?? true;
 
             TaskLoadResult result = null;
@@ -444,7 +449,7 @@ namespace CarroDesk.Services.Tasks
                         if (_firedStartupTasks.Contains(task.Name))
                             return null;
                     }
-                    return new StartupTrigger(task);
+                    return new StartupTrigger(task, _hostStartedAt);
                 case TaskTriggerType.Interval: return new IntervalTrigger(task);
                 case TaskTriggerType.Daily: return new DailyTrigger(task);
                 case TaskTriggerType.Cron: return new CronTrigger(task);
@@ -460,7 +465,7 @@ namespace CarroDesk.Services.Tasks
                         if (_firedStartupTasks.Contains(task.Name))
                             return null;
                     }
-                    return new StartupTrigger(task);
+                    return new StartupTrigger(task, _hostStartedAt);
             }
         }
 
@@ -618,14 +623,15 @@ namespace CarroDesk.Services.Tasks
         {
             if (task != null && !string.IsNullOrEmpty(task.Name) && reason != null)
             {
-                if (reason.StartsWith("startup", StringComparison.OrdinalIgnoreCase))
+                var info = TriggerReason.Parse(reason);
+                if (info.IsStartup)
                 {
                     lock (_lock)
                     {
                         _firedStartupTasks.Add(task.Name);
                     }
                 }
-                else if (reason.StartsWith("daily", StringComparison.OrdinalIgnoreCase))
+                else if (info.IsDaily)
                 {
                     // 记录"当天已正常触发"，供 ApplyCoreLocked 的 CatchUpMissed 判断（H1）。
                     lock (_lock)
@@ -680,9 +686,9 @@ namespace CarroDesk.Services.Tasks
                 return;
 
             var fsm = GetOrCreateFsm(task.Name);
-            bool userDriven = string.Equals(reason, "manual", StringComparison.OrdinalIgnoreCase) ||
-                              string.Equals(reason, "restart", StringComparison.OrdinalIgnoreCase) ||
-                              string.Equals(reason, "hotkey", StringComparison.OrdinalIgnoreCase);
+            // 统一前缀判定：HotkeyTrigger 的 reason 是 "hotkey:<组合键>"，
+            // 旧实现用 string.Equals 恒为 false，热键在熔断/等待重试期会被误当自动触发（附录 B）。
+            bool userDriven = TriggerReason.IsUserDriven(reason);
 
             bool allowConcurrent = task.Options != null && task.Options.AllowConcurrent;
             string refusal;

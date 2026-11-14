@@ -100,10 +100,8 @@ namespace CarroDesk.Services.Tasks
         /// </summary>
         public static bool IsUserDrivenReason(string reason)
         {
-            if (string.IsNullOrEmpty(reason)) return false;
-            return reason.StartsWith("manual", StringComparison.OrdinalIgnoreCase)
-                || reason.StartsWith("restart", StringComparison.OrdinalIgnoreCase)
-                || reason.StartsWith("hotkey", StringComparison.OrdinalIgnoreCase);
+            // 统一到 TriggerReason，避免限流门、ExecuteAsync、OnTriggerFired 各写一套前缀规则
+            return TriggerReason.IsUserDriven(reason);
         }
 
         /// <summary>
