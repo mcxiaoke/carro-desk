@@ -96,6 +96,8 @@ CarroDesk（标题）
 | `watch` | `{"type":"watch","path":"%USERPROFILE%/Downloads","filter":"*.zip","event":"created"}` | 文件监听；可选 `debounceMs`（默认 500，0=关闭）、`includeSubdirs`（默认 false）、`readyTimeoutMs`（默认 3000，0=不等待文件可读）；`event` 支持 `all` / `*` |
 
 > `interval` / `daily` / `cron` 的下次触发时刻可由 `ITaskSchedulerService.GetNextFireTimes()` 查询（本地时间）。三者相位跨配置重载与宿主重启保留，休眠恢复补一次漏跑；`interval` 的相位由 `task-trigger-state.json` 保管。全局并发实例上限 20（单任务 5），超限记 `skipped(...) global instance limit reached`。
+>
+> `watch` 的 `debounceMs` / `includeSubdirs` / `readyTimeoutMs` 与 `when.onlyIdleSec` 均可在任务编辑器中直接设置（分别在「触发参数」watch 面板与「前置约束条件」区），无需手改 JSON。
 
 ### 4.3 运行选项 options（重点：wait / detach）
 

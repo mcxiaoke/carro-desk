@@ -228,6 +228,14 @@
                                     <ComboBoxItem Content="{loc:Loc Tasks.MgrAllAnyChange, Default='all (所有变动)'}" Tag="all"/>
                                 </ComboBox>
                             </Grid>
+                            <Grid Margin="0,4,0,2">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="90"/><ColumnDefinition Width="140"/><ColumnDefinition Width="90"/><ColumnDefinition Width="140"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                <TextBlock Text="{loc:Loc Tasks.MgrWatchDebounce, Default='防抖(毫秒)'}" VerticalAlignment="Center" Foreground="#FF334155"/>
+                                <TextBox x:Name="WatchDebounceMsBox" Grid.Column="1" Height="26" Padding="5,2" Text="500" TextChanged="OnFormFieldChanged"/>
+                                <TextBlock Grid.Column="2" Text="{loc:Loc Tasks.MgrWatchReadyTimeout, Default='文件就绪超时(毫秒)'}" VerticalAlignment="Center" Margin="10,0,0,0" Foreground="#FF334155"/>
+                                <TextBox x:Name="WatchReadyTimeoutMsBox" Grid.Column="3" Height="26" Padding="5,2" Text="3000" TextChanged="OnFormFieldChanged"/>
+                                <CheckBox x:Name="WatchIncludeSubdirsBox" Grid.Column="4" Content="{loc:Loc Tasks.MgrWatchSubdirs, Default='包含子目录'}" VerticalAlignment="Center" Margin="12,0,0,0" Click="OnFormFieldChanged"/>
+                            </Grid>
                             <TextBlock Text="可在动作参数中使用 {{file}} 接收变动文件全路径，{{fileName}} 接收文件名" Foreground="#FF64748B" FontSize="11" Margin="90,3,0,0"/>
                         </StackPanel>
 
@@ -352,6 +360,12 @@
                             <CheckBox x:Name="AcPowerBox" Content="{loc:Loc Tasks.MgrOnlyOnACPower, Default='仅交流供电运行'}" Margin="0,4,20,4" Click="OnFormFieldChanged"/>
                             <CheckBox x:Name="NetworkBox" Content="{loc:Loc Tasks.MgrOnlyWhenNetworkIs, Default='仅有网络时运行'}" Margin="0,4,20,4" Click="OnFormFieldChanged"/>
                         </WrapPanel>
+                        <Grid Margin="0,0,0,4">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="90"/><ColumnDefinition Width="140"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="{loc:Loc Tasks.MgrOnlyIdleSec, Default='空闲阈值(秒)'}" VerticalAlignment="Center" Foreground="#FF334155"/>
+                            <TextBox x:Name="OnlyIdleSecBox" Grid.Column="1" Height="24" Padding="4,2" Text="60" TextChanged="OnFormFieldChanged"/>
+                            <TextBlock Grid.Column="2" Text="{loc:Loc Tasks.MgrOnlyIdleSecHint, Default='仅空闲时运行生效；0 视为 60'}" VerticalAlignment="Center" Margin="10,0,0,0" Foreground="#FF94A3B8" FontSize="11"/>
+                        </Grid>
                         <Grid>
                             <Grid.ColumnDefinitions><ColumnDefinition Width="90"/><ColumnDefinition Width="*"/><ColumnDefinition Width="90"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                             <TextBlock Text="{loc:Loc Tasks.MgrRequireFileToExist, Default='需存在文件'}" VerticalAlignment="Center" Foreground="#FF334155"/>

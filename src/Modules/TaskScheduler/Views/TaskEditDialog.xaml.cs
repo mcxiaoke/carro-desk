@@ -103,6 +103,9 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             SelectComboByTag(WatchEventBox, (trig.WatchEvent ?? "created").ToLowerInvariant());
             HotkeyBox.Text = trig.Hotkey ?? "";
             IdleMinutesBox.Text = trig.AfterMinutes > 0 ? trig.AfterMinutes.ToString() : "5";
+            WatchDebounceMsBox.Text = trig.WatchDebounceMs.ToString();
+            WatchReadyTimeoutMsBox.Text = trig.WatchReadyTimeoutMs.ToString();
+            WatchIncludeSubdirsBox.IsChecked = trig.WatchIncludeSubdirs;
 
             // Action
             var act = task.Action ?? new TaskAction();
@@ -149,6 +152,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             // When
             var when = task.When ?? new TaskCondition();
             OnlyIdleBox.IsChecked = when.OnlyIdle;
+            OnlyIdleSecBox.Text = when.OnlyIdleSec.ToString();
             AcPowerBox.IsChecked = when.AcPower;
             NetworkBox.IsChecked = when.NetworkAvailable;
             FileExistsBox.Text = when.FileExists ?? "";
@@ -589,6 +593,15 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             if (!TryReadInt(MaxRunsPerDayBox, 0, 1000, Loc.T("Tasks.MgrMaxRunsPerDay", "每天最多次数"), out error)) return false;
             if (!TryReadInt(MinIntervalSecBox, 0, 86400, Loc.T("Tasks.MgrMinIntervalSec", "最短间隔(秒)"), out error)) return false;
 
+            // 空闲阈值常驻可见，统一校验；watch 高级参数只在 watch 面板生效时校验，
+            // 避免隐藏面板里的旧值挡住其它触发器的保存（M16 同款规则）。
+            if (!TryReadInt(OnlyIdleSecBox, 0, 86400, Loc.T("Tasks.MgrOnlyIdleSec", "空闲阈值(秒)"), out error)) return false;
+            if (trigType == "watch")
+            {
+                if (!TryReadInt(WatchDebounceMsBox, 0, 60000, Loc.T("Tasks.MgrWatchDebounce", "防抖(毫秒)"), out error)) return false;
+                if (!TryReadInt(WatchReadyTimeoutMsBox, 0, 60000, Loc.T("Tasks.MgrWatchReadyTimeout", "文件就绪超时(毫秒)"), out error)) return false;
+            }
+
             error = null;
             return true;
         }
@@ -646,7 +659,10 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                 WatchFilter = WatchFilterBox.Text.Trim(),
                 WatchEvent = GetSelectedComboTag(WatchEventBox),
                 Hotkey = HotkeyBox.Text.Trim(),
-                AfterMinutes = int.TryParse(IdleMinutesBox.Text.Trim(), out var idle) ? idle : 5
+                AfterMinutes = int.TryParse(IdleMinutesBox.Text.Trim(), out var idle) ? idle : 5,
+                WatchDebounceMs = int.TryParse(WatchDebounceMsBox.Text.Trim(), out var wdeb) ? wdeb : 500,
+                WatchReadyTimeoutMs = int.TryParse(WatchReadyTimeoutMsBox.Text.Trim(), out var wready) ? wready : 3000,
+                WatchIncludeSubdirs = WatchIncludeSubdirsBox.IsChecked ?? false
             };
 
             // Action
@@ -717,6 +733,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             task.When = new TaskCondition
             {
                 OnlyIdle = OnlyIdleBox.IsChecked ?? false,
+                OnlyIdleSec = int.TryParse(OnlyIdleSecBox.Text.Trim(), out var idleSec) ? idleSec : 60,
                 AcPower = AcPowerBox.IsChecked ?? false,
                 NetworkAvailable = NetworkBox.IsChecked ?? false,
                 FileExists = FileExistsBox.Text.Trim(),
