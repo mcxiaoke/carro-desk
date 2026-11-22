@@ -63,7 +63,13 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             string path = row.ResolveLogFullPath();
             if (string.IsNullOrEmpty(path) || !System.IO.File.Exists(path))
             {
-                MessageBox.Show(this, Loc.Format("Tasks.NoLogFile", path ?? ""),
+                // 若历史条目记录的文件不存在（如旧单次运行文件已清理），回退查找该任务最新日志
+                path = RunHistoryStore.Instance.GetLatestRunLogPath(_taskName);
+            }
+            if (string.IsNullOrEmpty(path) || !System.IO.File.Exists(path))
+            {
+                string expected = TaskLogPaths.GetRunLogPath(_taskName, DateTime.Now);
+                MessageBox.Show(this, Loc.Format("Tasks.NoLogFile", expected),
                     Loc.T("Tasks.NoLogTitle", "暂无日志"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }

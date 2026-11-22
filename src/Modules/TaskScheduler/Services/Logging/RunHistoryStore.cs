@@ -217,9 +217,12 @@ namespace CarroDesk.Services.Tasks
             return q.OrderByDescending(x => x.StartUtc).Take(Math.Max(1, max)).ToArray();
         }
 
-        /// <summary>某任务最近一次运行的日志文件绝对路径；无记录或文件已清理时返回 null。</summary>
+        /// <summary>某任务最近一次运行的日志文件绝对路径；优先从磁盘扫描最新文件，兜底使用索引记录。</summary>
         public string GetLatestRunLogPath(string taskName)
         {
+            string found = TaskLogPaths.FindLatestLogFile(taskName, _logsDir);
+            if (!string.IsNullOrEmpty(found)) return found;
+
             var latest = Query(taskName, 1).FirstOrDefault();
             if (latest == null || string.IsNullOrEmpty(latest.LogPath)) return null;
             string full = ResolveLogPath(latest.LogPath);
@@ -254,18 +257,32 @@ namespace CarroDesk.Services.Tasks
                     keep.Add(entry.RunId);
                 }
 
-                // 总字节约束：从最旧的开始淘汰，直到 runs 目录估算大小回到上限内
+                // 总字节约束：按被保留条目所引用的唯一日志文件物理大小去重统计
+                var keptFiles = new HashSet<string>(
+                    entries.Where(x => keep.Contains(x.RunId))
+                           .Select(x => ResolveLogPath(x.LogPath))
+                           .Where(p => !string.IsNullOrEmpty(p)),
+                    StringComparer.OrdinalIgnoreCase);
+
                 long total = 0;
-                foreach (var entry in ordered.Where(x => keep.Contains(x.RunId)))
-                    total += FileSizeOf(entry);
+                foreach (var file in keptFiles)
+                {
+                    try { if (File.Exists(file)) total += new FileInfo(file).Length; } catch { }
+                }
+
                 if (total > TaskLogPaths.MaxRunStorageBytes)
                 {
                     foreach (var entry in ordered.Where(x => keep.Contains(x.RunId)).Reverse())
                     {
                         if (total <= TaskLogPaths.MaxRunStorageBytes) break;
                         if (activeIds.Contains(entry.RunId)) continue;
-                        total -= FileSizeOf(entry);
                         keep.Remove(entry.RunId);
+
+                        string logFile = ResolveLogPath(entry.LogPath);
+                        if (!string.IsNullOrEmpty(logFile) && !entries.Any(x => keep.Contains(x.RunId) && string.Equals(ResolveLogPath(x.LogPath), logFile, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            try { if (File.Exists(logFile)) total -= new FileInfo(logFile).Length; } catch { }
+                        }
                     }
                 }
 
@@ -273,12 +290,29 @@ namespace CarroDesk.Services.Tasks
                 removed.ExceptWith(keep);
                 if (removed.Count == 0) return;
 
+                // 重新获取最终保留的文件集合
+                var finalKeptFiles = new HashSet<string>(
+                    entries.Where(x => keep.Contains(x.RunId))
+                           .Select(x => ResolveLogPath(x.LogPath))
+                           .Where(p => !string.IsNullOrEmpty(p)),
+                    StringComparer.OrdinalIgnoreCase);
+
+                // 只有被淘汰条目引用且不再被任何保留条目引用的文件才安全删除
+                var filesToDelete = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var entry in entries.Where(x => removed.Contains(x.RunId)))
+                {
+                    string full = ResolveLogPath(entry.LogPath);
+                    if (!string.IsNullOrEmpty(full) && !finalKeptFiles.Contains(full))
+                    {
+                        filesToDelete.Add(full);
+                    }
+                }
+
+                foreach (string file in filesToDelete)
                 {
                     try
                     {
-                        string full = ResolveLogPath(entry.LogPath);
-                        if (!string.IsNullOrEmpty(full) && File.Exists(full)) File.Delete(full);
+                        if (File.Exists(file)) File.Delete(file);
                     }
                     catch { }
                 }

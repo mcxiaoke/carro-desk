@@ -712,14 +712,14 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             var row = GetSelectedRow();
             if (row == null) return;
 
-            // 先把仍在运行的日志缓冲落盘，再打开该任务最近一次运行的文件。
-            // 路径由 TaskLogPaths / RunHistoryStore 统一给出，避免 UI 与写入端各拼一套。
+            // 先把仍在运行的日志缓冲落盘，再打开该任务最新的月度运行日志文件。
+            // 优先从 runs/<task>/ 目录扫描最新文件，兜底使用索引或当月预期路径。
             try { RunHistoryStore.Instance.FlushActive(); } catch { }
             string logFile = RunHistoryStore.Instance.GetLatestRunLogPath(row.Name);
             if (string.IsNullOrEmpty(logFile))
             {
-                string runsDir = TaskLogPaths.GetTaskRunsDir(row.Name);
-                MessageBox.Show(this, Loc.Format("Tasks.NoLogFile", runsDir), Loc.T("Tasks.NoLogTitle", "暂无日志"), MessageBoxButton.OK, MessageBoxImage.Information);
+                string expectedFile = TaskLogPaths.GetRunLogPath(row.Name, DateTime.Now);
+                MessageBox.Show(this, Loc.Format("Tasks.NoLogFile", expectedFile), Loc.T("Tasks.NoLogTitle", "暂无日志"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 

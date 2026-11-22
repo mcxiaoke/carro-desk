@@ -33,7 +33,7 @@ namespace CarroDesk.Tests
         }
 
         [TestMethod]
-        public void RunContext_EachRunHasOwnIdAndFile()
+        public void RunContext_EachRunHasOwnIdAndAppendsToMonthlyFile()
         {
             string task = NewTaskName();
             var first = Begin(task, "cmd.exe", "first");
@@ -42,17 +42,17 @@ namespace CarroDesk.Tests
             second.Complete(1, "fail:1", "exited");
 
             Assert.AreNotEqual(first.RunId, second.RunId, "每次运行必须有唯一 runId");
-            Assert.AreNotEqual(first.FullLogPath, second.FullLogPath, "每次运行必须写独立文件");
+            Assert.AreEqual(first.FullLogPath, second.FullLogPath, "同一任务当月运行应追加至同一月度日志文件");
             Assert.IsTrue(File.Exists(first.FullLogPath));
-            Assert.IsTrue(File.Exists(second.FullLogPath));
 
-            string c1 = File.ReadAllText(first.FullLogPath, Encoding.UTF8);
-            string c2 = File.ReadAllText(second.FullLogPath, Encoding.UTF8);
-            StringAssert.Contains(c1, "first");
-            StringAssert.Contains(c2, "second");
-            StringAssert.Contains(c1, "=== RUN START runId=" + first.RunId);
-            StringAssert.Contains(c1, "=== RUN END runId=" + first.RunId);
-            StringAssert.Contains(c2, "exitCode=1");
+            string content = File.ReadAllText(first.FullLogPath, Encoding.UTF8);
+            StringAssert.Contains(content, "first");
+            StringAssert.Contains(content, "second");
+            StringAssert.Contains(content, "=== RUN START runId=" + first.RunId);
+            StringAssert.Contains(content, "=== RUN END runId=" + first.RunId);
+            StringAssert.Contains(content, "=== RUN START runId=" + second.RunId);
+            StringAssert.Contains(content, "=== RUN END runId=" + second.RunId);
+            StringAssert.Contains(content, "exitCode=1");
         }
 
         [TestMethod]
@@ -126,7 +126,7 @@ namespace CarroDesk.Tests
             string dir = NewTempLogsDir();
             var store = new RunHistoryStore(dir);
             DateTime old = DateTime.UtcNow.AddDays(-(TaskLogPaths.RetainDays + 1));
-            string rel = "runs/t/202610/rid-old.log";
+            string rel = "runs/t/202610.log";
             string line = "{\"ts\":\"" + old.ToString("o") +
                 "\",\"type\":\"run.start\",\"runId\":\"rid-old\",\"task\":\"t\"," +
                 "\"startUtc\":\"" + old.ToString("o") + "\",\"logPath\":\"" + rel + "\"}";
@@ -137,8 +137,51 @@ namespace CarroDesk.Tests
 
             store.Prune();
 
-            Assert.IsFalse(File.Exists(full), "超过保留天数的 run 文件应被删除");
+            Assert.IsFalse(File.Exists(full), "超过保留天数的月度日志文件应被删除");
             Assert.AreEqual(0, store.Query("t", 100).Count, "索引应同步移除已删除的记录");
+        }
+
+        [TestMethod]
+        public void RunHistory_PruneDoesNotDeleteMonthlyFileWhenSomeEntriesKept()
+        {
+            string dir = NewTempLogsDir();
+            var store = new RunHistoryStore(dir);
+            string rel = "runs/t/202611.log";
+            string full = store.ResolveLogPath(rel);
+            Directory.CreateDirectory(Path.GetDirectoryName(full));
+            File.WriteAllText(full, "monthly shared log", new UTF8Encoding(false));
+
+            // 一条超期（应淘汰），一条新鲜（保留），两者共享同一个 202611.log
+            DateTime old = DateTime.UtcNow.AddDays(-(TaskLogPaths.RetainDays + 1));
+            DateTime fresh = DateTime.UtcNow;
+            string l1 = "{\"ts\":\"" + old.ToString("o") + "\",\"type\":\"run.start\",\"runId\":\"rid-1\",\"task\":\"t\",\"startUtc\":\"" + old.ToString("o") + "\",\"logPath\":\"" + rel + "\"}";
+            string l2 = "{\"ts\":\"" + fresh.ToString("o") + "\",\"type\":\"run.start\",\"runId\":\"rid-2\",\"task\":\"t\",\"startUtc\":\"" + fresh.ToString("o") + "\",\"logPath\":\"" + rel + "\"}";
+            File.WriteAllText(store.IndexPath, l1 + "\n" + l2 + "\n", new UTF8Encoding(false));
+
+            store.Prune();
+
+            Assert.IsTrue(File.Exists(full), "当同月仍有未淘汰运行记录时，共享月度日志绝不可被删除");
+            Assert.AreEqual(1, store.Query("t", 100).Count);
+            Assert.AreEqual("rid-2", store.Query("t", 100)[0].RunId);
+        }
+
+        [TestMethod]
+        public void TaskLogPaths_FindLatestLogFile_FindsMostRecentLog()
+        {
+            string dir = NewTempLogsDir();
+            string task = "task_lookup_test";
+            string taskDir = Path.Combine(dir, "runs", TaskLogPaths.GetTaskDirName(task));
+            Directory.CreateDirectory(taskDir);
+
+            string octLog = Path.Combine(taskDir, "202610.log");
+            string novLog = Path.Combine(taskDir, "202611.log");
+            File.WriteAllText(octLog, "oct", Encoding.UTF8);
+            File.SetLastWriteTimeUtc(octLog, DateTime.UtcNow.AddDays(-10));
+            File.WriteAllText(novLog, "nov", Encoding.UTF8);
+            File.SetLastWriteTimeUtc(novLog, DateTime.UtcNow);
+
+            string latest = TaskLogPaths.FindLatestLogFile(task, dir);
+            Assert.AreEqual(novLog, latest, "应优先命中最后修改时间最新的日志文件");
         }
 
         [TestMethod]

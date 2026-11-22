@@ -9,7 +9,7 @@ namespace CarroDesk.Tests
 {
     /// <summary>
     /// 任务日志测试的读取入口。重构后管理日志（scheduler.log）与运行日志
-    /// （runs/&lt;task&gt;/&lt;yyyyMM&gt;/&lt;runId&gt;.log）是两套文件，
+    /// （runs/&lt;task&gt;/&lt;yyyyMM&gt;.log）是两套文件，
     /// 测试必须显式选择读哪一套，避免把「分离」这件事掩盖掉。
     /// </summary>
     internal static class TaskLogTestHelper

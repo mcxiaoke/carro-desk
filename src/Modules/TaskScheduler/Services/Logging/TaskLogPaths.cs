@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using CarroDesk.Services;
@@ -9,10 +10,9 @@ namespace CarroDesk.Services.Tasks
     /// <summary>
     /// 任务日志路径与保留策略的唯一真源。
     ///
-    /// 旧布局（logs/tasks.log + logs/task-&lt;name&gt;.log）让管理事件、任务调度事件、
-    /// 子进程 stdout/stderr 混在两个文件里，且没有按次运行的边界。现在拆成：
+    /// 布局结构：
     ///   scheduler.log            调度器/任务管理事件（不含任何进程输出）
-    ///   runs/&lt;task&gt;/&lt;yyyyMM&gt;/&lt;runId&gt;.log   一次运行一个文件
+    ///   runs/<task>/<yyyyMM>.log 每个任务每月一个日志文件（当月多次运行顺序追加，无需每月单独目录）
     ///   runs/history.jsonl       运行历史索引（append-only 事件流）
     ///
     /// 目录名追加任务名哈希：Windows 文件系统大小写不敏感，仅做字符白名单清洗时
@@ -79,9 +79,64 @@ namespace CarroDesk.Services.Tasks
             return Path.Combine(RunsDir, GetTaskDirName(taskName));
         }
 
-        public static string GetRunLogPath(string taskName, DateTime startLocal, string runId)
+        /// <summary>
+        /// 获取任务在特定月份的日志路径：runs/<task>/<yyyyMM>.log。
+        /// 每任务每月一个文件，当月多次运行顺序追加；runId 参数保留以向后兼容。
+        /// </summary>
+        public static string GetRunLogPath(string taskName, DateTime startLocal, string runId = null)
         {
-            return Path.Combine(GetTaskRunsDir(taskName), startLocal.ToString("yyyyMM"), runId + ".log");
+            return Path.Combine(GetTaskRunsDir(taskName), startLocal.ToString("yyyyMM") + ".log");
+        }
+
+        /// <summary>
+        /// 查找指定任务在磁盘上最新的可用日志文件绝对路径。
+        /// 优先从 runs/<task>/ 目录扫描所有 *.log（按最后修改时间倒序），
+        /// 兜底检查当前月度文件以及旧版 flat 日志 logs/task-<name>.log；不存在时返回 null。
+        /// </summary>
+        public static string FindLatestLogFile(string taskName, string logsDir = null)
+        {
+            if (string.IsNullOrWhiteSpace(taskName)) return null;
+            string baseLogsDir = string.IsNullOrEmpty(logsDir) ? LogsDir : logsDir;
+            string taskRunsDir = Path.Combine(baseLogsDir, "runs", GetTaskDirName(taskName));
+
+            // 1. 扫描任务运行目录下的所有 *.log 文件（包括当前根目录下的 yyyyMM.log，以及可能存在的旧版子目录日志）
+            if (Directory.Exists(taskRunsDir))
+            {
+                try
+                {
+                    var logFiles = Directory.GetFiles(taskRunsDir, "*.log", SearchOption.AllDirectories);
+                    if (logFiles.Length > 0)
+                    {
+                        var latestFile = logFiles
+                            .Select(f => new FileInfo(f))
+                            .OrderByDescending(fi => fi.LastWriteTimeUtc)
+                            .ThenByDescending(fi => fi.Name, StringComparer.OrdinalIgnoreCase)
+                            .FirstOrDefault();
+
+                        if (latestFile != null && latestFile.Exists)
+                        {
+                            return latestFile.FullName;
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            // 2. 检查当月月度日志文件（哪怕尚未有写入，若已被 touch 存在）
+            string currentMonthPath = Path.Combine(taskRunsDir, DateTime.Now.ToString("yyyyMM") + ".log");
+            if (File.Exists(currentMonthPath))
+            {
+                return currentMonthPath;
+            }
+
+            // 3. 兼容旧版 logs/task-<name>.log
+            string legacyPath = Path.Combine(baseLogsDir, "task-" + taskName.Trim() + ".log");
+            if (File.Exists(legacyPath))
+            {
+                return legacyPath;
+            }
+
+            return null;
         }
 
         /// <summary>转成相对 LogsDir 的、以 '/' 分隔的路径，供 history.jsonl 存储。</summary>
