@@ -47,7 +47,7 @@ namespace CarroDesk.Host.Ipc
             {
                 if (code == CommandErrorCodes.TransportError)
                 {
-                    message += "（宿主未运行？请先启动 CarroDesk 托盘程序）";
+                    message += " (host not running? Start CarroDesk tray host first)";
                 }
                 error.WriteLine("error " + code + ": " + message);
             }

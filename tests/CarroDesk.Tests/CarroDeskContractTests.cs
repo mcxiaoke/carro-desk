@@ -294,6 +294,24 @@ namespace CarroDesk.Tests
             Loc.SetLanguage("zh-CN");
         }
 
+        [TestMethod]
+        public void Locales_HaveNoXmlAmpEntity_AndI18nReturnsSnapshot()
+        {
+            Loc.SetLanguage("zh-CN");
+            Assert.IsFalse(Loc.T("Tasks.MgrAdvancedOptionsAmpConditions").Contains("&amp;"));
+            Assert.IsFalse(Loc.T("Monitor.HeaderTitle").Contains("&amp;"));
+
+            Loc.SetLanguage("en-US");
+            Assert.IsFalse(Loc.T("Tasks.MgrAdvancedOptionsAmpConditions").Contains("&amp;"));
+            Assert.IsFalse(Loc.T("Monitor.HeaderTitle").Contains("&amp;"));
+
+            var langs = CarroDesk.Services.Localization.I18nService.Instance.AvailableLanguages;
+            Assert.IsTrue(langs.ContainsKey("zh-CN"));
+            Assert.IsTrue(langs.ContainsKey("en-US"));
+
+            Loc.SetLanguage("zh-CN");
+        }
+
         private sealed class StubLogger : ILoggerService
         {
             public void LogError(string module, string message, Exception ex) { }

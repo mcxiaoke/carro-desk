@@ -95,6 +95,17 @@ chinesesimplified.KillAppFailed=无法结束运行中的进程，请手动关闭
 chinesesimplified.InstallCancelled=安装已取消：请先退出正在运行的程序。
 chinesesimplified.AppUninstallBlocked=仍有进程正在运行，卸载终止。请手动关闭后再试。
 chinesesimplified.DotNetMissing=未检测到 .NET 10 桌面运行时（Microsoft.WindowsDesktop.App 10.x）。%n%nCarroDesk 需要该运行时才能启动。%n下载地址：%1%n%n是否仍要继续安装？（选择“是”继续，稍后自行安装运行时；选择“否”退出安装）
+chinesesimplified.DataModeLocations=数据存放位置：%1%n程序安装路径：%2
+chinesesimplified.ReadmeInstallDir=安装目录：%1
+chinesesimplified.ReadmeDataDir=数据目录：%1
+chinesesimplified.ReadmePortableMode=数据模式：便携模式（纯绿色，无系统残留）
+chinesesimplified.ReadmePortableUninstall=卸载说明：直接删除安装目录即可（便携版不在注册表与开始菜单写入任何残留）。
+chinesesimplified.ReadmeRoamingMode=数据模式：漫游模式
+chinesesimplified.ReadmeRoamingUninstall=卸载说明：在控制面板或系统「应用和功能」中选择卸载即可。
+chinesesimplified.ReadmeRoamingRetain=（卸载时仅移除程序文件，个人配置与任务数据将安全保留）
+chinesesimplified.ReadmeMainExe=主程序：%1
+chinesesimplified.ReadmeCliExe=命令行：%1
+chinesesimplified.ReadmeAutoStart=开机自启：可在主程序设置中自由开关（写入 HKCU Run）
 
 english.DataModeTitle=Data Mode Selection
 english.DataModeSubTitle=Choose where CarroDesk stores configurations and data
@@ -113,6 +124,17 @@ english.KillAppFailed=Unable to terminate the running processes. Please close th
 english.InstallCancelled=Installation cancelled: please exit the running application first.
 english.AppUninstallBlocked=Some processes are still running; uninstallation aborted. Please close them manually and try again.
 english.DotNetMissing=.NET 10 Desktop Runtime (Microsoft.WindowsDesktop.App 10.x) was not detected.%n%nCarroDesk requires it to start.%nDownload: %1%n%nContinue installation anyway? (Yes to continue and install the runtime later; No to exit setup)
+english.DataModeLocations=Data folder: %1%nInstall folder: %2
+english.ReadmeInstallDir=Install Directory: %1
+english.ReadmeDataDir=Data Directory: %1
+english.ReadmePortableMode=Data Mode: Portable (green / standalone, zero system footprint)
+english.ReadmePortableUninstall=Uninstall: Delete the installation folder directly (no registry or Start Menu entries).
+english.ReadmeRoamingMode=Data Mode: Roaming
+english.ReadmeRoamingUninstall=Uninstall: Use Windows Settings > Apps or Control Panel.
+english.ReadmeRoamingRetain=(Only program files are removed; your configs and tasks remain safely preserved.)
+english.ReadmeMainExe=Main App: %1
+english.ReadmeCliExe=CLI Tool: %1
+english.ReadmeAutoStart=Auto-start: Toggleable inside application settings (HKCU Run)
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked; Check: IsRoamingMode
@@ -149,6 +171,7 @@ var
   DirLabel: TNewStaticText;
   SelectedDataMode: Integer; // 0 = 漫游模式 (Roaming), 1 = 便携模式 (Portable)
   OriginalDataMode: Integer; // 检测到的原始数据模式
+  InstallCompleted: Boolean; // 仅实际完成安装后才触发便携清理，防止中途取消破坏已有漫游卸载项
 
 // ================================================================
 // 辅助函数：进程管理
@@ -330,17 +353,14 @@ end;
 
 procedure UpdateDataModeInfo();
 var
-  TargetDir: string;
+  TargetDir, DataPath: string;
 begin
   TargetDir := WizardDirValue;
   if SelectedDataMode = 1 then
-  begin
-    DirLabel.Caption := '数据存放位置：' + TargetDir + '\app_data' + #13#10 + '程序安装路径：' + TargetDir;
-  end
+    DataPath := TargetDir + '\app_data'
   else
-  begin
-    DirLabel.Caption := '数据存放位置：' + ExpandConstant('{userappdata}\{#AppName}') + #13#10 + '程序安装路径：' + TargetDir;
-  end;
+    DataPath := ExpandConstant('{userappdata}\{#AppName}');
+  DirLabel.Caption := FmtMessage(CustomMessage('DataModeLocations'), [DataPath, TargetDir]);
 end;
 
 procedure UpdateDataModeSelection();
@@ -465,6 +485,7 @@ procedure InitializeWizard();
 begin
   SelectedDataMode := 0;
   OriginalDataMode := -1;
+  InstallCompleted := False;
   CreateDataModePage();
 end;
 
@@ -515,6 +536,26 @@ begin
   end;
 end;
 
+procedure CopyPatternFilesIfMissing(const SrcDir, DstDir, Pattern: string);
+var
+  FindRec: TFindRec;
+begin
+  if FindFirst(SrcDir + '\' + Pattern, FindRec) then
+  begin
+    try
+      repeat
+        if (FindRec.Attributes and FILE_ATTRIBUTE_DIRECTORY) = 0 then
+        begin
+          if not FileExists(DstDir + '\' + FindRec.Name) then
+            CopyFile(SrcDir + '\' + FindRec.Name, DstDir + '\' + FindRec.Name, False);
+        end;
+      until not FindNext(FindRec);
+    finally
+      FindClose(FindRec);
+    end;
+  end;
+end;
+
 procedure MigrateDataIfNeeded();
 var
   TargetDir, RoamingDir, PortableDir: string;
@@ -540,19 +581,33 @@ begin
     DstDir := RoamingDir;
   end;
 
-  if DirExists(SrcDir) and (not FileExists(DstDir + '\config.json')) then
+  if DirExists(SrcDir) and (not FileExists(DstDir + '\config.json')) and (not FileExists(DstDir + '\tasks.json')) then
   begin
     ForceDirectories(DstDir);
     if FileExists(SrcDir + '\config.json') then
       CopyFile(SrcDir + '\config.json', DstDir + '\config.json', False);
     if FileExists(SrcDir + '\tasks.json') then
       CopyFile(SrcDir + '\tasks.json', DstDir + '\tasks.json', False);
+    if FileExists(SrcDir + '\pin-guard.json') then
+      CopyFile(SrcDir + '\pin-guard.json', DstDir + '\pin-guard.json', False);
+    if FileExists(SrcDir + '\tasks.enabled') then
+      CopyFile(SrcDir + '\tasks.enabled', DstDir + '\tasks.enabled', False);
+    CopyPatternFilesIfMissing(SrcDir, DstDir, 'task-*.json');
+
     if DirExists(SrcDir + '\scripts') then
     begin
-      // 递归迁移脚本：只 force 建空目录会让 tasks.json 里的脚本路径全部失效（H5）。
-      // 目标已存在时合并复制，/D 只覆盖源比目标新的文件，保留用户较新的脚本。
       ForceDirectories(DstDir + '\scripts');
       CopyDirectoryRecursive(SrcDir + '\scripts', DstDir + '\scripts');
+    end;
+    if DirExists(SrcDir + '\data') then
+    begin
+      ForceDirectories(DstDir + '\data');
+      CopyDirectoryRecursive(SrcDir + '\data', DstDir + '\data');
+    end;
+    if DirExists(SrcDir + '\lang') then
+    begin
+      ForceDirectories(DstDir + '\lang');
+      CopyDirectoryRecursive(SrcDir + '\lang', DstDir + '\lang');
     end;
   end;
 end;
@@ -586,25 +641,25 @@ begin
   try
     Lines.Add('{#AppName} {#AppVersion}');
     Lines.Add('-----------------------------------------');
-    Lines.Add('安装目录：' + AppDir);
-    Lines.Add('数据目录：' + DataDir);
+    Lines.Add(FmtMessage(CustomMessage('ReadmeInstallDir'), [AppDir]));
+    Lines.Add(FmtMessage(CustomMessage('ReadmeDataDir'), [DataDir]));
     if SelectedDataMode = 1 then
     begin
-      Lines.Add('数据模式：便携模式（纯绿色，无系统残留）');
+      Lines.Add(CustomMessage('ReadmePortableMode'));
       Lines.Add('');
-      Lines.Add('卸载说明：直接删除安装目录即可（便携版不在注册表与开始菜单写入任何残留）。');
+      Lines.Add(CustomMessage('ReadmePortableUninstall'));
     end
     else
     begin
-      Lines.Add('数据模式：漫游模式');
+      Lines.Add(CustomMessage('ReadmeRoamingMode'));
       Lines.Add('');
-      Lines.Add('卸载说明：在控制面板或系统「应用和功能」中选择卸载即可。');
-      Lines.Add('（卸载时仅移除程序文件，个人配置与任务数据将安全保留）');
+      Lines.Add(CustomMessage('ReadmeRoamingUninstall'));
+      Lines.Add(CustomMessage('ReadmeRoamingRetain'));
     end;
     Lines.Add('');
-    Lines.Add('主程序：{#AppExeName}');
-    Lines.Add('命令行：{#AppCliExeName}');
-    Lines.Add('开机自启：可在主程序设置中自由开关（写入 HKCU Run）');
+    Lines.Add(FmtMessage(CustomMessage('ReadmeMainExe'), ['{#AppExeName}']));
+    Lines.Add(FmtMessage(CustomMessage('ReadmeCliExe'), ['{#AppCliExeName}']));
+    Lines.Add(CustomMessage('ReadmeAutoStart'));
     Lines.SaveToFile(ReadmeFile);
   finally
     Lines.Free();
@@ -658,6 +713,7 @@ begin
   end
   else if CurStep = ssDone then
   begin
+    InstallCompleted := True;
     // 安装全部完成，此时 Inno 卸载项与文件已生成完毕，如果是便携模式则立即清理，实现纯绿色
     if SelectedDataMode = 1 then
     begin
@@ -668,8 +724,8 @@ end;
 
 procedure DeinitializeSetup();
 begin
-  // 安装向导关闭时再次确保便携模式清理彻底
-  if SelectedDataMode = 1 then
+  // 仅当安装流程实际完成时再确认便携清理，避免中途取消误删已有漫游卸载信息
+  if InstallCompleted and (SelectedDataMode = 1) then
   begin
     CleanPortableFootprint();
   end;
@@ -702,13 +758,15 @@ end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
-  AppDir, RunVal: string;
-  RunKey: string;
+  AppDir, RoamingDir, RunVal, RunKey: string;
+  HasUserData: Boolean;
 begin
   if CurUninstallStep = usPostUninstall then
   begin
     AppDir := ExpandConstant('{app}');
+    RoamingDir := ExpandConstant('{userappdata}\{#AppName}');
     RunKey := 'Software\Microsoft\Windows\CurrentVersion\Run';
+    HasUserData := False;
 
     // 1. 清理自启注册表（仅当指向本安装目录时）
     if RegQueryStringValue(HKCU, RunKey, '{#AppName}', RunVal) then
@@ -725,13 +783,12 @@ begin
     DeleteFile(AppDir + '\tasks.sample.json');
     DeleteFile(AppDir + '\portable.sample.ini');
 
-    // 3. 检查便携目录：如果含有用户数据，保留并提示；若为空则清理
+    // 3. 检查便携目录与漫游数据目录：存在用户数据则保留并提示；空便携目录予以清理
     if DirExists(AppDir + '\app_data') then
     begin
       if FileExists(AppDir + '\app_data\config.json') or FileExists(AppDir + '\app_data\tasks.json') then
       begin
-        // 用户数据存在，予以保留
-        MsgBox(FmtMessage(CustomMessage('UninstallRetainData'), ['{#AppName}']), mbInformation, MB_OK);
+        HasUserData := True;
       end
       else
       begin
@@ -739,6 +796,16 @@ begin
         DeleteFile(AppDir + '\portable.ini');
         DeleteFile(AppDir + '\portable.ini.bak');
       end;
+    end;
+
+    if DirExists(RoamingDir) and (FileExists(RoamingDir + '\config.json') or FileExists(RoamingDir + '\tasks.json')) then
+    begin
+      HasUserData := True;
+    end;
+
+    if HasUserData then
+    begin
+      MsgBox(FmtMessage(CustomMessage('UninstallRetainData'), ['{#AppName}']), mbInformation, MB_OK);
     end;
 
     // 尝试删除安装根目录（非空则会自动保留）

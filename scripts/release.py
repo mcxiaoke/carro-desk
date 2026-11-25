@@ -95,15 +95,21 @@ def get_version(positional: list[str] | None = None) -> str:
     return "{Major}.{Minor}.{Patch}".format(**fields)
 
 
-def build():
-    """Release 构建两个项目（依赖顺序：GUI 先建，CLI 引用 GUI）。
+def build(version: str):
+    """Release 发布两个项目（dotnet publish 会按依赖图自动构建 GUI）。
 
-    CLI 用 PublishSingleFile 产出单 exe（框架依赖，目标机需 .NET 10 桌面运行时）
+    清理旧 publish 目录避免残留文件进入发布包，并显式注入语义版本号保证命令行覆写生效。
     """
-    run("dotnet build src/CarroDesk.csproj -c Release")
-    run("dotnet publish src/CarroDesk.csproj -c Release "
+    major, minor, patch = version.split(".")
+    ver_props = f"-p:Major={major} -p:Minor={minor} -p:Patch={patch} -p:VersionPrefix={version}"
+
+    for out_dir in (GUI_OUT, CLI_OUT):
+        if out_dir.exists():
+            shutil.rmtree(out_dir)
+
+    run(f"dotnet publish src/CarroDesk.csproj -c Release {ver_props} "
         "-r win-x64 --self-contained false -p:PublishSingleFile=true")
-    run("dotnet publish cli/CarroDesk.Cli/CarroDesk.Cli.csproj -c Release "
+    run(f"dotnet publish cli/CarroDesk.Cli/CarroDesk.Cli.csproj -c Release {ver_props} "
         "-r win-x64 --self-contained false -p:PublishSingleFile=true")
 
 
@@ -214,7 +220,7 @@ def make_release():
     release_dir = (ROOT / "release" / version).resolve()
     release_dir.mkdir(parents=True, exist_ok=True)
 
-    build()
+    build(version)
     copy_cli_exe()
 
     if want_zip:

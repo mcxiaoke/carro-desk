@@ -13,6 +13,7 @@ namespace CarroDesk.Services.Localization
     {
         public static I18nService Instance { get; } = new I18nService();
 
+        private readonly object _lock = new object();
         private readonly Dictionary<string, Dictionary<string, string>> _locales
             = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
 
@@ -25,9 +26,18 @@ namespace CarroDesk.Services.Localization
         public event PropertyChangedEventHandler PropertyChanged;
         public event Action LanguageChanged;
 
-        public string CurrentLanguage => _currentLanguage;
-        public CultureInfo CurrentCulture => _currentCulture;
-        public IReadOnlyDictionary<string, string> AvailableLanguages => _languageNames;
+        public string CurrentLanguage { get { lock (_lock) return _currentLanguage; } }
+        public CultureInfo CurrentCulture { get { lock (_lock) return _currentCulture; } }
+        public IReadOnlyDictionary<string, string> AvailableLanguages
+        {
+            get
+            {
+                lock (_lock)
+                {
+                    return new Dictionary<string, string>(_languageNames, StringComparer.OrdinalIgnoreCase);
+                }
+            }
+        }
 
         public string this[string key] => Get(key);
 
@@ -44,32 +54,46 @@ namespace CarroDesk.Services.Localization
 
         public void SetLanguage(string langCode, bool notifyConfig = true)
         {
-            string target = ResolveLanguageCode(langCode);
-            if (string.Equals(_currentLanguage, target, StringComparison.OrdinalIgnoreCase) && _currentCulture != null)
+            PropertyChangedEventHandler propChanged;
+            Action langChanged;
+            lock (_lock)
             {
-                return;
+                string target = ResolveLanguageCodeNoLock(langCode);
+                if (string.Equals(_currentLanguage, target, StringComparison.OrdinalIgnoreCase) && _currentCulture != null)
+                {
+                    return;
+                }
+
+                _currentLanguage = target;
+                try
+                {
+                    _currentCulture = new CultureInfo(target);
+                }
+                catch
+                {
+                    _currentCulture = target.StartsWith("zh", StringComparison.OrdinalIgnoreCase)
+                        ? new CultureInfo("zh-CN")
+                        : CultureInfo.InvariantCulture;
+                }
+                propChanged = PropertyChanged;
+                langChanged = LanguageChanged;
             }
 
-            _currentLanguage = target;
-            try
-            {
-                _currentCulture = new CultureInfo(target);
-            }
-            catch
-            {
-                _currentCulture = target.StartsWith("zh", StringComparison.OrdinalIgnoreCase)
-                    ? new CultureInfo("zh-CN")
-                    : CultureInfo.InvariantCulture;
-            }
-
-            // 触发 WPF 索引器属性变更通知，刷新所有 {loc:Loc Key} 绑定
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("Item[]"));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
-
-            LanguageChanged?.Invoke();
+            // 触发 WPF 索引器属性变更通知，刷新所有 {loc:Loc Key} 绑定（锁外触发避免死锁）
+            propChanged?.Invoke(this, new PropertyChangedEventArgs("Item[]"));
+            propChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
+            langChanged?.Invoke();
         }
 
         public string ResolveLanguageCode(string code)
+        {
+            lock (_lock)
+            {
+                return ResolveLanguageCodeNoLock(code);
+            }
+        }
+
+        private string ResolveLanguageCodeNoLock(string code)
         {
             if (string.IsNullOrEmpty(code) || string.Equals(code, "auto", StringComparison.OrdinalIgnoreCase))
             {
@@ -92,17 +116,20 @@ namespace CarroDesk.Services.Localization
         {
             if (string.IsNullOrEmpty(key)) return defaultValue ?? string.Empty;
 
-            // 1. 当前激活语言查找
-            if (_locales.TryGetValue(_currentLanguage, out var currentDict) && currentDict.TryGetValue(key, out var val))
+            lock (_lock)
             {
-                return val;
-            }
+                // 1. 当前激活语言查找
+                if (_locales.TryGetValue(_currentLanguage, out var currentDict) && currentDict.TryGetValue(key, out var val))
+                {
+                    return val;
+                }
 
-            // 2. Fallback 回退机制：若当前非中文则退往 zh-CN，若为中文则退往 en-US
-            string fallbackLang = _currentLanguage.StartsWith("zh", StringComparison.OrdinalIgnoreCase) ? "en-US" : "zh-CN";
-            if (_locales.TryGetValue(fallbackLang, out var fallbackDict) && fallbackDict.TryGetValue(key, out val))
-            {
-                return val;
+                // 2. Fallback 回退机制：若当前非中文则退往 zh-CN，若为中文则退往 en-US
+                string fallbackLang = _currentLanguage.StartsWith("zh", StringComparison.OrdinalIgnoreCase) ? "en-US" : "zh-CN";
+                if (_locales.TryGetValue(fallbackLang, out var fallbackDict) && fallbackDict.TryGetValue(key, out val))
+                {
+                    return val;
+                }
             }
 
             // 3. 兜底返回 defaultValue 或 key 本身
@@ -111,11 +138,17 @@ namespace CarroDesk.Services.Localization
 
         public string Format(string key, params object[] args)
         {
-            var pattern = Get(key);
+            string pattern;
+            CultureInfo culture;
+            lock (_lock)
+            {
+                pattern = Get(key);
+                culture = _currentCulture;
+            }
             if (args == null || args.Length == 0) return pattern;
             try
             {
-                return string.Format(_currentCulture, pattern, args);
+                return string.Format(culture, pattern, args);
             }
             catch
             {
@@ -125,11 +158,17 @@ namespace CarroDesk.Services.Localization
 
         public string FormatWithDefault(string key, string defaultValue, params object[] args)
         {
-            var pattern = Get(key, defaultValue);
+            string pattern;
+            CultureInfo culture;
+            lock (_lock)
+            {
+                pattern = Get(key, defaultValue);
+                culture = _currentCulture;
+            }
             if (args == null || args.Length == 0) return pattern;
             try
             {
-                return string.Format(_currentCulture, pattern, args);
+                return string.Format(culture, pattern, args);
             }
             catch
             {
@@ -200,15 +239,18 @@ namespace CarroDesk.Services.Localization
                 if (string.IsNullOrEmpty(code)) return;
                 if (string.IsNullOrEmpty(dispName)) dispName = code;
 
-                if (!_locales.TryGetValue(code, out var dict))
+                lock (_lock)
                 {
-                    dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                    _locales[code] = dict;
+                    if (!_locales.TryGetValue(code, out var dict))
+                    {
+                        dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                        _locales[code] = dict;
+                    }
+
+                    _languageNames[code] = dispName;
+
+                    FlattenJson(obj, "", dict);
                 }
-
-                _languageNames[code] = dispName;
-
-                FlattenJson(obj, "", dict);
             }
             catch { }
         }
