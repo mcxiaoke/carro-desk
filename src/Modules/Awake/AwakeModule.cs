@@ -186,11 +186,11 @@ namespace CarroDesk.Modules.Awake
                 if (minutes < 1 || minutes > MaxMinutes)
                     return CommandResult.Fail(CommandErrorCodes.InvalidParams,
                         "minutes must be 1-" + MaxMinutes + " (use no param for indefinite), got: " + minutes);
-                Service.SetTimed(minutes);
+                Service.SetTimed(minutes, updateConfig: false);
             }
             else
             {
-                Service.SetIndefinite();
+                Service.SetIndefinite(updateConfig: false);
             }
             return StatusResult();
         }
@@ -200,7 +200,7 @@ namespace CarroDesk.Modules.Awake
             if (Service == null)
                 return CommandResult.Fail(CommandErrorCodes.Internal, "awake service not initialized");
             // SetPassiveByUser：同时抑制进程联动，避免 5 秒后被 AutoAwakeProcesses 重新拉起
-            Service.SetPassiveByUser();
+            Service.SetPassiveByUser(updateConfig: false);
             return StatusResult();
         }
 
@@ -594,8 +594,11 @@ namespace CarroDesk.Modules.Awake
                 IsChecked = currentMode == AwakeMode.Timed
             };
 
-            int[] presetMinutes = new[] { 15, 30, 60, 120, 240, 480 };
-            foreach (var m in presetMinutes)
+            var presets = Config?.CustomPresets != null && Config.CustomPresets.Count > 0
+                ? Config.CustomPresets.Where(x => x > 0 && x <= MaxMinutes).Distinct().OrderBy(x => x).ToArray()
+                : new[] { 15, 30, 60, 120, 240, 480 };
+            if (presets.Length == 0) presets = new[] { 15, 30, 60, 120, 240, 480 };
+            foreach (var m in presets)
             {
                 string label = m < 60 ? Loc.T("Awake.MinutesLabel", "{0} 分钟", m) : Loc.T("Awake.HoursLabel", "{0} 小时", m / 60);
                 timedSubmenu.Children.Add(new TrayMenuItem
@@ -726,76 +729,12 @@ namespace CarroDesk.Modules.Awake
 
         private static bool PromptMinutes(out int minutes)
         {
-            minutes = 0;
-            var dlg = new Window
-            {
-                Title = Loc.T("Tray.AwakeTimedCustom", "自定义分钟数..."),
-                Width = 360,
-                Height = 160,
-                WindowStartupLocation = WindowStartupLocation.CenterScreen,
-                ResizeMode = ResizeMode.NoResize,
-                Background = System.Windows.Media.Brushes.White,
-                FontFamily = new System.Windows.Media.FontFamily("Segoe UI, Microsoft YaHei UI")
-            };
-            var grid = new Grid { Margin = new Thickness(16) };
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-            var lbl = new TextBlock
-            {
-                Text = Loc.T("Awake.PromptMinutes", "请输入保持唤醒的分钟数 (1-1440)："),
-                Margin = new Thickness(0, 0, 0, 8),
-                FontSize = 13,
-                Foreground = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString("#FF374151")
-            };
-            var txt = new TextBox
-            {
-                Text = "45",
-                Height = 28,
-                VerticalContentAlignment = VerticalAlignment.Center,
-                Padding = new Thickness(4, 0, 4, 0),
-                FontSize = 13
-            };
-            txt.SelectAll();
-
-            var btnPanel = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                HorizontalAlignment = HorizontalAlignment.Right,
-                Margin = new Thickness(0, 12, 0, 0)
-            };
-            var btnOk = new Button { Content = Loc.T("Common.Ok", "确定"), Width = 70, Height = 28, IsDefault = true, Margin = new Thickness(0, 0, 8, 0) };
-            var btnCancel = new Button { Content = Loc.T("Common.Cancel", "取消"), Width = 70, Height = 28, IsCancel = true };
-
-            btnOk.Click += (s, e) => { dlg.DialogResult = true; dlg.Close(); };
-            btnCancel.Click += (s, e) => { dlg.DialogResult = false; dlg.Close(); };
-
-            btnPanel.Children.Add(btnOk);
-            btnPanel.Children.Add(btnCancel);
-
-            Grid.SetRow(lbl, 0);
-            Grid.SetRow(txt, 1);
-            Grid.SetRow(btnPanel, 2);
-
-            grid.Children.Add(lbl);
-            grid.Children.Add(txt);
-            grid.Children.Add(btnPanel);
-
-            dlg.Content = grid;
-            dlg.Loaded += (s, e) => txt.Focus();
-
-            if (dlg.ShowDialog() == true)
-            {
-                string input = txt.Text.Trim();
-                if (int.TryParse(input, out int m) && m > 0 && m <= 1440)
-                {
-                    minutes = m;
-                    return true;
-                }
-                MessageBox.Show(Loc.T("Msg.InvalidMinutes", "请输入 1 到 1440 之间的有效分钟数。"), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
-            }
-            return false;
+            return CarroDesk.Views.InputPromptDialog.ShowIntRange(
+                Loc.T("Tray.AwakeTimedCustom", "自定义分钟数..."),
+                Loc.T("Awake.PromptMinutes", "请输入保持唤醒的分钟数 (1-1440)："),
+                "45", 1, 1440,
+                Loc.T("Msg.InvalidMinutes", "请输入 1 到 1440 之间的有效分钟数。"),
+                out minutes);
         }
     }
 }

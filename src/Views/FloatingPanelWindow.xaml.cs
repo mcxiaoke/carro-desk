@@ -64,6 +64,8 @@ namespace CarroDesk.Views
         private readonly ServiceContainer _services;
         private readonly Action _reloadConfig;
         private readonly Action _promptExit;
+        private readonly Func<bool> _isShuttingDown;
+        private bool _allowClose;
 
         private AppSettings CurrentSettings => _configManager?.Current;
 
@@ -88,7 +90,8 @@ namespace CarroDesk.Views
             ModuleManager moduleManager = null,
             ServiceContainer services = null,
             Action reloadConfig = null,
-            Action promptExit = null)
+            Action promptExit = null,
+            Func<bool> isShuttingDown = null)
         {
             _instance = this;
             _configManager = configManager;
@@ -96,6 +99,7 @@ namespace CarroDesk.Views
             _services = services;
             _reloadConfig = reloadConfig;
             _promptExit = promptExit;
+            _isShuttingDown = isShuttingDown;
 
             InitializeComponent();
 
@@ -105,16 +109,8 @@ namespace CarroDesk.Views
             Deactivated += OnWindowDeactivated;
             KeyDown += OnWindowKeyDown;
 
-            // 监听语言切换
-            I18nService.Instance.LanguageChanged += () =>
-            {
-                Dispatcher.BeginInvoke(new Action(() =>
-                {
-                    RebuildMenu();
-                    UpdatePinVisual();
-                    UpdateLockVisual();
-                }));
-            };
+            // 监听语言切换（具名回调，确保 OnClosed 时解绑防止泄漏）
+            I18nService.Instance.LanguageChanged += OnLanguageChanged;
 
             // 初始读取 Pin 与 Lock 状态
             var cfg = CurrentSettings;
@@ -127,16 +123,54 @@ namespace CarroDesk.Views
             UpdateLockVisual();
         }
 
+        private void OnLanguageChanged()
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (!IsLoaded && !IsVisible) return;
+                RebuildMenu();
+                UpdatePinVisual();
+                UpdateLockVisual();
+            }));
+        }
+
+        protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+        {
+            if (!_allowClose && (_isShuttingDown == null || !_isShuttingDown()))
+            {
+                e.Cancel = true;
+                HidePanel();
+                return;
+            }
+            base.OnClosing(e);
+        }
+
+        protected override void OnClosed(EventArgs e)
+        {
+            I18nService.Instance.LanguageChanged -= OnLanguageChanged;
+            if (ReferenceEquals(_instance, this)) _instance = null;
+            base.OnClosed(e);
+        }
+
+        public static void ForceCloseIfOpen()
+        {
+            var inst = _instance;
+            if (inst == null) return;
+            inst._allowClose = true;
+            try { inst.Close(); } catch { }
+        }
+
         public static void Toggle(
             ConfigManager configManager = null,
             ModuleManager moduleManager = null,
             ServiceContainer services = null,
             Action reloadConfig = null,
-            Action promptExit = null)
+            Action promptExit = null,
+            Func<bool> isShuttingDown = null)
         {
             if (_instance == null)
             {
-                _instance = new FloatingPanelWindow(configManager, moduleManager, services, reloadConfig, promptExit);
+                _instance = new FloatingPanelWindow(configManager, moduleManager, services, reloadConfig, promptExit, isShuttingDown);
             }
 
             if (_instance.IsVisible)
@@ -292,17 +326,21 @@ namespace CarroDesk.Views
                     var cfg = CurrentSettings;
                     if (cfg != null && cfg.FloatingPanelX != -1 && cfg.FloatingPanelY != -1)
                     {
+                        var dpi = VisualTreeHelper.GetDpi(this);
+                        double scaleX = dpi.DpiScaleX > 0 ? dpi.DpiScaleX : 1.0;
+                        double scaleY = dpi.DpiScaleY > 0 ? dpi.DpiScaleY : 1.0;
+
                         var monitors = DisplayMonitorHelper.GetAllMonitors();
                         var targetMonitor = monitors.FirstOrDefault(m =>
-                            cfg.FloatingPanelX >= m.Left &&
-                            cfg.FloatingPanelX < m.Left + m.Width &&
-                            cfg.FloatingPanelY >= m.Top &&
-                            cfg.FloatingPanelY < m.Top + m.Height);
+                            cfg.FloatingPanelX >= m.Left / scaleX &&
+                            cfg.FloatingPanelX < (m.Left + m.Width) / scaleX &&
+                            cfg.FloatingPanelY >= m.Top / scaleY &&
+                            cfg.FloatingPanelY < (m.Top + m.Height) / scaleY);
                         if (targetMonitor == null) targetMonitor = monitors.FirstOrDefault(m => m.IsPrimary) ?? monitors.FirstOrDefault();
-                        double customLeft = targetMonitor?.WorkLeft ?? workArea.Left;
-                        double customTop = targetMonitor?.WorkTop ?? workArea.Top;
-                        double customRight = customLeft + (targetMonitor?.WorkWidth ?? (int)workArea.Width);
-                        double customBottom = customTop + (targetMonitor?.WorkHeight ?? (int)workArea.Height);
+                        double customLeft = targetMonitor != null ? targetMonitor.WorkLeft / scaleX : workArea.Left;
+                        double customTop = targetMonitor != null ? targetMonitor.WorkTop / scaleY : workArea.Top;
+                        double customRight = customLeft + (targetMonitor != null ? targetMonitor.WorkWidth / scaleX : workArea.Width);
+                        double customBottom = customTop + (targetMonitor != null ? targetMonitor.WorkHeight / scaleY : workArea.Height);
                         targetLeft = Math.Max(customLeft, Math.Min(customRight - panelWidth, cfg.FloatingPanelX));
                         targetTop = Math.Max(customTop, Math.Min(customBottom - panelHeight, cfg.FloatingPanelY));
                     }

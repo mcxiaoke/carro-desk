@@ -953,7 +953,8 @@
     "HotkeyRefresh": "手动刷新配置:",
     "ApplyTestNow": "立即应用测试",
     "DeleteProfileConfirm": "确认删除情境模式“{0}”及其全部时间点设置吗？",
-    "NoTimeSlots": "尚未配置时间点，请使用下方输入栏添加"
+    "NoTimeSlots": "尚未配置时间点，请使用下方输入栏添加",
+    "DuplicateTime": "该模式已存在时间点 {0}，请先删除或修改。"
   },
   "Audio": {
     "Speaker": "扬声器",
@@ -1112,6 +1113,8 @@
     "ClearList": "清空列表",
     "ExitBuffer": "退出缓冲时间：",
     "ExitBufferDesc": "秒 (进程退出后延迟恢复的缓冲时间，设为 0 则立即恢复)",
-    "ProcessLinkDisabledHint": "智能进程联动已停用，名单与缓冲设置仍然保留；勾选上方“启用”即可恢复。"
+    "ProcessLinkDisabledHint": "智能进程联动已停用，名单与缓冲设置仍然保留；勾选上方“启用”即可恢复。",
+    "InvalidBatteryThreshold": "电量阈值必须在 5 到 95 之间。",
+    "InvalidExitDelay": "进程退出缓冲时间必须在 0 到 3600 秒之间。"
   }
 }

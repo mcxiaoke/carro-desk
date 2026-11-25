@@ -377,5 +377,20 @@ namespace CarroDesk.Tests
             Assert.IsNotNull(method, "未找到 CheckProcessTriggers，测试需随实现同步更新");
             method.Invoke(service, null);
         }
+
+        [TestMethod]
+        public void AwakeService_RuntimeSetTimed_DoesNotMutatePersistedConfig()
+        {
+            var config = AwakeConfig.CreateDefault();
+            config.Mode = AwakeMode.Passive;
+            using (var service = new AwakeService(Dispatcher.CurrentDispatcher, null))
+            {
+                service.Initialize(config);
+                service.SetTimed(30, updateConfig: false);
+                Assert.AreEqual(AwakeMode.Timed, service.Mode);
+                Assert.AreEqual(AwakeMode.Passive, config.Mode, "运行时 SetTimed(updateConfig: false) 不得篡改持久化配置 Mode");
+                Assert.IsNull(config.ExpireAtLocal);
+            }
+        }
     }
 }

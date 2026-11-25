@@ -174,7 +174,7 @@ namespace CarroDesk.Views
             {
                 var modules = _services?.GetService<ModuleManager>()?.Modules;
                 string report = AppInfo.GetDiagnosticReport(modules);
-                Clipboard.SetDataObject(report);
+                Clipboard.SetDataObject(report, true);
                 ValidateText.Text = Loc.T("Msg.DiagnosticsCopied", "诊断信息已复制到剪贴板");
             }
             catch (Exception ex)

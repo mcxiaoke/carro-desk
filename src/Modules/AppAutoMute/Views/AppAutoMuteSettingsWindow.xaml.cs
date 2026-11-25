@@ -303,8 +303,8 @@ namespace CarroDesk.Modules.AppAutoMute.Views
 
             config.Enabled = ChkEnabled.IsChecked == true;
             config.Hotkey = hotkey;
-            config.MuteDelayMs = (int)SldMuteDelay.Value;
-            config.UnmuteDelayMs = (int)SldUnmuteDelay.Value;
+            config.MuteDelayMs = (int)Math.Round(SldMuteDelay.Value / 50.0) * 50;
+            config.UnmuteDelayMs = (int)Math.Round(SldUnmuteDelay.Value / 50.0) * 50;
             config.Mode = RadWhitelist.IsChecked == true ? "Whitelist" : "Blacklist";
             config.TargetApps = _targetApps.ToList();
 

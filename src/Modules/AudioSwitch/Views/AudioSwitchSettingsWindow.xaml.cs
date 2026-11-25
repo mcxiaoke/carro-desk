@@ -153,7 +153,6 @@ namespace CarroDesk.Modules.AudioSwitch.Views
 
             _initialSnapshot = config.Clone();
             _offlineExclusions.Clear();
-            if (config.ExcludedDevices != null) _offlineExclusions.AddRange(config.ExcludedDevices);
             ChkEnabled.IsChecked = config.Enabled;
             TxtHotkey.Text = config.Hotkey ?? "Ctrl+`";
             ChkPlaySound.IsChecked = config.PlayNotificationSound;
@@ -175,6 +174,8 @@ namespace CarroDesk.Modules.AudioSwitch.Views
                     if (!string.IsNullOrWhiteSpace(item)) excludedSet.Add(item.Trim());
                 }
             }
+
+            var matchedExclusions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             var audioSvc = _audioService;
             var currentDefault = audioSvc?.GetDefaultPlaybackDevice() ?? _module?.CurrentDefaultDevice;
@@ -199,19 +200,22 @@ namespace CarroDesk.Modules.AudioSwitch.Views
                 string icon = GetDeviceIcon(name);
 
                 bool isExcluded = false;
-                if (excludedSet.Contains(d.Id) || excludedSet.Contains(name))
+                if (excludedSet.Contains(d.Id))
                 {
                     isExcluded = true;
+                    matchedExclusions.Add(d.Id);
                 }
-                else
+                if (excludedSet.Contains(name))
                 {
-                    foreach (var excl in excludedSet)
+                    isExcluded = true;
+                    matchedExclusions.Add(name);
+                }
+                foreach (var excl in excludedSet)
+                {
+                    if (name.IndexOf(excl, StringComparison.OrdinalIgnoreCase) >= 0)
                     {
-                        if (name.IndexOf(excl, StringComparison.OrdinalIgnoreCase) >= 0)
-                        {
-                            isExcluded = true;
-                            break;
-                        }
+                        isExcluded = true;
+                        matchedExclusions.Add(excl);
                     }
                 }
 
@@ -225,6 +229,16 @@ namespace CarroDesk.Modules.AudioSwitch.Views
                     IsCurrentDefault = isDefault,
                     IsExcluded = isExcluded
                 });
+            }
+
+            // 仅保留当前未匹配到任何在线设备的排除项，防止在线设备取消排除后被回写
+            _offlineExclusions.Clear();
+            foreach (var excl in excludedSet)
+            {
+                if (!matchedExclusions.Contains(excl))
+                {
+                    _offlineExclusions.Add(excl);
+                }
             }
 
             TxtDeviceCount.Text = Loc.T("Audio.DeviceListTitle", "系统音频播放设备与排除策略 (共 {0} 个):", _devices.Count);
@@ -348,7 +362,7 @@ namespace CarroDesk.Modules.AudioSwitch.Views
 
         private void OnClearExclusionsClick(object sender, RoutedEventArgs e)
         {
-            if (_devices.Count == 0) return;
+            _offlineExclusions.Clear();
             foreach (var d in _devices)
             {
                 d.IsExcluded = false;
@@ -360,17 +374,32 @@ namespace CarroDesk.Modules.AudioSwitch.Views
         {
             if (_module != null)
             {
-                // 先同步界面配置到 module.Config 以便测试体验真实配置
-                if (_module.Config != null)
+                var backup = _module.Config?.Clone();
+                bool switched;
+                try
                 {
-                    _module.Config.SpeakerPattern = TxtSpeakerPattern.Text.Trim();
-                    _module.Config.HeadphonePattern = TxtHeadphonePattern.Text.Trim();
-                    _module.Config.ExcludedDevices = _devices.Where(x => x.IsExcluded).Select(x => x.Name)
-                        .Concat(_offlineExclusions).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-                    _module.Config.PlayNotificationSound = ChkPlaySound.IsChecked == true;
-                }
+                    // 临时同步界面配置以便测试体验，结束后恢复 _module.Config 防止未保存脏数据残留
+                    if (_module.Config != null)
+                    {
+                        _module.Config.SpeakerPattern = TxtSpeakerPattern.Text.Trim();
+                        _module.Config.HeadphonePattern = TxtHeadphonePattern.Text.Trim();
+                        _module.Config.ExcludedDevices = _devices.Where(x => x.IsExcluded).Select(x => x.Name)
+                            .Concat(_offlineExclusions).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                        _module.Config.PlayNotificationSound = ChkPlaySound.IsChecked == true;
+                    }
 
-                bool switched = _module.ToggleAudioDevice();
+                    switched = _module.ToggleAudioDevice();
+                }
+                finally
+                {
+                    if (backup != null && _module.Config != null)
+                    {
+                        _module.Config.SpeakerPattern = backup.SpeakerPattern;
+                        _module.Config.HeadphonePattern = backup.HeadphonePattern;
+                        _module.Config.ExcludedDevices = backup.ExcludedDevices;
+                        _module.Config.PlayNotificationSound = backup.PlayNotificationSound;
+                    }
+                }
                 if (switched)
                 {
                     string curId = _module.CurrentDefaultDevice?.Id;
@@ -406,6 +435,7 @@ namespace CarroDesk.Modules.AudioSwitch.Views
                 ChkPlaySound.IsChecked = true;
                 TxtSpeakerPattern.Text = Loc.T("Audio.Speaker", "扬声器");
                 TxtHeadphonePattern.Text = Loc.T("Audio.Headset", "耳机");
+                _offlineExclusions.Clear();
                 foreach (var d in _devices)
                 {
                     d.IsExcluded = false;

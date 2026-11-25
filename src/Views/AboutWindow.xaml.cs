@@ -22,6 +22,7 @@ namespace CarroDesk.Views
         {
             _modules = modules;
             InitializeComponent();
+            Closed += (s, e) => { try { _toastTimer?.Stop(); } catch { } };
             LoadAppInfo();
         }
 

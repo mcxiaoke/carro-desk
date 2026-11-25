@@ -57,5 +57,30 @@ namespace CarroDesk.Tests
             Assert.AreEqual(1000, cfg.MuteDelayMs);
             Assert.AreEqual(500, cfg.UnmuteDelayMs);
         }
+
+        [TestMethod]
+        public void AppAutoMuteModule_OnStartFailsGracefully_AndBlacklistSwitchStartsMuteTimer()
+        {
+            var module = new AppAutoMuteModule();
+            var container = new CarroDesk.Host.Services.ServiceContainer();
+            var manager = new CarroDesk.Host.Services.ModuleManager();
+            manager.RegisterModule(module);
+            manager.InitializeAll(container);
+            manager.StartAll();
+            Assert.AreEqual(CarroDesk.Core.ModuleStatus.Faulted, module.Status,
+                "缺少依赖时 Start 应安全回滚到 Faulted 而不触发 OnStop NRE");
+
+            // 黑名单双目标直切应启动 _muteTimer
+            var mod2 = new AppAutoMuteModule();
+            mod2.Config.TargetApps = new List<string> { "chrome.exe", "vlc.exe" };
+            var eval = typeof(AppAutoMuteModule).GetMethod("EvaluateForeground",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            var muteTimerField = typeof(AppAutoMuteModule).GetField("_muteTimer",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            eval.Invoke(mod2, new object[] { "vlc.exe" });
+            var muteTimer = (System.Windows.Threading.DispatcherTimer)muteTimerField.GetValue(mod2);
+            Assert.IsTrue(muteTimer.IsEnabled, "黑名单切到另一个目标应用时也应启动 _muteTimer 静音后台旧目标");
+            muteTimer.Stop();
+        }
     }
 }

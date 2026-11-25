@@ -25,7 +25,7 @@ namespace CarroDesk.Services
         private const string LogModuleId = "ScreenLock";
 
         private readonly List<LockWindow> _lockWindows = new List<LockWindow>();
-        private bool _locked;
+        private volatile bool _locked;
 
         public event Action Unlocked;
 
@@ -314,7 +314,11 @@ namespace CarroDesk.Services
         public void Dispose()
         {
             try { Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged; } catch { }
-            Unlock();
+            try
+            {
+                RunOnUiThreadSync(UnlockCore, LogError);
+            }
+            catch { }
             _blocker.Dispose();
         }
     }

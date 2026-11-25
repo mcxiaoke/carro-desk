@@ -336,7 +336,7 @@ namespace CarroDesk.Modules.MonitorProfile.Services
         /// </summary>
         public void SwitchProfile(string profileName)
         {
-            if (string.IsNullOrEmpty(profileName) || _config == null) return;
+            if (_config == null || !_config.Enabled || string.IsNullOrEmpty(profileName)) return;
 
             if (!_config.Profiles.ContainsKey(profileName))
                 return;
@@ -351,6 +351,7 @@ namespace CarroDesk.Modules.MonitorProfile.Services
         /// </summary>
         public void StepBrightness(int delta)
         {
+            if (_config == null || !_config.Enabled) return;
             int baseBrightness = CurrentBrightness >= 0 ? CurrentBrightness : 50;
             int newBrightness = Math.Max(0, Math.Min(100, baseBrightness + delta));
             int contrast = CurrentContrast >= 0 ? CurrentContrast : 70;
@@ -363,6 +364,7 @@ namespace CarroDesk.Modules.MonitorProfile.Services
         /// </summary>
         public void SetBrightness(int brightness)
         {
+            if (_config == null || !_config.Enabled) return;
             int contrast = CurrentContrast >= 0 ? CurrentContrast : 70;
             ApplyValuesAsync(brightness, contrast, _config?.ActiveProfile ?? "Manual", false, null);
         }
@@ -372,6 +374,7 @@ namespace CarroDesk.Modules.MonitorProfile.Services
         /// </summary>
         public void SetDirectValues(int brightness, int contrast)
         {
+            if (_config == null || !_config.Enabled) return;
             ApplyValuesAsync(brightness, contrast, _config?.ActiveProfile ?? "Manual", false, null);
         }
 

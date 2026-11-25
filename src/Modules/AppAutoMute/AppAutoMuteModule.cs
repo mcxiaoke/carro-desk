@@ -57,7 +57,10 @@ namespace CarroDesk.Modules.AppAutoMute
 
         protected override void OnStop()
         {
-            _foregroundTracker.ForegroundChanged -= OnForegroundChanged;
+            if (_foregroundTracker != null)
+            {
+                _foregroundTracker.ForegroundChanged -= OnForegroundChanged;
+            }
             _muteTimer.Stop();
             _unmuteTimer.Stop();
 
@@ -67,9 +70,14 @@ namespace CarroDesk.Modules.AppAutoMute
 
         public override void OnConfigReloaded()
         {
+            var previousConfig = Config?.Clone();
             base.OnConfigReloaded();
             _muteTimer.Stop();
             _unmuteTimer.Stop();
+
+            // 配置重载前可能已对旧受控列表（或白名单下其余进程）施加静音，先按旧规则解除
+            RestoreAudioForConfig(previousConfig);
+
             SetCheckedSelf(IsEnabledUser);
             if (IsEnabledUser)
             {
@@ -81,6 +89,27 @@ namespace CarroDesk.Modules.AppAutoMute
                 // 必须解除此前施加的静音，否则目标进程会一直静音到自身退出。
                 UnmuteAllTargets();
             }
+        }
+
+        private void RestoreAudioForConfig(AppAutoMuteConfig previous)
+        {
+            if (_audioService == null || previous == null || !previous.Enabled) return;
+            try
+            {
+                if (previous.TargetApps != null && previous.TargetApps.Count > 0)
+                {
+                    _audioService.UnmuteProcesses(previous.TargetApps);
+                }
+                if (string.Equals(previous.Mode, "Whitelist", StringComparison.OrdinalIgnoreCase))
+                {
+                    var active = _audioService.GetActiveAudioProcesses();
+                    if (active != null && active.Count > 0)
+                    {
+                        _audioService.UnmuteProcesses(active);
+                    }
+                }
+            }
+            catch { }
         }
 
         public override void OnLanguageChanged()
@@ -118,7 +147,7 @@ namespace CarroDesk.Modules.AppAutoMute
             }
             else
             {
-                EvaluateForeground(_foregroundTracker.CurrentProcessName);
+                EvaluateForeground(_foregroundTracker?.CurrentProcessName);
             }
         }
 
@@ -188,11 +217,14 @@ namespace CarroDesk.Modules.AppAutoMute
                 bool isTarget = ProcessHelper.ContainsProcess(Config.TargetApps, procName);
                 if (isTarget)
                 {
-                    // 前台是目标黑名单应用：停止静音计时，启动恢复声音计时
-                    _muteTimer.Stop();
+                    // 前台是目标黑名单应用：恢复当前应用声音，同时延时静音其余后台黑名单应用
+                    // （否则从目标 A 直接切到目标 B 时，A 不会触发静音）
                     _lastTargetProc = procName;
                     _unmuteTimer.Interval = TimeSpan.FromMilliseconds(Math.Max(50, Config.UnmuteDelayMs));
                     _unmuteTimer.Start();
+
+                    _muteTimer.Interval = TimeSpan.FromMilliseconds(Math.Max(50, Config.MuteDelayMs));
+                    _muteTimer.Start();
                 }
                 else
                 {

@@ -16,7 +16,7 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
         private long _totalBytes;
         // 配置重载（后台/IPC）与 RecordText（UI 线程）并发，引用写入必须可见。
         private volatile ClipboardHistoryConfig _config;
-        private string _suppressedHash;
+        private volatile string _suppressedHash;
 
         /// <summary>可选日志出口（模块层注入），不设置时静默；不弹通知打扰用户。</summary>
         public Action<string> LogWarning { get; set; }

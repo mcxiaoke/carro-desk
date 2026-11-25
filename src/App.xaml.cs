@@ -315,7 +315,8 @@ namespace CarroDesk
                     Modules,
                     Services,
                     ReloadConfig,
-                    PromptExit);
+                    PromptExit,
+                    () => IsShuttingDown);
             }));
         }
 
@@ -670,6 +671,7 @@ namespace CarroDesk
         private void OnAppExit(object sender, ExitEventArgs e)
         {
             IsShuttingDown = true;
+            try { FloatingPanelWindow.ForceCloseIfOpen(); } catch { }
             try { Modules?.StopAll(); } catch { /* intentionally ignored: best-effort stop during exit */ }
             try { Modules?.Dispose(); } catch { /* intentionally ignored: best-effort module dispose */ }
             try { Services?.Dispose(); } catch { /* intentionally ignored: service container dispose */ }

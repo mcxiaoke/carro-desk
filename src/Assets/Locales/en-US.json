@@ -953,7 +953,8 @@
     "HotkeyRefresh": "Refresh configuration manually:",
     "ApplyTestNow": "Apply now (test)",
     "DeleteProfileConfirm": "Delete profile \"{0}\" and all of its time-slot settings?",
-    "NoTimeSlots": "No time slots yet. Add one using the fields below."
+    "NoTimeSlots": "No time slots yet. Add one using the fields below.",
+    "DuplicateTime": "Time slot {0} already exists in this profile. Remove or edit it first."
   },
   "Audio": {
     "Speaker": "Speaker",
@@ -1112,6 +1113,8 @@
     "ClearList": "Clear list",
     "ExitBuffer": "Exit buffer time:",
     "ExitBufferDesc": "seconds (grace period after processes exit before restoring; 0 restores immediately)",
-    "ProcessLinkDisabledHint": "Smart process linking is disabled; the list and buffer settings are kept. Tick “Enable” above to restore it."
+    "ProcessLinkDisabledHint": "Smart process linking is disabled; the list and buffer settings are kept. Tick “Enable” above to restore it.",
+    "InvalidBatteryThreshold": "Battery threshold must be between 5 and 95.",
+    "InvalidExitDelay": "Process exit buffer must be between 0 and 3600 seconds."
   }
 }

@@ -242,6 +242,19 @@ namespace CarroDesk.Tests
                 Assert.IsTrue(fakeListener.IsStopped);
             }
         }
+
+        [TestMethod]
+        public void ProfileScheduleEngine_DisabledConfig_IgnoresManualSwitch()
+        {
+            var ddc = new MonitorDdcService();
+            using (var engine = new ProfileScheduleEngine(ddc, System.Windows.Threading.Dispatcher.CurrentDispatcher, null))
+            {
+                var cfg = new MonitorProfileConfig { Enabled = false, ActiveProfile = "Daily" };
+                engine.Start(cfg);
+                engine.SwitchProfile("Game");
+                Assert.AreEqual("Daily", cfg.ActiveProfile, "模块禁用时 SwitchProfile 不得切换 ActiveProfile");
+            }
+        }
     }
 
     internal class FakeDisplayPowerListener : IDisplayPowerListener

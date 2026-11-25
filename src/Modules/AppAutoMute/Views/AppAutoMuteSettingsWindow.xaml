@@ -154,7 +154,7 @@
                                 <ColumnDefinition Width="70"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="{loc:Loc AutoMute.MuteDelayLabel, Default='切出后台静音延迟:'}" VerticalAlignment="Center" Foreground="#FF475569" FontSize="13"/>
-                            <Slider x:Name="SldMuteDelay" Grid.Column="1" Minimum="100" Maximum="5000" SmallChange="100" LargeChange="500" Value="1000" VerticalAlignment="Center" ValueChanged="OnMuteDelayChanged"/>
+                            <Slider x:Name="SldMuteDelay" Grid.Column="1" Minimum="100" Maximum="5000" SmallChange="100" LargeChange="500" TickFrequency="50" IsSnapToTickEnabled="True" Value="1000" VerticalAlignment="Center" ValueChanged="OnMuteDelayChanged"/>
                             <TextBlock x:Name="TxtMuteDelayVal" Grid.Column="2" Text="1000 ms" VerticalAlignment="Center" HorizontalAlignment="Right" Foreground="#FF2563EB" FontWeight="SemiBold"/>
                         </Grid>
 
@@ -166,7 +166,7 @@
                                 <ColumnDefinition Width="70"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="{loc:Loc AutoMute.UnmuteDelayLabel, Default='切回前台恢复延迟:'}" VerticalAlignment="Center" Foreground="#FF475569" FontSize="13"/>
-                            <Slider x:Name="SldUnmuteDelay" Grid.Column="1" Minimum="50" Maximum="3000" SmallChange="50" LargeChange="250" Value="500" VerticalAlignment="Center" ValueChanged="OnUnmuteDelayChanged"/>
+                            <Slider x:Name="SldUnmuteDelay" Grid.Column="1" Minimum="50" Maximum="3000" SmallChange="50" LargeChange="250" TickFrequency="50" IsSnapToTickEnabled="True" Value="500" VerticalAlignment="Center" ValueChanged="OnUnmuteDelayChanged"/>
                             <TextBlock x:Name="TxtUnmuteDelayVal" Grid.Column="2" Text="500 ms" VerticalAlignment="Center" HorizontalAlignment="Right" Foreground="#FF2563EB" FontWeight="SemiBold"/>
                         </Grid>
                     </StackPanel>

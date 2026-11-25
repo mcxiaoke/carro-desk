@@ -54,6 +54,8 @@ namespace CarroDesk.Views
         private readonly DispatcherTimer _keepAliveTimer;
         private readonly DispatcherTimer _uiTimer;
         private readonly DispatcherTimer _deactivateTimer;
+        private DispatcherTimer _fadeOutFallbackTimer;
+        private HwndSource _hwndSource;
         private DateTime _lastKeepAlive = DateTime.MinValue;
         private DateTime _lastActivateAttempt = DateTime.MinValue;
         private bool _isClosing;
@@ -125,7 +127,10 @@ namespace CarroDesk.Views
             // 注册 WndProc 拦截 WM_WINDOWPOSCHANGING 以无闪烁方式维持 TOPMOST
             var source = HwndSource.FromHwnd(hwnd);
             if (source != null)
+            {
+                _hwndSource = source;
                 source.AddHook(WndProc);
+            }
         }
 
         private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -138,11 +143,7 @@ namespace CarroDesk.Views
                     var pos = (WINDOWPOS)Marshal.PtrToStructure(lParam, typeof(WINDOWPOS));
                     // 强制保持 TOPMOST 且不激活，避免 SetWindowPos 轮询带来的闪烁
                     // 仅在窗口试图去掉 TOPMOST 时修正，正常 DWM 合成不干预
-                    //
-                    // 清除的必须是 SWP_NOZORDER(0x0004)：置了它 hwndInsertAfter 就被忽略，
-                    // 下面的 HWND_TOPMOST 赋值等于白写。原实现清除的是 SWP_FRAMECHANGED(0x0020)
-                    // —— 注释与实现不符，实际并未在清除 NOZORDER。
-                    pos.flags &= unchecked((ushort)~SWP_NOZORDER);
+                    pos.flags &= ~SWP_NOZORDER;
                     pos.hwndInsertAfter = HWND_TOPMOST;
                     Marshal.StructureToPtr(pos, lParam, true);
                 }
@@ -160,8 +161,8 @@ namespace CarroDesk.Views
             public int y;
             public int cx;
             public int cy;
-            /// <summary>原生 WINDOWPOS.flags 是 WORD（16 位），声明为 uint 会与之不符。</summary>
-            public ushort flags;
+            /// <summary>原生 tagWINDOWPOS.flags 为 Win32 UINT（32 位无符号整型）。</summary>
+            public uint flags;
         }
 
         private void OnLoaded(object sender, RoutedEventArgs e)
@@ -392,6 +393,13 @@ namespace CarroDesk.Views
             _keepAliveTimer.Stop();
             _uiTimer.Stop();
             _deactivateTimer.Stop();
+            try { _fadeOutFallbackTimer?.Stop(); } catch { }
+            _fadeOutFallbackTimer = null;
+            if (_hwndSource != null)
+            {
+                try { _hwndSource.RemoveHook(WndProc); } catch { }
+                _hwndSource = null;
+            }
         }
 
         /// <summary>
@@ -422,13 +430,16 @@ namespace CarroDesk.Views
                     // 视觉动画失败无关紧要，继续走关窗流程
                 }
 
+                _fadeOutFallbackTimer?.Stop();
                 var fallback = new DispatcherTimer(DispatcherPriority.Send, Dispatcher)
                 {
                     Interval = TimeSpan.FromMilliseconds(500)
                 };
+                _fadeOutFallbackTimer = fallback;
                 fallback.Tick += (s, e) =>
                 {
                     try { fallback.Stop(); } catch { }
+                    if (ReferenceEquals(_fadeOutFallbackTimer, fallback)) _fadeOutFallbackTimer = null;
                     RequestClose();
                 };
                 fallback.Start();

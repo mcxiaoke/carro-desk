@@ -208,12 +208,8 @@ namespace CarroDesk.Tests
         }
 
         /// <summary>
-        /// 锁屏窗口的 WINDOWPOS 结构必须与原生布局一致（截断/错位会让无闪烁置顶失效）。
-        ///
-        /// 原生：HWND hwnd; HWND hwndInsertAfter; int x, y, cx, cy; WORD flags;
-        /// flags 声明为 uint 会让后面多出 2 字节填充差；更关键的是原实现清除的是
-        /// SWP_FRAMECHANGED(0x0020) 而不是注释所写的 SWP_NOZORDER(0x0004) ——
-        /// 置了 NOZORDER 时 hwndInsertAfter 会被忽略，强制 TOPMOST 等于没做。
+        /// 锁屏窗口的 WINDOWPOS 结构必须与原生 Win32 tagWINDOWPOS 布局一致（截断/错位会让无闪烁置顶失效）。
+        /// 原生：HWND hwnd; HWND hwndInsertAfter; int x, y, cx, cy; UINT flags;
         /// </summary>
         [TestMethod]
         public void LockWindow_WndProcKeepsTopmostWithoutFightingZOrder()
@@ -225,11 +221,11 @@ namespace CarroDesk.Tests
 
             var flagsField = windowPos.GetField("flags");
             Assert.IsNotNull(flagsField);
-            Assert.AreEqual(typeof(ushort), flagsField.FieldType,
-                "WINDOWPOS.flags 原生是 WORD（16 位），声明为 uint/uint+padding 会与原生布局不符");
+            Assert.AreEqual(typeof(uint), flagsField.FieldType,
+                "WINDOWPOS.flags 原生是 Win32 UINT（32 位），声明为 ushort 会截断高位标志");
 
-            // x64: hwnd(8) + hwndInsertAfter(8) + 4*int(16) + WORD(2) = 36 字节有效载荷（结构按 8 对齐后 SizeOf 为 40）
-            // x86: 4 + 4 + 16 + 2 = 28 字节有效载荷（对齐后 28）
+            // x64: hwnd(8) + hwndInsertAfter(8) + 4*int(16) + UINT(4) = 36 字节有效载荷（8字节对齐为 40）
+            // x86: 4 + 4 + 16 + 4 = 28 字节有效载荷
             int nativeMinimum = IntPtr.Size == 8 ? 36 : 28;
             int actual = System.Runtime.InteropServices.Marshal.SizeOf(windowPos);
             Assert.IsTrue(actual >= nativeMinimum,

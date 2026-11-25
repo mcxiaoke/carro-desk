@@ -110,6 +110,7 @@ namespace CarroDesk.Modules.ScreenLock
             ResetIdleMachine();
             if (Config != null && !Config.Enabled) Controller?.Unlock();
             UpdateTrayHeaderAndToolTip();
+            RequestTrayRefresh();
         }
 
         public override void OnLanguageChanged()
@@ -588,6 +589,11 @@ namespace CarroDesk.Modules.ScreenLock
                     {
                         // 纵深防御：即使菜单构建后、点击前恰好发生自动锁定，也不能弹出设置窗口。
                         if (Controller != null && Controller.IsLocked) return;
+                        if (_activeSettingsWindow != null && _activeSettingsWindow.IsLoaded)
+                        {
+                            _activeSettingsWindow.Activate();
+                            return;
+                        }
                         var cfgMgr = Context?.GetService<IConfigManager>();
                         var win = new ScreenLockSettingsWindow(
                             cfgMgr,
@@ -595,6 +601,11 @@ namespace CarroDesk.Modules.ScreenLock
                             () => Controller != null && Controller.IsLocked)
                         {
                             WindowStartupLocation = WindowStartupLocation.CenterScreen
+                        };
+                        _activeSettingsWindow = win;
+                        win.Closed += (s, e) =>
+                        {
+                            if (ReferenceEquals(_activeSettingsWindow, win)) _activeSettingsWindow = null;
                         };
                         win.ShowDialog();
                     }
@@ -617,78 +628,16 @@ namespace CarroDesk.Modules.ScreenLock
             });
         }
 
+        private ScreenLockSettingsWindow _activeSettingsWindow;
+
         private static bool PromptPauseMinutes(out int minutes)
         {
-            minutes = 0;
-            var dlg = new Window
-            {
-                Title = Loc.T("Tray.PauseCustom", "自定义暂停分钟数..."),
-                Width = 360,
-                Height = 160,
-                WindowStartupLocation = WindowStartupLocation.CenterScreen,
-                ResizeMode = ResizeMode.NoResize,
-                Background = System.Windows.Media.Brushes.White,
-                FontFamily = new System.Windows.Media.FontFamily("Segoe UI, Microsoft YaHei UI")
-            };
-            var grid = new Grid { Margin = new Thickness(16) };
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-            var lbl = new TextBlock
-            {
-                Text = Loc.T("Lock.PromptPauseMinutes", "请输入暂停计时的分钟数 (1-1440)："),
-                Margin = new Thickness(0, 0, 0, 8),
-                FontSize = 13,
-                Foreground = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString("#FF374151")
-            };
-            var txt = new TextBox
-            {
-                Text = "30",
-                Height = 28,
-                VerticalContentAlignment = VerticalAlignment.Center,
-                Padding = new Thickness(4, 0, 4, 0),
-                FontSize = 13
-            };
-            txt.SelectAll();
-
-            var btnPanel = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                HorizontalAlignment = HorizontalAlignment.Right,
-                Margin = new Thickness(0, 12, 0, 0)
-            };
-            var btnOk = new Button { Content = Loc.T("Common.Ok", "确定"), Width = 70, Height = 28, IsDefault = true, Margin = new Thickness(0, 0, 8, 0) };
-            var btnCancel = new Button { Content = Loc.T("Common.Cancel", "取消"), Width = 70, Height = 28, IsCancel = true };
-
-            btnOk.Click += (s, e) => { dlg.DialogResult = true; dlg.Close(); };
-            btnCancel.Click += (s, e) => { dlg.DialogResult = false; dlg.Close(); };
-
-            btnPanel.Children.Add(btnOk);
-            btnPanel.Children.Add(btnCancel);
-
-            Grid.SetRow(lbl, 0);
-            Grid.SetRow(txt, 1);
-            Grid.SetRow(btnPanel, 2);
-
-            grid.Children.Add(lbl);
-            grid.Children.Add(txt);
-            grid.Children.Add(btnPanel);
-
-            dlg.Content = grid;
-            dlg.Loaded += (s, e) => txt.Focus();
-
-            if (dlg.ShowDialog() == true)
-            {
-                string input = txt.Text.Trim();
-                if (int.TryParse(input, out int m) && m > 0 && m <= 1440)
-                {
-                    minutes = m;
-                    return true;
-                }
-                MessageBox.Show(Loc.T("Msg.InvalidMinutes", "请输入 1 到 1440 之间的有效分钟数。"), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
-            }
-            return false;
+            return CarroDesk.Views.InputPromptDialog.ShowIntRange(
+                Loc.T("Tray.PauseCustom", "自定义暂停分钟数..."),
+                Loc.T("Lock.PromptPauseMinutes", "请输入暂停计时的分钟数 (1-1440)："),
+                "30", 1, 1440,
+                Loc.T("Msg.InvalidMinutes", "请输入 1 到 1440 之间的有效分钟数。"),
+                out minutes);
         }
     }
 }

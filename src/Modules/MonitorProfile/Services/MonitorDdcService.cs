@@ -173,7 +173,7 @@ namespace CarroDesk.Modules.MonitorProfile.Services
                 _isApplying = true;
                 _applyTask = Task.Run(() =>
                 {
-                    int totalApplied = 0;
+                    int lastSuccessCount = 0;
                     int finalBrightness = brightness;
                     int finalContrast = contrast;
                     // 复位必须放在 finally：SetBrightnessAndContrastSync 一旦抛出
@@ -197,7 +197,18 @@ namespace CarroDesk.Modules.MonitorProfile.Services
                             {
                                 try
                                 {
-                                    totalApplied += SetBrightnessAndContrastSync(b, c);
+                                    int applied = SetBrightnessAndContrastSync(b, c);
+                                    if (applied > 0)
+                                    {
+                                        lastSuccessCount = applied;
+                                        finalBrightness = b;
+                                        finalContrast = c;
+                                    }
+                                    else if (lastSuccessCount == 0)
+                                    {
+                                        finalBrightness = b;
+                                        finalContrast = c;
+                                    }
                                 }
                                 catch (Exception ex)
                                 {
@@ -205,8 +216,6 @@ namespace CarroDesk.Modules.MonitorProfile.Services
                                     // 断开一次后设备可能已不在，后续轮次仍有机会成功。
                                     _logger?.LogError("MonitorDdc", "写入亮度/对比度失败", ex);
                                 }
-                                finalBrightness = b;
-                                finalContrast = c;
                             }
 
                             lock (_syncLock)
@@ -226,7 +235,7 @@ namespace CarroDesk.Modules.MonitorProfile.Services
                     }
                     return new DdcApplyResult
                     {
-                        AppliedCount = totalApplied,
+                        AppliedCount = lastSuccessCount,
                         Brightness = finalBrightness,
                         Contrast = finalContrast
                     };
@@ -267,7 +276,9 @@ namespace CarroDesk.Modules.MonitorProfile.Services
                 foreach (var handle in physicalHandles)
                 {
                     bool bOk = SetBrightnessValue(handle, brightness);
+                    int bErr = bOk ? 0 : Marshal.GetLastWin32Error();
                     bool cOk = SetContrastValue(handle, contrast);
+                    int cErr = cOk ? 0 : Marshal.GetLastWin32Error();
 
                     if (bOk && cOk)
                     {
@@ -275,7 +286,7 @@ namespace CarroDesk.Modules.MonitorProfile.Services
                     }
                     else
                     {
-                        int err = Marshal.GetLastWin32Error();
+                        int err = !bOk ? bErr : cErr;
                         if (IsDisplaySleepingOrNotReady(err))
                         {
                             sleepOrOffDetected = true;
@@ -342,11 +353,13 @@ namespace CarroDesk.Modules.MonitorProfile.Services
                 }
 
                 bool bOk = GetBrightnessValue(physicalHandles[0], out brightness);
+                int bErr = bOk ? 0 : Marshal.GetLastWin32Error();
                 bool cOk = GetContrastValue(physicalHandles[0], out contrast);
+                int cErr = cOk ? 0 : Marshal.GetLastWin32Error();
 
                 if (!bOk && !cOk)
                 {
-                    int err = Marshal.GetLastWin32Error();
+                    int err = bErr != 0 ? bErr : cErr;
                     if (IsDisplaySleepingOrNotReady(err))
                     {
                         LogDebug($"DDC: 主显示器处于休眠或未就绪状态 (Win32错误: {err})，跳过 WMI 回退");

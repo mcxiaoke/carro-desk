@@ -1,6 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Windows.Interop;
+using System.Windows.Threading;
 using CarroDesk.Common;
 
 namespace CarroDesk.Modules.ClipboardHistory.Services
@@ -17,15 +18,37 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
         private static readonly IntPtr HWND_MESSAGE = new IntPtr(-3);
 
         private readonly object _lock = new object();
+        private readonly Dispatcher _dispatcher;
         private HwndSource _hwndSource;
         private bool _isListening;
         private bool _disposed;
+
+        public Win32ClipboardListener(Dispatcher dispatcher = null)
+        {
+            _dispatcher = dispatcher;
+        }
 
         public event Action<string> ClipboardUpdated;
 
         public bool IsListening => _isListening;
 
+        private void RunOnDispatcher(Action action)
+        {
+            if (_dispatcher == null || _dispatcher.CheckAccess())
+            {
+                action();
+                return;
+            }
+            if (_dispatcher.HasShutdownStarted || _dispatcher.HasShutdownFinished) return;
+            try { _dispatcher.Invoke(action); } catch { }
+        }
+
         public void Start()
+        {
+            RunOnDispatcher(StartCore);
+        }
+
+        private void StartCore()
         {
             lock (_lock)
             {
@@ -62,6 +85,18 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
         }
 
         public void Stop()
+        {
+            if (_dispatcher == null || _dispatcher.CheckAccess() || _dispatcher.HasShutdownStarted || _dispatcher.HasShutdownFinished)
+            {
+                StopCore();
+            }
+            else
+            {
+                try { _dispatcher.Invoke(StopCore); } catch { StopCore(); }
+            }
+        }
+
+        private void StopCore()
         {
             lock (_lock)
             {
@@ -108,12 +143,24 @@ namespace CarroDesk.Modules.ClipboardHistory.Services
 
         public void Dispose()
         {
+            if (_dispatcher == null || _dispatcher.CheckAccess() || _dispatcher.HasShutdownStarted || _dispatcher.HasShutdownFinished)
+            {
+                DisposeCore();
+            }
+            else
+            {
+                try { _dispatcher.Invoke(DisposeCore); } catch { DisposeCore(); }
+            }
+        }
+
+        private void DisposeCore()
+        {
             lock (_lock)
             {
                 if (_disposed) return;
                 _disposed = true;
 
-                Stop();
+                StopCore();
 
                 try
                 {

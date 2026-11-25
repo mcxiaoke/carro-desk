@@ -179,6 +179,7 @@ namespace CarroDesk.Modules.Awake.Services
         private readonly Action<string> _notifyFailure;
 
         private readonly DispatcherTimer _timer;
+        private readonly object _stateLock = new object();
 
         private AwakeConfig _config;
 
@@ -202,43 +203,80 @@ namespace CarroDesk.Modules.Awake.Services
         private bool _userSuppressedProcessLink = false;
 
         public AwakeMode Mode => _mode;
-        public bool KeepDisplayOn => _keepDisplayOn;
-        public DateTime ExpireTime => _expireTime;
-        public bool IsActive => _config?.Enabled != false && !_isBatteryPaused && (_mode != AwakeMode.Passive || _isProcessTriggered);
-        public bool IsBatteryPaused => _isBatteryPaused;
-        public bool IsProcessTriggered => _isProcessTriggered;
-        public bool IsProcessExiting => _processExitPendingSeconds > 0;
-        public int ProcessExitPendingSeconds => _processExitPendingSeconds;
-        public string ActiveProcessTrigger => _activeProcessTrigger;
+        public bool KeepDisplayOn { get { lock (_stateLock) return _keepDisplayOn; } }
+        public DateTime ExpireTime { get { lock (_stateLock) return _expireTime; } }
+        public bool IsActive
+        {
+            get
+            {
+                lock (_stateLock)
+                {
+                    return _config?.Enabled != false && !_isBatteryPaused && (_mode != AwakeMode.Passive || _isProcessTriggered);
+                }
+            }
+        }
+        public bool IsBatteryPaused { get { lock (_stateLock) return _isBatteryPaused; } }
+        public bool IsProcessTriggered { get { lock (_stateLock) return _isProcessTriggered; } }
+        public bool IsProcessExiting { get { lock (_stateLock) return _processExitPendingSeconds > 0; } }
+        public int ProcessExitPendingSeconds { get { lock (_stateLock) return _processExitPendingSeconds; } }
+        public string ActiveProcessTrigger { get { lock (_stateLock) return _activeProcessTrigger; } }
 
         /// <summary>当前待执行的电源动作（延迟睡眠/关机），无则 None。</summary>
         public PendingPowerAction PendingAction => _pendingAction;
 
         /// <summary>待执行电源动作的预计触发时刻；无待执行动作时为 DateTime.MinValue。</summary>
-        public DateTime PendingFireAt => _pendingFireAt;
+        public DateTime PendingFireAt { get { lock (_stateLock) return _pendingFireAt; } }
 
         /// <summary>距电源动作触发的剩余秒数；无待执行动作时为 null。</summary>
-        public int? PendingSecondsRemaining =>
-            _pendingAction == PendingPowerAction.None
-                ? (int?)null
-                : Math.Max(0, (int)Math.Ceiling((_pendingFireAt - DateTime.Now).TotalSeconds));
+        public int? PendingSecondsRemaining
+        {
+            get
+            {
+                lock (_stateLock)
+                {
+                    return _pendingAction == PendingPowerAction.None
+                        ? (int?)null
+                        : Math.Max(0, (int)Math.Ceiling((_pendingFireAt - DateTime.Now).TotalSeconds));
+                }
+            }
+        }
 
         /// <summary>智能进程联动是否启用（总开关 + 名单非空）</summary>
-        public bool IsProcessLinkEnabled => _config?.Enabled != false && (_config == null || _config.ProcessLinkEnabled);
+        public bool IsProcessLinkEnabled
+        {
+            get
+            {
+                lock (_stateLock)
+                {
+                    return _config?.Enabled != false && (_config == null || _config.ProcessLinkEnabled);
+                }
+            }
+        }
 
         /// <summary>名单中是否有可用的目标进程</summary>
-        public bool HasProcessTargets =>
-            _config?.AutoAwakeProcesses != null && _config.AutoAwakeProcesses.Count > 0;
+        public bool HasProcessTargets
+        {
+            get
+            {
+                lock (_stateLock)
+                {
+                    return _config?.AutoAwakeProcesses != null && _config.AutoAwakeProcesses.Count > 0;
+                }
+            }
+        }
 
         public TimeSpan RemainingTime
         {
             get
             {
-                if ((_mode == AwakeMode.Timed || _mode == AwakeMode.UntilTime) && _expireTime > DateTime.Now)
+                lock (_stateLock)
                 {
-                    return _expireTime - DateTime.Now;
+                    if ((_mode == AwakeMode.Timed || _mode == AwakeMode.UntilTime) && _expireTime > DateTime.Now)
+                    {
+                        return _expireTime - DateTime.Now;
+                    }
+                    return TimeSpan.Zero;
                 }
-                return TimeSpan.Zero;
             }
         }
 
@@ -261,75 +299,87 @@ namespace CarroDesk.Modules.Awake.Services
 
         public void Initialize(AwakeConfig config)
         {
-            _config = config ?? AwakeConfig.CreateDefault();
-            _mode = _config.Enabled ? _config.Mode : AwakeMode.Passive;
-            if ((_mode == AwakeMode.Timed || _mode == AwakeMode.UntilTime) &&
-                _config.ExpireAtLocal.HasValue && _config.ExpireAtLocal.Value > DateTime.Now)
+            lock (_stateLock)
             {
-                _expireTime = _config.ExpireAtLocal.Value;
+                _config = config ?? AwakeConfig.CreateDefault();
+                _mode = _config.Enabled ? _config.Mode : AwakeMode.Passive;
+                if ((_mode == AwakeMode.Timed || _mode == AwakeMode.UntilTime) &&
+                    _config.ExpireAtLocal.HasValue && _config.ExpireAtLocal.Value > DateTime.Now)
+                {
+                    _expireTime = _config.ExpireAtLocal.Value;
+                }
+                else if (_mode == AwakeMode.Timed || _mode == AwakeMode.UntilTime)
+                {
+                    // 旧配置或损坏配置只有模式、没有有效截止时间时不得进入活动态。
+                    _mode = AwakeMode.Passive;
+                    _expireTime = DateTime.MinValue;
+                }
+                _keepDisplayOn = _config.KeepDisplayOn;
             }
-            else if (_mode == AwakeMode.Timed || _mode == AwakeMode.UntilTime)
-            {
-                // 旧配置或损坏配置只有模式、没有有效截止时间时不得进入活动态。
-                _mode = AwakeMode.Passive;
-                _expireTime = DateTime.MinValue;
-            }
-            _keepDisplayOn = _config.KeepDisplayOn;
         }
 
         public void UpdateConfig(AwakeConfig config)
         {
-            // 记录联动开关变更前的状态：用于区分"用户刚刚打开联动"与"普通配置重载"。
-            bool wasProcessLinkEnabled = IsProcessLinkEnabled;
-            _config = config ?? AwakeConfig.CreateDefault();
-            _keepDisplayOn = _config.KeepDisplayOn;
-            _mode = _config.Enabled ? _config.Mode : AwakeMode.Passive;
-            if ((_mode == AwakeMode.Timed || _mode == AwakeMode.UntilTime) &&
-                _config.ExpireAtLocal.HasValue && _config.ExpireAtLocal.Value > DateTime.Now)
+            string revokedProc = null;
+            lock (_stateLock)
             {
-                _expireTime = _config.ExpireAtLocal.Value;
-            }
-            else if (_mode == AwakeMode.Timed || _mode == AwakeMode.UntilTime)
-            {
-                _mode = AwakeMode.Passive;
-                _expireTime = DateTime.MinValue;
-            }
-            else
-            {
-                _expireTime = DateTime.MinValue;
+                // 记录联动开关变更前的状态：用于区分"用户刚刚打开联动"与"普通配置重载"。
+                bool wasProcessLinkEnabled = _config?.Enabled != false && (_config == null || _config.ProcessLinkEnabled);
+                _config = config ?? AwakeConfig.CreateDefault();
+                _keepDisplayOn = _config.KeepDisplayOn;
+                _mode = _config.Enabled ? _config.Mode : AwakeMode.Passive;
+                if ((_mode == AwakeMode.Timed || _mode == AwakeMode.UntilTime) &&
+                    _config.ExpireAtLocal.HasValue && _config.ExpireAtLocal.Value > DateTime.Now)
+                {
+                    _expireTime = _config.ExpireAtLocal.Value;
+                }
+                else if (_mode == AwakeMode.Timed || _mode == AwakeMode.UntilTime)
+                {
+                    _mode = AwakeMode.Passive;
+                    _expireTime = DateTime.MinValue;
+                }
+                else
+                {
+                    _expireTime = DateTime.MinValue;
+                }
+
+                // 模块总开关关闭时立即回到 Passive；电池保护策略关闭时也必须清掉旧暂停标志。
+                if (!_config.Enabled)
+                {
+                    _mode = AwakeMode.Passive;
+                    _expireTime = DateTime.MinValue;
+                    _isProcessTriggered = false;
+                    _activeProcessTrigger = string.Empty;
+                    _processExitPendingSeconds = 0;
+                    _userSuppressedProcessLink = false;
+                }
+                if (!_config.Enabled || !_config.DisableOnBattery)
+                {
+                    _isBatteryPaused = false;
+                }
+
+                bool nowProcessLinkEnabled = _config.Enabled && _config.ProcessLinkEnabled;
+                bool hasTargets = _config.AutoAwakeProcesses != null && _config.AutoAwakeProcesses.Count > 0;
+
+                // 开关被关闭或目标名单已清空时，立即撤销正在进行的进程联动，避免状态残留
+                if ((!nowProcessLinkEnabled || !hasTargets) && _isProcessTriggered)
+                {
+                    revokedProc = _activeProcessTrigger;
+                    _isProcessTriggered = false;
+                    _activeProcessTrigger = string.Empty;
+                    _processExitPendingSeconds = 0;
+                }
+                else if (nowProcessLinkEnabled && !wasProcessLinkEnabled)
+                {
+                    // 仅当进程联动由"关"变"开"时才清除用户抑制。
+                    _userSuppressedProcessLink = false;
+                }
             }
 
-            // 模块总开关关闭时立即回到 Passive；电池保护策略关闭时也必须清掉旧暂停标志。
-            if (!_config.Enabled)
+            if (revokedProc != null)
             {
-                _mode = AwakeMode.Passive;
-                _expireTime = DateTime.MinValue;
-                _isProcessTriggered = false;
-                _activeProcessTrigger = string.Empty;
-                _processExitPendingSeconds = 0;
-                _userSuppressedProcessLink = false;
-            }
-            if (!_config.Enabled || !_config.DisableOnBattery)
-            {
-                _isBatteryPaused = false;
-            }
-
-            // 开关被关闭或目标名单已清空时，立即撤销正在进行的进程联动，避免状态残留
-            if ((!IsProcessLinkEnabled || !HasProcessTargets) && _isProcessTriggered)
-            {
-                string oldProc = _activeProcessTrigger;
-                _isProcessTriggered = false;
-                _activeProcessTrigger = string.Empty;
-                _processExitPendingSeconds = 0;
-                _logger?.LogInfo("Awake", $"智能进程联动已关闭或名单已清空，撤销进程 '{oldProc}' 触发的保持唤醒");
-                ProcessTriggered?.Invoke(false, oldProc);
-            }
-            else if (IsProcessLinkEnabled && !wasProcessLinkEnabled)
-            {
-                // 仅当进程联动由"关"变"开"时才清除用户抑制。
-                // 旧实现在任何一次 UpdateConfig 都会清零，导致用户在托盘点"关闭"后，
-                // 只要发生一次配置重载（托盘"重载配置"等）联动就被重新拉起，表现为"关了又开"。
-                _userSuppressedProcessLink = false;
+                _logger?.LogInfo("Awake", $"智能进程联动已关闭或名单已清空，撤销进程 '{revokedProc}' 触发的保持唤醒");
+                ProcessTriggered?.Invoke(false, revokedProc);
             }
 
             ApplyExecutionState();
@@ -350,15 +400,23 @@ namespace CarroDesk.Modules.Awake.Services
 
         public void SetPassive()
         {
-            _mode = AwakeMode.Passive;
-            _expireTime = DateTime.MinValue;
-            _isProcessTriggered = false;
-            _activeProcessTrigger = string.Empty;
-            _processExitPendingSeconds = 0;
-            if (_config != null)
+            SetPassive(updateConfig: true);
+        }
+
+        public void SetPassive(bool updateConfig)
+        {
+            lock (_stateLock)
             {
-                _config.Mode = AwakeMode.Passive;
-                _config.ExpireAtLocal = null;
+                _mode = AwakeMode.Passive;
+                _expireTime = DateTime.MinValue;
+                _isProcessTriggered = false;
+                _activeProcessTrigger = string.Empty;
+                _processExitPendingSeconds = 0;
+                if (updateConfig && _config != null)
+                {
+                    _config.Mode = AwakeMode.Passive;
+                    _config.ExpireAtLocal = null;
+                }
             }
 
             // 注意：这里不再重置 _isBatteryPaused——该标志归电池判定逻辑所有。
@@ -376,29 +434,48 @@ namespace CarroDesk.Modules.Awake.Services
         /// </summary>
         public void SetPassiveByUser()
         {
-            _userSuppressedProcessLink = true;
-            SetPassive();
+            SetPassiveByUser(updateConfig: true);
+        }
+
+        public void SetPassiveByUser(bool updateConfig)
+        {
+            lock (_stateLock)
+            {
+                _userSuppressedProcessLink = true;
+            }
+            SetPassive(updateConfig);
         }
 
         /// <summary>显式复位用户手动关闭抑制（在设置保存、总开关开启时调用）</summary>
         public void ResetUserSuppression()
         {
-            _userSuppressedProcessLink = false;
+            lock (_stateLock)
+            {
+                _userSuppressedProcessLink = false;
+            }
         }
 
         public void SetIndefinite()
         {
-            if (_config?.Enabled == false) return;
-            _userSuppressedProcessLink = false;
-            _mode = AwakeMode.Indefinite;
-            _expireTime = DateTime.MinValue;
-            _isProcessTriggered = false;
-            _activeProcessTrigger = string.Empty;
-            _processExitPendingSeconds = 0;
-            if (_config != null)
+            SetIndefinite(updateConfig: true);
+        }
+
+        public void SetIndefinite(bool updateConfig)
+        {
+            lock (_stateLock)
             {
-                _config.Mode = AwakeMode.Indefinite;
-                _config.ExpireAtLocal = null;
+                if (_config?.Enabled == false) return;
+                _userSuppressedProcessLink = false;
+                _mode = AwakeMode.Indefinite;
+                _expireTime = DateTime.MinValue;
+                _isProcessTriggered = false;
+                _activeProcessTrigger = string.Empty;
+                _processExitPendingSeconds = 0;
+                if (updateConfig && _config != null)
+                {
+                    _config.Mode = AwakeMode.Indefinite;
+                    _config.ExpireAtLocal = null;
+                }
             }
 
             ApplyExecutionState();
@@ -407,28 +484,38 @@ namespace CarroDesk.Modules.Awake.Services
 
         public void SetTimed(int minutes)
         {
-            if (_config?.Enabled == false) return;
+            SetTimed(minutes, updateConfig: true);
+        }
+
+        public void SetTimed(int minutes, bool updateConfig)
+        {
             if (minutes <= 0)
             {
-                SetPassive();
+                lock (_stateLock)
+                {
+                    if (_config?.Enabled == false) return;
+                }
+                SetPassive(updateConfig);
                 return;
             }
 
-            _userSuppressedProcessLink = false;
-            DateTime newExpire = DateTime.Now.AddMinutes(minutes);
-            // 写序（H4）：先写 _expireTime 再写 _mode。tick（UI 线程）以 _mode 为闸门进入
-            // 倒计时判定；x86-TSO 保证读方看到 _mode==Timed 时必已看到新 _expireTime，
-            // 否则可能读到"Timed + 旧 MinValue"被误判立即过期、刚下达的 awake.on 被立即撤销。
-            _expireTime = newExpire;
-            _mode = AwakeMode.Timed;
-            if (_config != null)
+            lock (_stateLock)
             {
-                _config.Mode = _mode;
-                _config.ExpireAtLocal = _expireTime;
+                if (_config?.Enabled == false) return;
+                _userSuppressedProcessLink = false;
+                DateTime newExpire = DateTime.Now.AddMinutes(minutes);
+                // 写序（H4）：先写 _expireTime 再写 _mode。
+                _expireTime = newExpire;
+                _mode = AwakeMode.Timed;
+                if (updateConfig && _config != null)
+                {
+                    _config.Mode = _mode;
+                    _config.ExpireAtLocal = _expireTime;
+                }
+                _isProcessTriggered = false;
+                _activeProcessTrigger = string.Empty;
+                _processExitPendingSeconds = 0;
             }
-            _isProcessTriggered = false;
-            _activeProcessTrigger = string.Empty;
-            _processExitPendingSeconds = 0;
 
             ApplyExecutionState();
             StateChanged?.Invoke();
@@ -436,27 +523,35 @@ namespace CarroDesk.Modules.Awake.Services
 
         public void SetUntilTime(DateTime targetTime)
         {
-            if (_config?.Enabled == false) return;
-            DateTime now = DateTime.Now;
-            DateTime target = new DateTime(now.Year, now.Month, now.Day, targetTime.Hour, targetTime.Minute, 0);
-            if (target <= now)
-            {
-                target = target.AddDays(1);
-            }
+            SetUntilTime(targetTime, updateConfig: true);
+        }
 
-            _userSuppressedProcessLink = false;
-            DateTime newTarget = target;
-            // 写序（H4）：先写 _expireTime 再写 _mode，理由同 SetTimed
-            _expireTime = newTarget;
-            _mode = AwakeMode.UntilTime;
-            if (_config != null)
+        public void SetUntilTime(DateTime targetTime, bool updateConfig)
+        {
+            lock (_stateLock)
             {
-                _config.Mode = _mode;
-                _config.ExpireAtLocal = target;
+                if (_config?.Enabled == false) return;
+                DateTime now = DateTime.Now;
+                DateTime target = new DateTime(now.Year, now.Month, now.Day, targetTime.Hour, targetTime.Minute, 0);
+                if (target <= now)
+                {
+                    target = target.AddDays(1);
+                }
+
+                _userSuppressedProcessLink = false;
+                DateTime newTarget = target;
+                // 写序（H4）：先写 _expireTime 再写 _mode，理由同 SetTimed
+                _expireTime = newTarget;
+                _mode = AwakeMode.UntilTime;
+                if (updateConfig && _config != null)
+                {
+                    _config.Mode = _mode;
+                    _config.ExpireAtLocal = target;
+                }
+                _isProcessTriggered = false;
+                _activeProcessTrigger = string.Empty;
+                _processExitPendingSeconds = 0;
             }
-            _isProcessTriggered = false;
-            _activeProcessTrigger = string.Empty;
-            _processExitPendingSeconds = 0;
 
             ApplyExecutionState();
             StateChanged?.Invoke();
@@ -479,11 +574,12 @@ namespace CarroDesk.Modules.Awake.Services
             DateTime newFireAt = delaySeconds == 0
                 ? DateTime.Now.AddSeconds(1) // 0 秒也保留 1 个 tick，确保命令响应先送达再执行
                 : DateTime.Now.AddSeconds(delaySeconds);
-            // 写序（H4）：先写 _pendingFireAt 再写 _pendingAction。tick 以 _pendingAction != None
-            // 为闸门；若先写 action 后写时刻，tick 可能读到"新 action + 旧 MinValue"并立即执行
-            // 电源动作（本应延迟 30 秒给 agent 回复的契约被跳过）。
-            _pendingFireAt = newFireAt;
-            _pendingAction = action;
+            lock (_stateLock)
+            {
+                // 写序（H4）：先写 _pendingFireAt 再写 _pendingAction。
+                _pendingFireAt = newFireAt;
+                _pendingAction = action;
+            }
             _logger?.LogInfo("Awake", $"已调度电源动作 {action}，将于 {newFireAt:yyyy-MM-dd HH:mm:ss} 执行 (延迟 {delaySeconds} 秒)");
             StateChanged?.Invoke();
         }
@@ -491,19 +587,27 @@ namespace CarroDesk.Modules.Awake.Services
         /// <summary>取消待执行的电源动作（无待执行动作时为无操作）。</summary>
         public void CancelPendingPowerAction()
         {
-            if (_pendingAction == PendingPowerAction.None) return;
-            PendingPowerAction old = _pendingAction;
-            _pendingAction = PendingPowerAction.None;
-            _pendingFireAt = DateTime.MinValue;
+            PendingPowerAction old;
+            lock (_stateLock)
+            {
+                if (_pendingAction == PendingPowerAction.None) return;
+                old = _pendingAction;
+                _pendingAction = PendingPowerAction.None;
+                _pendingFireAt = DateTime.MinValue;
+            }
             _logger?.LogInfo("Awake", $"已取消待执行的电源动作 {old}");
             StateChanged?.Invoke();
         }
 
         private void FirePendingPowerAction()
         {
-            PendingPowerAction action = _pendingAction;
-            _pendingAction = PendingPowerAction.None;
-            _pendingFireAt = DateTime.MinValue;
+            PendingPowerAction action;
+            lock (_stateLock)
+            {
+                action = _pendingAction;
+                _pendingAction = PendingPowerAction.None;
+                _pendingFireAt = DateTime.MinValue;
+            }
             StateChanged?.Invoke();
 
             if (action == PendingPowerAction.Sleep)
@@ -579,11 +683,14 @@ namespace CarroDesk.Modules.Awake.Services
 
         public void SetKeepDisplayOn(bool keepOn)
         {
-            if (_keepDisplayOn == keepOn) return;
-            _keepDisplayOn = keepOn;
-            if (_config != null)
+            lock (_stateLock)
             {
-                _config.KeepDisplayOn = keepOn;
+                if (_keepDisplayOn == keepOn) return;
+                _keepDisplayOn = keepOn;
+                if (_config != null)
+                {
+                    _config.KeepDisplayOn = keepOn;
+                }
             }
 
             ApplyExecutionState();
@@ -598,9 +705,17 @@ namespace CarroDesk.Modules.Awake.Services
                 return;
             }
 
+            bool active;
+            bool keepDisplay;
+            lock (_stateLock)
+            {
+                active = _config?.Enabled != false && !_isBatteryPaused && (_mode != AwakeMode.Passive || _isProcessTriggered);
+                keepDisplay = _keepDisplayOn;
+            }
+
             try
             {
-                if (!IsActive)
+                if (!active)
                 {
                     SetThreadExecutionState(EXECUTION_STATE.ES_CONTINUOUS);
                     _logger?.LogInfo("Awake", "已恢复系统默认电源策略 (ES_CONTINUOUS)");
@@ -608,12 +723,12 @@ namespace CarroDesk.Modules.Awake.Services
                 else
                 {
                     EXECUTION_STATE flags = EXECUTION_STATE.ES_CONTINUOUS | EXECUTION_STATE.ES_SYSTEM_REQUIRED;
-                    if (_keepDisplayOn)
+                    if (keepDisplay)
                     {
                         flags |= EXECUTION_STATE.ES_DISPLAY_REQUIRED;
                     }
                     SetThreadExecutionState(flags);
-                    _logger?.LogInfo("Awake", $"已应用保持唤醒状态: {flags} (DisplayOn={_keepDisplayOn})");
+                    _logger?.LogInfo("Awake", $"已应用保持唤醒状态: {flags} (DisplayOn={keepDisplay})");
                 }
             }
             catch (Exception ex)
@@ -626,52 +741,74 @@ namespace CarroDesk.Modules.Awake.Services
         {
             _tickCount++;
 
-            // 0. 延迟睡眠/关机检查：到点后终止 tick（睡眠会 SetPassive，后续分支不再适用）
-            if (_pendingAction != PendingPowerAction.None && DateTime.Now >= _pendingFireAt)
+            bool firePending = false;
+            bool expired = false;
+            string exitEndedProc = null;
+            bool checkBattery = false;
+            bool checkProcess = false;
+
+            lock (_stateLock)
+            {
+                // 0. 延迟睡眠/关机检查
+                if (_pendingAction != PendingPowerAction.None && DateTime.Now >= _pendingFireAt)
+                {
+                    firePending = true;
+                }
+                else if ((_mode == AwakeMode.Timed || _mode == AwakeMode.UntilTime) && DateTime.Now >= _expireTime)
+                {
+                    expired = true;
+                }
+                else
+                {
+                    // 进程退出缓冲倒计时
+                    if (_processExitPendingSeconds > 0)
+                    {
+                        _processExitPendingSeconds--;
+                        if (_processExitPendingSeconds <= 0 && _isProcessTriggered)
+                        {
+                            exitEndedProc = _activeProcessTrigger;
+                            _isProcessTriggered = false;
+                            _activeProcessTrigger = string.Empty;
+                        }
+                    }
+
+                    checkBattery = _config != null && _config.DisableOnBattery && _tickCount % 3 == 0;
+                    checkProcess = _config?.Enabled != false && (_config == null || _config.ProcessLinkEnabled) &&
+                                   _config?.AutoAwakeProcesses != null && _config.AutoAwakeProcesses.Count > 0 &&
+                                   _tickCount % 5 == 0;
+                }
+            }
+
+            if (firePending)
             {
                 FirePendingPowerAction();
                 return;
             }
 
-            // 1. 倒计时检查
-            if (_mode == AwakeMode.Timed || _mode == AwakeMode.UntilTime)
+            if (expired)
             {
-                if (DateTime.Now >= _expireTime)
-                {
-                    _logger?.LogInfo("Awake", "保持唤醒计时已到期，恢复默认电源状态");
-                    SetPassive();
-                    Expired?.Invoke();
-                    return;
-                }
+                _logger?.LogInfo("Awake", "保持唤醒计时已到期，恢复默认电源状态");
+                SetPassive();
+                Expired?.Invoke();
+                return;
             }
 
-            // 进程退出缓冲倒计时（若处于缓冲期）
-            if (_processExitPendingSeconds > 0)
+            if (exitEndedProc != null)
             {
-                _processExitPendingSeconds--;
-                if (_processExitPendingSeconds <= 0)
-                {
-                    _logger?.LogInfo("Awake", "目标进程退出缓冲期已结束，恢复默认电源状态");
-                    if (_isProcessTriggered)
-                    {
-                        string oldProc = _activeProcessTrigger;
-                        _isProcessTriggered = false;
-                        _activeProcessTrigger = string.Empty;
-                        ApplyExecutionState();
-                        ProcessTriggered?.Invoke(false, oldProc);
-                        StateChanged?.Invoke();
-                    }
-                }
+                _logger?.LogInfo("Awake", "目标进程退出缓冲期已结束，恢复默认电源状态");
+                ApplyExecutionState();
+                ProcessTriggered?.Invoke(false, exitEndedProc);
+                StateChanged?.Invoke();
             }
 
             // 2. 电池状态轮询（每 3 秒检查一次）
-            if (_config != null && _config.DisableOnBattery && _tickCount % 3 == 0)
+            if (checkBattery)
             {
                 CheckBatteryStatus();
             }
 
             // 3. 自动唤醒进程监测（每 5 秒检查一次；开关关闭时完全不检测）
-            if (IsProcessLinkEnabled && HasProcessTargets && _tickCount % 5 == 0)
+            if (checkProcess)
             {
                 CheckProcessTriggers();
             }
@@ -686,35 +823,47 @@ namespace CarroDesk.Modules.Awake.Services
             {
                 if (GetSystemPowerStatus(out SYSTEM_POWER_STATUS status))
                 {
-                    // BatteryFlag 128 表示无电池（台式机）
-                    if (status.BatteryFlag != 128)
+                    bool applyNeeded = false;
+                    bool? batteryPausedEvent = null;
+                    lock (_stateLock)
                     {
-                        bool isUnplugged = status.ACLineStatus == 0; // 离线/电池供电
-                        bool isLowBattery = status.BatteryLifePercent != 255 && status.BatteryLifePercent <= _config.BatteryThreshold;
-
-                        bool shouldPause = isUnplugged || isLowBattery;
-
-                        if (shouldPause && !_isBatteryPaused && IsActive)
+                        int threshold = _config != null ? _config.BatteryThreshold : 20;
+                        bool active = _config?.Enabled != false && !_isBatteryPaused && (_mode != AwakeMode.Passive || _isProcessTriggered);
+                        // BatteryFlag 128 表示无电池（台式机）
+                        if (status.BatteryFlag != 128)
                         {
-                            _isBatteryPaused = true;
-                            ApplyExecutionState();
-                            BatteryStateChanged?.Invoke(true, status.BatteryLifePercent);
-                            StateChanged?.Invoke();
+                            bool isUnplugged = status.ACLineStatus == 0; // 离线/电池供电
+                            bool isLowBattery = status.BatteryLifePercent != 255 && status.BatteryLifePercent <= threshold;
+                            bool shouldPause = isUnplugged || isLowBattery;
+
+                            if (shouldPause && !_isBatteryPaused && active)
+                            {
+                                _isBatteryPaused = true;
+                                applyNeeded = true;
+                                batteryPausedEvent = true;
+                            }
+                            else if (!shouldPause && _isBatteryPaused)
+                            {
+                                _isBatteryPaused = false;
+                                applyNeeded = true;
+                                batteryPausedEvent = false;
+                            }
                         }
-                        else if (!shouldPause && _isBatteryPaused)
+                        else if (_isBatteryPaused)
                         {
                             _isBatteryPaused = false;
-                            ApplyExecutionState();
-                            BatteryStateChanged?.Invoke(false, status.BatteryLifePercent);
-                            StateChanged?.Invoke();
+                            applyNeeded = true;
+                            batteryPausedEvent = false;
                         }
                     }
-                    else if (_isBatteryPaused)
+
+                    if (applyNeeded)
                     {
-                        // 设备变为无电池（例如拔掉电池/切换为台式机模式）后不应继续永久暂停。
-                        _isBatteryPaused = false;
                         ApplyExecutionState();
-                        BatteryStateChanged?.Invoke(false, status.BatteryLifePercent);
+                        if (batteryPausedEvent.HasValue)
+                        {
+                            BatteryStateChanged?.Invoke(batteryPausedEvent.Value, status.BatteryLifePercent);
+                        }
                         StateChanged?.Invoke();
                     }
                 }
@@ -727,28 +876,45 @@ namespace CarroDesk.Modules.Awake.Services
 
         private void CheckProcessTriggers()
         {
-            // 总开关关闭时彻底不参与联动（含测试反射直调路径）
-            if (!IsProcessLinkEnabled) return;
+            List<string> configuredProcs;
+            int exitDelaySeconds;
+            lock (_stateLock)
+            {
+                // 总开关关闭时彻底不参与联动（含测试反射直调路径）
+                bool linkEnabled = _config?.Enabled != false && (_config == null || _config.ProcessLinkEnabled);
+                if (!linkEnabled) return;
+                configuredProcs = _config?.AutoAwakeProcesses != null
+                    ? new List<string>(_config.AutoAwakeProcesses)
+                    : null;
+                exitDelaySeconds = _config != null ? Math.Max(0, _config.AutoAwakeExitDelaySeconds) : 120;
+            }
 
             try
             {
-                if (_config.AutoAwakeProcesses == null || _config.AutoAwakeProcesses.Count == 0)
+                if (configuredProcs == null || configuredProcs.Count == 0)
                 {
-                    if (_isProcessTriggered)
+                    string clearedProc = null;
+                    lock (_stateLock)
                     {
-                        string old = _activeProcessTrigger;
-                        _isProcessTriggered = false;
-                        _activeProcessTrigger = string.Empty;
-                        _processExitPendingSeconds = 0;
+                        if (_isProcessTriggered)
+                        {
+                            clearedProc = _activeProcessTrigger;
+                            _isProcessTriggered = false;
+                            _activeProcessTrigger = string.Empty;
+                            _processExitPendingSeconds = 0;
+                        }
+                    }
+                    if (clearedProc != null)
+                    {
                         ApplyExecutionState();
-                        ProcessTriggered?.Invoke(false, old);
+                        ProcessTriggered?.Invoke(false, clearedProc);
                         StateChanged?.Invoke();
                     }
                     return;
                 }
 
                 var targets = new List<Tuple<string, string>>();
-                foreach (var procSetting in _config.AutoAwakeProcesses)
+                foreach (var procSetting in configuredProcs)
                 {
                     if (string.IsNullOrWhiteSpace(procSetting)) continue;
                     string nameOnly = ProcessHelper.NormalizeNameOnly(procSetting);
@@ -786,30 +952,32 @@ namespace CarroDesk.Modules.Awake.Services
                     }
                 }
 
-                if (!string.IsNullOrEmpty(matchedProc))
+                bool notifyState = false;
+                bool applyExec = false;
+                bool? notifyProcessTriggered = null;
+                string notifyProcName = null;
+
+                lock (_stateLock)
                 {
-                    // 检测到目标进程正在运行
-                    if (_processExitPendingSeconds > 0)
+                    if (!string.IsNullOrEmpty(matchedProc))
                     {
-                        // 处于退出缓冲期内进程重新启动或检测到其它目标进程，取消退出倒计时
-                        _logger?.LogInfo("Awake", $"目标进程 '{matchedProc}' 正在运行，已取消退出倒计时");
-                        _processExitPendingSeconds = 0;
-                        _activeProcessTrigger = matchedProc;
-                        StateChanged?.Invoke();
-                    }
-                    else if (_isProcessTriggered)
-                    {
-                        // 已经在进程联动中，若活跃进程切换（例如 A 退出，B 运行），同步当前名称
-                        if (!string.Equals(_activeProcessTrigger, matchedProc, StringComparison.OrdinalIgnoreCase))
+                        if (_processExitPendingSeconds > 0)
                         {
-                            _logger?.LogInfo("Awake", $"活跃进程联动目标切换: '{_activeProcessTrigger}' -> '{matchedProc}'");
+                            _logger?.LogInfo("Awake", $"目标进程 '{matchedProc}' 正在运行，已取消退出倒计时");
+                            _processExitPendingSeconds = 0;
                             _activeProcessTrigger = matchedProc;
-                            StateChanged?.Invoke();
+                            notifyState = true;
                         }
-                    }
-                    else
-                    {
-                        if (_userSuppressedProcessLink)
+                        else if (_isProcessTriggered)
+                        {
+                            if (!string.Equals(_activeProcessTrigger, matchedProc, StringComparison.OrdinalIgnoreCase))
+                            {
+                                _logger?.LogInfo("Awake", $"活跃进程联动目标切换: '{_activeProcessTrigger}' -> '{matchedProc}'");
+                                _activeProcessTrigger = matchedProc;
+                                notifyState = true;
+                            }
+                        }
+                        else if (_userSuppressedProcessLink)
                         {
                             _logger?.LogInfo("Awake", $"目标进程 '{matchedProc}' 正在运行，但用户已手动关闭保持唤醒，暂不自动联动");
                         }
@@ -817,42 +985,40 @@ namespace CarroDesk.Modules.Awake.Services
                         {
                             _isProcessTriggered = true;
                             _activeProcessTrigger = matchedProc;
-                            // 进程联动是一个独立的叠加态，不篡改用户基底模式 _mode
-                            ApplyExecutionState();
-                            ProcessTriggered?.Invoke(true, matchedProc);
-                            StateChanged?.Invoke();
+                            applyExec = true;
+                            notifyProcessTriggered = true;
+                            notifyProcName = matchedProc;
+                            notifyState = true;
                         }
                     }
-                }
-                else
-                {
-                    // 守护进程已全部退出：解除用户抑制
-                    _userSuppressedProcessLink = false;
-
-                    // 目标进程当前未检测到
-                    if (_isProcessTriggered)
+                    else
                     {
-                        int delaySeconds = _config != null ? Math.Max(0, _config.AutoAwakeExitDelaySeconds) : 120;
-                        if (delaySeconds <= 0)
+                        _userSuppressedProcessLink = false;
+                        if (_isProcessTriggered)
                         {
-                            // 未配置缓冲延时，立即退出
-                            _processExitPendingSeconds = 0;
-                            string oldProc = _activeProcessTrigger;
-                            _isProcessTriggered = false;
-                            _activeProcessTrigger = string.Empty;
-                            ApplyExecutionState();
-                            ProcessTriggered?.Invoke(false, oldProc);
-                            StateChanged?.Invoke();
-                        }
-                        else if (_processExitPendingSeconds <= 0)
-                        {
-                            // 首次检测到退出，开启倒计时缓冲
-                            _processExitPendingSeconds = delaySeconds;
-                            _logger?.LogInfo("Awake", $"检测到目标进程已无运行实例，进入退出缓冲倒计时 ({delaySeconds} 秒)");
-                            StateChanged?.Invoke();
+                            if (exitDelaySeconds <= 0)
+                            {
+                                _processExitPendingSeconds = 0;
+                                notifyProcName = _activeProcessTrigger;
+                                _isProcessTriggered = false;
+                                _activeProcessTrigger = string.Empty;
+                                applyExec = true;
+                                notifyProcessTriggered = false;
+                                notifyState = true;
+                            }
+                            else if (_processExitPendingSeconds <= 0)
+                            {
+                                _processExitPendingSeconds = exitDelaySeconds;
+                                _logger?.LogInfo("Awake", $"检测到目标进程已无运行实例，进入退出缓冲倒计时 ({exitDelaySeconds} 秒)");
+                                notifyState = true;
+                            }
                         }
                     }
                 }
+
+                if (applyExec) ApplyExecutionState();
+                if (notifyProcessTriggered.HasValue) ProcessTriggered?.Invoke(notifyProcessTriggered.Value, notifyProcName);
+                if (notifyState) StateChanged?.Invoke();
             }
             catch (Exception ex)
             {

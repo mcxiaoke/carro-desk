@@ -70,7 +70,7 @@ namespace CarroDesk.Modules.ClipboardHistory
 
             if (_listener == null)
             {
-                _listener = new Win32ClipboardListener();
+                _listener = new Win32ClipboardListener(Context?.Dispatcher);
             }
 
             _listener.ClipboardUpdated += OnClipboardUpdated;
@@ -92,30 +92,34 @@ namespace CarroDesk.Modules.ClipboardHistory
                 _listener?.Start();
             }
 
-            RegisterManagedHotkey(() => Config?.Hotkey, SummonWindow);
+            RegisterManagedHotkey(() => Config?.Enabled == true ? Config?.Hotkey : null, SummonWindow);
         }
 
         protected override void OnStop()
         {
             _listener?.Stop();
 
-            Context?.Dispatcher?.Invoke(() =>
+            try
             {
-                if (_window != null)
+                var d = Context?.Dispatcher;
+                if (d != null && !d.HasShutdownStarted && !d.HasShutdownFinished)
                 {
-                    try
+                    d.Invoke(() =>
                     {
-                        _window.Close();
-                    }
-                    catch
-                    {
-                    }
-                    _window = null;
+                        if (_window != null)
+                        {
+                            try { _window.Close(); } catch { }
+                            _window = null;
+                        }
+                    });
                 }
-            });
-
-            // 等待后台合并写入落盘
-            FlushStorage();
+            }
+            catch { }
+            finally
+            {
+                // 等待后台合并写入落盘，不受 Dispatcher 退出异常影响
+                FlushStorage();
+            }
         }
 
         private void FlushStorage()

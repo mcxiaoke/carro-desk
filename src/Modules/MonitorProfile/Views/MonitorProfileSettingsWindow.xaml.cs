@@ -284,72 +284,7 @@ namespace CarroDesk.Modules.MonitorProfile.Views
 
         public static bool PromptInput(Window owner, string title, string prompt, string defaultText, out string result)
         {
-            result = defaultText;
-            var dlg = new Window
-            {
-                Title = title,
-                Width = 360,
-                Height = 160,
-                WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                Owner = owner,
-                ResizeMode = ResizeMode.NoResize,
-                Background = System.Windows.Media.Brushes.White,
-                FontFamily = new System.Windows.Media.FontFamily("Segoe UI, Microsoft YaHei UI")
-            };
-            var grid = new Grid { Margin = new Thickness(16) };
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-            var lbl = new TextBlock
-            {
-                Text = prompt,
-                Margin = new Thickness(0, 0, 0, 8),
-                FontSize = 13,
-                Foreground = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString("#FF374151")
-            };
-            var txt = new TextBox
-            {
-                Text = defaultText,
-                Height = 28,
-                VerticalContentAlignment = VerticalAlignment.Center,
-                Padding = new Thickness(4, 0, 4, 0),
-                FontSize = 13
-            };
-            txt.SelectAll();
-
-            var btnPanel = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                HorizontalAlignment = HorizontalAlignment.Right,
-                Margin = new Thickness(0, 12, 0, 0)
-            };
-            var btnOk = new Button { Content = Loc.T("Common.Ok", "确定"), Width = 70, Height = 28, IsDefault = true, Margin = new Thickness(0, 0, 8, 0) };
-            var btnCancel = new Button { Content = Loc.T("Common.Cancel", "取消"), Width = 70, Height = 28, IsCancel = true };
-
-            btnOk.Click += (s, ev) => { dlg.DialogResult = true; dlg.Close(); };
-            btnCancel.Click += (s, ev) => { dlg.DialogResult = false; dlg.Close(); };
-
-            btnPanel.Children.Add(btnOk);
-            btnPanel.Children.Add(btnCancel);
-
-            Grid.SetRow(lbl, 0);
-            Grid.SetRow(txt, 1);
-            Grid.SetRow(btnPanel, 2);
-
-            grid.Children.Add(lbl);
-            grid.Children.Add(txt);
-            grid.Children.Add(btnPanel);
-
-            dlg.Content = grid;
-            dlg.Loaded += (s, ev) => txt.Focus();
-
-            if (dlg.ShowDialog() == true)
-            {
-                result = txt.Text.Trim();
-                return true;
-            }
-            return false;
+            return CarroDesk.Views.InputPromptDialog.ShowText(owner, title, prompt, defaultText, out result);
         }
 
         private void BtnAddTimeSetting_Click(object sender, RoutedEventArgs e)
@@ -360,7 +295,7 @@ namespace CarroDesk.Modules.MonitorProfile.Views
             string timeStr = TxtNewTime.Text.Trim();
             // 严格 HH:mm[:ss] 解析（MP-2）：TimeSpan.TryParse 会把 "1830" 放行为 1830 天
             if (!DateTime.TryParseExact(timeStr, new[] { "HH\\:mm", "HH\\:mm\\:ss" },
-                    System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out _))
+                    System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out DateTime parsedTime))
             {
                 MessageBox.Show(Loc.T("Monitor.InvalidTime", "请输入正确的时间格式 (HH:mm)，例如 18:30"), Loc.T("Msg.FormatError", "格式错误"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
@@ -380,6 +315,11 @@ namespace CarroDesk.Modules.MonitorProfile.Views
             }
 
             var list = _modeSettings[selected.Name];
+            if (list.Any(item => item.ToTimeSpan() == parsedTime.TimeOfDay))
+            {
+                MessageBox.Show(this, Loc.T("Monitor.DuplicateTime", "该模式已存在时间点 {0}，请先删除或修改。", timeStr), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
             list.Add(new MonitorTimeSetting { Time = timeStr, Brightness = b, Contrast = c });
 
             // 重新按时间排序

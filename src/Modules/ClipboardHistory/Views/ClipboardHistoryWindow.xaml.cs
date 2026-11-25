@@ -420,11 +420,21 @@ namespace CarroDesk.Modules.ClipboardHistory.Views
                 if (string.IsNullOrEmpty(preview)) preview = Loc.T("Clipboard.PreviewEmpty", "(empty)");
                 if (preview.Length > 60) preview = preview.Substring(0, 60) + "...";
 
-                var answer = MessageBox.Show(
-                    Loc.T("Clipboard.DeleteConfirmBody", "Delete this clipboard entry?\n\n{0}", preview),
-                    Loc.T("Clipboard.DeleteConfirmTitle", "Delete Entry"),
-                    MessageBoxButton.OKCancel,
-                    MessageBoxImage.Warning);
+                _isModalOpen = true;
+                MessageBoxResult answer;
+                try
+                {
+                    answer = MessageBox.Show(
+                        this,
+                        Loc.T("Clipboard.DeleteConfirmBody", "Delete this clipboard entry?\n\n{0}", preview),
+                        Loc.T("Clipboard.DeleteConfirmTitle", "Delete Entry"),
+                        MessageBoxButton.OKCancel,
+                        MessageBoxImage.Warning);
+                }
+                finally
+                {
+                    _isModalOpen = false;
+                }
                 if (answer != MessageBoxResult.OK) return;
             }
             DeleteSelectedItem();

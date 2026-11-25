@@ -21,13 +21,14 @@ namespace CarroDesk.Modules.ScreenLock.Services
         private DateTime _lastProbeTime = DateTime.MinValue;
         private bool _lastProbeResult = false;
         private bool _isProbing = false;
+        private int _generation = 0;
 
         private const int CacheTtlSeconds = 10;
         private const int PingTimeoutMs = 1000;
 
         /// <summary>
         /// 检查指定 IP 的设备是否判定为在场（包含缓存与离线防抖缓冲判定）。
-        /// 若 IP 格式无效返回 false；首次调用同步探测初始化状态；后续调用基于 TTL 缓存并异步刷新。
+        /// 若 IP 格式无效返回 false；首次及缓存过期均异步后台刷新，不阻塞调用线程（如 1s 空闲定时器）。
         /// </summary>
         /// <param name="targetIp">目标设备 IPv4 地址</param>
         /// <param name="graceSeconds">离线缓冲秒数</param>
@@ -38,47 +39,41 @@ namespace CarroDesk.Modules.ScreenLock.Services
             if (!IPAddress.TryParse(targetIp.Trim(), out var address) || address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
                 return false;
 
+            string normalizedIp = address.ToString();
             lock (_lock)
             {
                 var now = DateTime.Now;
 
-                // 首次探测：若从未探测过，立即进行同步探测并初始化状态
-                if (_lastProbeTime == DateTime.MinValue)
-                {
-                    bool online = ProbeInternal(address);
-                    _lastProbeTime = now;
-                    _lastProbeResult = online;
-                    if (online)
-                    {
-                        _offlineStartTime = null;
-                        return true;
-                    }
-                    else
-                    {
-                        _offlineStartTime = now;
-                        return false;
-                    }
-                }
-
                 // 若在缓存有效期内，直接基于缓存结果与缓冲期综合计算
-                if ((now - _lastProbeTime).TotalSeconds < CacheTtlSeconds)
+                if (_lastProbeTime != DateTime.MinValue && (now - _lastProbeTime).TotalSeconds < CacheTtlSeconds)
                 {
                     return EvaluateGrace(now, graceSeconds);
                 }
 
-                // 缓存已过期，若未在探测中则发起异步后台探测
+                // 首次或缓存已过期：在后台异步探测，防止同步 Ping/SendARP 阻塞空闲定时器与锁
                 if (!_isProbing)
                 {
                     _isProbing = true;
+                    int probeGen = _generation;
                     Task.Run(async () =>
                     {
-                        bool online = await ProbeAsync(targetIp).ConfigureAwait(false);
+                        bool online = false;
+                        try
+                        {
+                            online = await ProbeAsync(normalizedIp).ConfigureAwait(false);
+                        }
+                        catch
+                        {
+                            online = false;
+                        }
                         lock (_lock)
                         {
+                            _isProbing = false;
+                            if (probeGen != _generation) return;
+
                             var probeNow = DateTime.Now;
                             _lastProbeTime = probeNow;
                             _lastProbeResult = online;
-                            _isProbing = false;
 
                             if (online)
                             {
@@ -112,6 +107,7 @@ namespace CarroDesk.Modules.ScreenLock.Services
         {
             lock (_lock)
             {
+                _generation++;
                 _offlineStartTime = null;
                 _lastProbeTime = DateTime.MinValue;
                 _lastProbeResult = false;

@@ -52,6 +52,7 @@ namespace CarroDesk.Modules.AudioSwitch
         {
             base.OnConfigReloaded();
             UpdateCurrentDevice();
+            RequestTrayRefresh();
         }
 
         public override void OnLanguageChanged()
@@ -273,6 +274,9 @@ namespace CarroDesk.Modules.AudioSwitch
                 if (name.IndexOf(Config.HeadphonePattern ?? "耳机", StringComparison.OrdinalIgnoreCase) >= 0) return "🎧";
                 if (name.IndexOf(Config.SpeakerPattern ?? "扬声器", StringComparison.OrdinalIgnoreCase) >= 0) return "🔊";
             }
+            if (name.IndexOf("Headphone", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                name.IndexOf("Headset", StringComparison.OrdinalIgnoreCase) >= 0) return "🎧";
+            if (name.IndexOf("Speaker", StringComparison.OrdinalIgnoreCase) >= 0) return "🔊";
             return "🔈";
         }
 

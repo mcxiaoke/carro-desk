@@ -54,6 +54,7 @@ namespace CarroDesk.Modules.MonitorProfile
             base.OnConfigReloaded();
             ScheduleEngine.UpdateConfig(Config);
             UpdateTrayHeaderAndTooltip();
+            RequestTrayRefresh();
         }
 
         public override void OnLanguageChanged()
@@ -90,40 +91,40 @@ namespace CarroDesk.Modules.MonitorProfile
 
         private void RegisterManagedHotkeys()
         {
-            RegisterManagedHotkey(() => Config?.Hotkeys?.SwitchToDailyMode, () =>
+            RegisterManagedHotkey(() => Config?.Enabled == true ? Config?.Hotkeys?.SwitchToDailyMode : null, () =>
             {
                 ScheduleEngine?.SwitchProfile("Daily");
                 SaveConfig();
                 LogInfo("已切换至显示器日常模式 (Daily)");
             });
 
-            RegisterManagedHotkey(() => Config?.Hotkeys?.SwitchToGameMode, () =>
+            RegisterManagedHotkey(() => Config?.Enabled == true ? Config?.Hotkeys?.SwitchToGameMode : null, () =>
             {
                 ScheduleEngine?.SwitchProfile("Game");
                 SaveConfig();
                 LogInfo("已切换至显示器游戏模式 (Game)");
             });
 
-            RegisterManagedHotkey(() => Config?.Hotkeys?.SwitchToNightMode, () =>
+            RegisterManagedHotkey(() => Config?.Enabled == true ? Config?.Hotkeys?.SwitchToNightMode : null, () =>
             {
                 ScheduleEngine?.SwitchProfile("Night");
                 SaveConfig();
                 LogInfo("已切换至显示器夜间模式 (Night)");
             });
 
-            RegisterManagedHotkey(() => Config?.Hotkeys?.ManualRefresh, () =>
+            RegisterManagedHotkey(() => Config?.Enabled == true ? Config?.Hotkeys?.ManualRefresh : null, () =>
             {
                 ScheduleEngine?.ApplyCurrentSetting(force: true);
                 LogInfo("已刷新并重新应用显示器设置");
             });
 
-            RegisterManagedHotkey(() => Config?.Hotkeys?.IncreaseBrightness, () =>
+            RegisterManagedHotkey(() => Config?.Enabled == true ? Config?.Hotkeys?.IncreaseBrightness : null, () =>
             {
                 int step = Config?.BrightnessStep > 0 ? Config.BrightnessStep : 5;
                 ScheduleEngine?.StepBrightness(step);
             });
 
-            RegisterManagedHotkey(() => Config?.Hotkeys?.DecreaseBrightness, () =>
+            RegisterManagedHotkey(() => Config?.Enabled == true ? Config?.Hotkeys?.DecreaseBrightness : null, () =>
             {
                 int step = Config?.BrightnessStep > 0 ? Config.BrightnessStep : 5;
                 ScheduleEngine?.StepBrightness(-step);

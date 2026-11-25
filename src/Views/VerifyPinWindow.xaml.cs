@@ -23,6 +23,14 @@ namespace CarroDesk.Views
             {
                 PinBox.Focus();
                 UpdateKeyLockStatus();
+                if (_pinGuard != null)
+                {
+                    var blocked = _pinGuard.RemainingBlock();
+                    if (blocked > TimeSpan.Zero)
+                    {
+                        MessageText.Text = Loc.T("Lock.PenaltyWait", blocked);
+                    }
+                }
             };
 
             PinBox.PreviewKeyDown += (s, e) => UpdateKeyLockStatus();
@@ -53,9 +61,22 @@ namespace CarroDesk.Views
                 TimeSpan remaining;
                 var result = _pinGuard.Try(PinBox.Password, out remaining);
                 verified = result == PinAttemptResult.Success;
-                error = result == PinAttemptResult.Blocked
-                    ? Loc.T("Lock.PenaltyWait", remaining)
-                    : Loc.T("VerifyPin.IncorrectPin");
+                if (result == PinAttemptResult.Blocked)
+                {
+                    error = Loc.T("Lock.PenaltyWait", remaining);
+                }
+                else
+                {
+                    error = Loc.T("VerifyPin.IncorrectPin");
+                    if (!verified)
+                    {
+                        var left = _pinGuard.RemainingBlock();
+                        if (left > TimeSpan.Zero)
+                        {
+                            error += Loc.T("Lock.PinLockedWithTime", left);
+                        }
+                    }
+                }
             }
             else
             {

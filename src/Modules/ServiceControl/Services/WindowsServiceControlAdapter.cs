@@ -22,16 +22,33 @@ namespace CarroDesk.Modules.ServiceControl
                     controller.Refresh();
                     return controller.Status;
                 }
-                catch (InvalidOperationException)
+                catch (InvalidOperationException ex)
                 {
-                    return null; // 服务不存在
+                    // 无权访问 SCM/服务（Win32 5）应抛给 SafeDescribeStatus 折叠为 "Unknown"，
+                    // 只有服务不存在（1060）或已标记删除（1072）才返回 null -> "NotFound"。
+                    if (IsServiceMissing(ex)) return null;
+                    throw;
                 }
-                catch (Win32Exception)
+                catch (Win32Exception ex)
                 {
-                    // 无权限访问 SCM（错误码 5）或服务已被删除：返回未知，避免单个服务拖垮整个列表
-                    return null;
+                    if (ex.NativeErrorCode == 1060 || ex.NativeErrorCode == 1072) return null;
+                    throw;
                 }
             }
+        }
+
+        private static bool IsServiceMissing(Exception ex)
+        {
+            var cur = ex;
+            while (cur != null)
+            {
+                if (cur is Win32Exception w)
+                {
+                    return w.NativeErrorCode == 1060 || w.NativeErrorCode == 1072;
+                }
+                cur = cur.InnerException;
+            }
+            return true;
         }
 
         public ServiceControllerStatus Start(string serviceName, TimeSpan timeout)

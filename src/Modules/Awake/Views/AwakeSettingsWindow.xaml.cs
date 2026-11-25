@@ -268,30 +268,42 @@ namespace CarroDesk.Modules.Awake.Views
 
         private void OnSaveApplyClick(object sender, RoutedEventArgs e)
         {
-            int defaultMins = 30;
-            if (int.TryParse(TimedMinutesBox.Text.Trim(), out int parsedMins) && parsedMins > 0)
+            if (!int.TryParse(TimedMinutesBox.Text.Trim(), out int defaultMins) || defaultMins < 1 || defaultMins > 1440)
             {
-                defaultMins = parsedMins;
+                MessageBox.Show(this, Loc.T("Msg.InvalidMinutes", "请输入 1 到 1440 之间的有效分钟数。"), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                TimedMinutesBox.Focus();
+                return;
             }
 
-            int threshold = 20;
-            if (int.TryParse(BatteryThresholdBox.Text.Trim(), out int parsedThreshold))
+            if (!int.TryParse(BatteryThresholdBox.Text.Trim(), out int threshold) || threshold < 5 || threshold > 95)
             {
-                threshold = Math.Max(5, Math.Min(95, parsedThreshold));
+                MessageBox.Show(this, Loc.T("Awake.InvalidBatteryThreshold", "电量阈值必须在 5 到 95 之间。"), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                BatteryThresholdBox.Focus();
+                return;
             }
 
-            int exitDelay = 120;
-            if (int.TryParse(ExitDelayBox.Text.Trim(), out int parsedDelay) && parsedDelay >= 0)
+            if (!int.TryParse(ExitDelayBox.Text.Trim(), out int exitDelay) || exitDelay < 0 || exitDelay > 3600)
             {
-                exitDelay = Math.Min(3600, parsedDelay);
+                MessageBox.Show(this, Loc.T("Awake.InvalidExitDelay", "进程退出缓冲时间必须在 0 到 3600 秒之间。"), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                ExitDelayBox.Focus();
+                return;
             }
 
+            string hotkey = HotkeyBox.Text.Trim();
+            if (!string.IsNullOrEmpty(hotkey) && !CarroDesk.Services.Tasks.HotkeyHelper.Validate(hotkey, out string hotkeyErr))
+            {
+                MessageBox.Show(this, Loc.T("Msg.HotkeyInvalid", "快捷键格式不正确: {0}\n支持格式例如: {1}", hotkeyErr, "Win+Shift+W"), Loc.T("Common.Prompt", "提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                HotkeyBox.Focus();
+                return;
+            }
+
+            bool wasActive = _module.Service?.IsActive == true;
             var candidate = (_module.Config ?? new AwakeConfig()).Clone();
             candidate.KeepDisplayOn = KeepDisplayOnBox.IsChecked == true;
             candidate.DisableOnBattery = DisableOnBatteryBox.IsChecked == true;
             candidate.BatteryThreshold = threshold;
             candidate.DefaultDurationMinutes = defaultMins;
-            candidate.Hotkey = HotkeyBox.Text.Trim();
+            candidate.Hotkey = hotkey;
             candidate.AutoAwakeExitDelaySeconds = exitDelay;
             candidate.AutoAwakeProcesses = ProcessHelper.NormalizeList(_processes);
             candidate.ProcessLinkEnabled = ProcessLinkEnabledBox.IsChecked == true;
@@ -329,13 +341,15 @@ namespace CarroDesk.Modules.Awake.Views
                 candidate.ExpireAtLocal = target;
             }
 
-            // 用户在设置界面显式选择"关闭"：与托盘 SetPassiveByUser 同语义，必须保留用户抑制，
-            // 否则目标进程仍在运行时 5 秒内会被进程联动重新拉起（"关了又开"，AW-2）。
-            // 仅当进程联动由"关"变"开"时才复位抑制（该逻辑在 Service.UpdateConfig 内处理）。
             if (!_module.SaveAndApplyConfig(candidate))
             {
                 MessageBox.Show(Loc.T("Config.SaveFailed"), Loc.T("Common.Error", "错误"), MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
+            }
+            // 用户在设置界面显式选择"关闭"：与托盘 SetPassiveByUser 同语义，停止当前进程联动并抑制自动重拉起（AW-2）
+            if (candidate.Mode == AwakeMode.Passive && wasActive)
+            {
+                _module.Service?.SetPassiveByUser();
             }
             _module.RequestRefreshTray();
             Close();
