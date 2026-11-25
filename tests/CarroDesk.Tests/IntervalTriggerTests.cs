@@ -58,6 +58,22 @@ namespace CarroDesk.Tests
         }
 
         [TestMethod]
+        public void IntervalTrigger_IntervalChanged_RecalculatesNextFire()
+        {
+            var store = new InMemoryTriggerStateStore();
+            var firstTask = NewIntervalTask(3600, "IntervalResize");
+            var first = new IntervalTrigger(firstTask, store);
+            var oldNext = first.NextFireAt.Value;
+            first.Dispose();
+
+            var shorterTask = NewIntervalTask(10, "IntervalResize");
+            var second = new IntervalTrigger(shorterTask, store);
+            Assert.IsTrue(second.NextFireAt.Value < oldNext.AddMinutes(-30),
+                "间隔从 3600s 改为 10s 后应重算相位，不能继续等待旧的 1 小时到期时间");
+            second.Dispose();
+        }
+
+        [TestMethod]
         public void IntervalTrigger_CatchUp_FiresOnce_AndRealigns()
         {
             var store = new InMemoryTriggerStateStore();

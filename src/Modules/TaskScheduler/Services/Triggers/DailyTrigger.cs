@@ -28,11 +28,12 @@ namespace CarroDesk.Services.Tasks.Triggers
                 t = new TimeSpan(2, 0, 0);
             _at = t;
 
-            // 防误触初始化：启动/重载时刻已晚于当天触发点时记为「今天已触发」。
-            // 仅在仓库尚无记录时写入，避免每次重建都覆盖跨 Apply 保留下来的状态。
+            // 防误触初始化：启动/重载时刻已晚于当天触发点且当天尚未记录时，记为「今天已跳过」。
+            // 这样即使仓库里残留昨天或更早的日期，第二天错过触发点后启动/重载也不会绕过 catchUpMissed=false。
             // CatchUpMissed 的补跑由 TaskSchedulerService 在 Apply 时按会话集合投递一次（M3）。
             var now = DateTime.Now;
-            if (!_state.Get(Task.Name, LastDateKey).HasValue && now >= now.Date + _at)
+            var last = _state.Get(Task.Name, LastDateKey);
+            if ((!last.HasValue || last.Value.Date < now.Date) && now >= now.Date + _at)
             {
                 _state.Set(Task.Name, LastDateKey, now.Date);
             }
@@ -60,10 +61,6 @@ namespace CarroDesk.Services.Tasks.Triggers
             _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
             _timer.Tick += OnTick;
             _timer.Start();
-            if (LastFiredDate.Date != DateTime.Today)
-            {
-                OnTick(null, null);
-            }
         }
 
         private void OnTick(object sender, EventArgs e)

@@ -100,7 +100,7 @@ namespace CarroDesk.Services.Tasks.Triggers
                 if (File.Exists(path) || (!string.IsNullOrEmpty(Path.GetExtension(path)) && !Directory.Exists(path)))
                 {
                     string d = Path.GetDirectoryName(Path.GetFullPath(path));
-                    if (!string.IsNullOrEmpty(d) && Directory.Exists(d))
+                    if (!string.IsNullOrEmpty(d))
                     {
                         dir = d;
                         filter = Path.GetFileName(path);
@@ -154,6 +154,10 @@ namespace CarroDesk.Services.Tasks.Triggers
             }
             catch (Exception ex)
             {
+                lock (_lifecycleLock)
+                {
+                    DisposeWatcherNoLock();
+                }
                 TaskLogger.Warn(Task.Name, "watch start failed: " + ex.Message);
             }
         }

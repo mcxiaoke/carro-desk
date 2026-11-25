@@ -58,7 +58,12 @@ namespace CarroDesk.Services.Tasks
         /// wait 模式运行：启动进程、等待退出、回传退出码。
         /// onStarted 在进程成功启动后（等待前）回调一次，供调度器把句柄登记进运行注册表。
         /// </summary>
-        public static async Task<int> RunAsync(TaskDefinition task, string reason, CancellationToken cancellationToken, TaskRunOutcome outcome, Action<TaskProcessHandle> onStarted)
+        public static Task<int> RunAsync(TaskDefinition task, string reason, CancellationToken cancellationToken, TaskRunOutcome outcome, Action<TaskProcessHandle> onStarted)
+        {
+            return RunAsync(task, reason, cancellationToken, outcome, onStarted, 1);
+        }
+
+        internal static async Task<int> RunAsync(TaskDefinition task, string reason, CancellationToken cancellationToken, TaskRunOutcome outcome, Action<TaskProcessHandle> onStarted, int attempt)
         {
             if (outcome != null)
             {
@@ -69,7 +74,7 @@ namespace CarroDesk.Services.Tasks
             if (task == null) return -1;
 
             TaskProcessHandle handle;
-            if (!TryStart(task, reason, out handle)) return -1;
+            if (!TryStart(task, reason, out handle, attempt)) return -1;
             try
             {
                 if (onStarted != null) onStarted(handle);
@@ -120,11 +125,11 @@ namespace CarroDesk.Services.Tasks
         /// 展开变量、解析脚本与解释器包装、启动进程并挂上作业对象。
         /// 成功返回 true 且 handle 非 null；失败返回 false（原因已记任务日志，handle 为 null）。
         /// </summary>
-        private static bool TryStart(TaskDefinition task, string reason, out TaskProcessHandle handle)
+        private static bool TryStart(TaskDefinition task, string reason, out TaskProcessHandle handle, int attempt = 1)
         {
             handle = null;
             RunContext run = null;
-            string workDir = task.EffectiveWorkDir();
+            string workDir = task.Action != null ? (task.Action.WorkDir ?? "") : "";
             string file = task.Action != null ? task.Action.File : "";
             string args = task.Action != null ? task.Action.Args : "";
             bool hidden = task.Options != null ? task.Options.Hidden : true;
@@ -196,24 +201,19 @@ namespace CarroDesk.Services.Tasks
                     if (!string.Equals(r, file, StringComparison.OrdinalIgnoreCase) || File.Exists(r))
                         resolvedFile = r;
                 }
-                else if (isScript && !isRooted)
-                {
-                    string r = ScriptResolver.ResolveScriptPath(file);
-                    if (File.Exists(r)) resolvedFile = r;
-                }
                 // if file is absolute but not found, keep as is for error logging
             }
             catch { }
             file = resolvedFile;
 
-            // resolve workDir fallback
+            // resolve workDir fallback (after env/template expansion and script path resolution)
             if (string.IsNullOrWhiteSpace(workDir) && !string.IsNullOrWhiteSpace(file))
             {
                 try { workDir = Path.GetDirectoryName(Path.GetFullPath(file)); } catch { workDir = ""; }
             }
             // 一次运行 = 一个 runId + 一个日志文件 + 一条历史记录。
             // 启动前的校验失败也属于一次运行尝试，同样留痕（outcome=start-failed）。
-            try { run = RunContext.Begin(task.Name, reason, file, args, workDir, 1); }
+            try { run = RunContext.Begin(task.Name, reason, file, args, workDir, attempt); }
             catch { run = null; }
 
             if (string.IsNullOrWhiteSpace(workDir) || !Directory.Exists(workDir))

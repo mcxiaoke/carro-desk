@@ -372,47 +372,56 @@ namespace CarroDesk.Models
         {
             if (string.IsNullOrWhiteSpace(text)) return 0;
             text = text.Trim().ToLowerInvariant();
-            int total = 0;
-            int num = 0;
-            bool hasNum = false;
-            for (int i = 0; i < text.Length; i++)
+            try
             {
-                char c = text[i];
-                if (c >= '0' && c <= '9')
+                checked
                 {
-                    num = num * 10 + (c - '0');
-                    hasNum = true;
-                }
-                else if (c == 'h')
-                {
-                    if (!hasNum) return 0;
-                    total += num * 3600;
-                    num = 0; hasNum = false;
-                }
-                else if (c == 'm')
-                {
-                    if (!hasNum) return 0;
-                    // check for "ms" ? not needed
-                    total += num * 60;
-                    num = 0; hasNum = false;
-                }
-                else if (c == 's')
-                {
-                    if (!hasNum) return 0;
-                    total += num;
-                    num = 0; hasNum = false;
-                }
-                else if (c == ' ' || c == '\t')
-                {
-                    continue;
-                }
-                else
-                {
-                    return 0;
+                    int total = 0;
+                    int num = 0;
+                    bool hasNum = false;
+                    for (int i = 0; i < text.Length; i++)
+                    {
+                        char c = text[i];
+                        if (c >= '0' && c <= '9')
+                        {
+                            num = num * 10 + (c - '0');
+                            hasNum = true;
+                        }
+                        else if (c == 'h')
+                        {
+                            if (!hasNum) return 0;
+                            total += num * 3600;
+                            num = 0; hasNum = false;
+                        }
+                        else if (c == 'm')
+                        {
+                            if (!hasNum) return 0;
+                            total += num * 60;
+                            num = 0; hasNum = false;
+                        }
+                        else if (c == 's')
+                        {
+                            if (!hasNum) return 0;
+                            total += num;
+                            num = 0; hasNum = false;
+                        }
+                        else if (c == ' ' || c == '\t')
+                        {
+                            continue;
+                        }
+                        else
+                        {
+                            return 0;
+                        }
+                    }
+                    if (hasNum) total += num; // bare number as seconds
+                    return total;
                 }
             }
-            if (hasNum) total += num; // bare number as seconds
-            return total;
+            catch (OverflowException)
+            {
+                return 0;
+            }
         }
 
         public static bool TryParseTime(string text, out TimeSpan time)

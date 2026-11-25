@@ -52,13 +52,24 @@ namespace CarroDesk.Services.Tasks.Triggers
             {
                 try
                 {
-                    await System.Threading.Tasks.Task.Delay(wait, token).ConfigureAwait(false);
+                    // Task.Delay 单次上限约为 49.7 天（uint.MaxValue - 1 ms），超长延迟需分段等待
+                    var maxChunk = TimeSpan.FromDays(24);
+                    var remaining = wait;
+                    while (remaining > TimeSpan.Zero)
+                    {
+                        var chunk = remaining > maxChunk ? maxChunk : remaining;
+                        await System.Threading.Tasks.Task.Delay(chunk, token).ConfigureAwait(false);
+                        remaining -= chunk;
+                    }
                     if (token.IsCancellationRequested) return;
                     var h = Fired;
                     if (h != null) h(Task, "startup");
                 }
                 catch (System.Threading.Tasks.TaskCanceledException) { }
-                catch { }
+                catch (Exception ex)
+                {
+                    try { TaskLogger.Error(Task?.Name, "startup trigger failed: " + ex.Message); } catch { }
+                }
             });
         }
 

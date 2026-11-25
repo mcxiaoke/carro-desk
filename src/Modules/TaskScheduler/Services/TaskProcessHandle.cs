@@ -26,8 +26,10 @@ namespace CarroDesk.Services.Tasks
         private readonly Stopwatch _sw;
         private int _stopped;               // 0/1：是否被主动 Stop 过（用户或宿主退出清理）
         private int _exitWatchStarted;
-        private bool _exitRaised;
-        private bool _disposed;
+        private int _waitStarted;
+        private int _exitRaised;
+        private int _disposed;
+        private TaskCompletionSource<bool> _activeExitTcs;
         private TaskSingleInstanceMutex _singleInstanceMutex;
 
         /// <summary>
@@ -93,6 +95,7 @@ namespace CarroDesk.Services.Tasks
         /// </summary>
         public async Task<int> WaitAsync(CancellationToken cancellationToken, TaskRunOutcome outcome)
         {
+            Interlocked.Exchange(ref _waitStarted, 1);
             if (outcome != null)
             {
                 outcome.ExitCode = -1;
@@ -224,12 +227,21 @@ namespace CarroDesk.Services.Tasks
         {
             if (Interlocked.Exchange(ref _stopped, 1) != 0) return;
             LogRun("WARN", "stopping pid=" + Pid + " (killWithHost=" + KillWithHost + ")");
+            bool hadJob = _job != null;
             try
             {
                 if (_job != null) _job.Dispose();   // kill-on-close 连带整棵树
             }
             catch { }
-            try { KillTree(); } catch { }
+            bool exitedByJob = false;
+            if (hadJob)
+            {
+                try { exitedByJob = _proc == null || _proc.HasExited || _proc.WaitForExit(1000); } catch { exitedByJob = true; }
+            }
+            if (!exitedByJob)
+            {
+                try { KillTree(); } catch { }
+            }
             // 确认进程已终结后再释放单实例互斥体（H3）：KillTree 的 taskkill 只保证发出了终止，
             // 若在此刻就 Dispose 互斥体，紧随其后的重启可能抢到互斥体而旧进程尚未真正退出，
             // 造成双实例/端口冲突。最多等 3s，超时也继续释放，避免停止路径被卡死。
@@ -246,8 +258,18 @@ namespace CarroDesk.Services.Tasks
         /// </summary>
         public void Dispose()
         {
-            if (_disposed) return;
-            _disposed = true;
+            if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+            // 唤醒可能正在等待 Process.Exited 的 WaitForExitAsync（Dispose 会解绑进程事件，不唤醒将永久挂起）
+            try { Volatile.Read(ref _activeExitTcs)?.TrySetResult(true); } catch { }
+            // 若从未进入 WaitAsync（例如未挂 BeginExitWatch 的 detach 停止/测试运行），确保关闭 RunLogWriter 定时器
+            if (Volatile.Read(ref _waitStarted) == 0)
+            {
+                try
+                {
+                    _run?.Complete(null, WasStopped ? "cancelled" : "abandoned", WasStopped ? "stopped" : "disposed");
+                }
+                catch { }
+            }
             try { if (_proc != null) _proc.Dispose(); } catch { }
             try { if (_job != null) _job.Dispose(); } catch { }
             try { if (_singleInstanceMutex != null) _singleInstanceMutex.Dispose(); } catch { }
@@ -261,8 +283,7 @@ namespace CarroDesk.Services.Tasks
 
         private void RaiseExited(int code)
         {
-            if (_exitRaised) return;
-            _exitRaised = true;
+            if (Interlocked.Exchange(ref _exitRaised, 1) != 0) return;
             var handler = Exited;
             if (handler == null) return;
             try { handler(this, code); }
@@ -287,6 +308,12 @@ namespace CarroDesk.Services.Tasks
         private Task WaitForExitAsync()
         {
             var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            Volatile.Write(ref _activeExitTcs, tcs);
+            if (Volatile.Read(ref _disposed) != 0)
+            {
+                tcs.TrySetResult(true);
+                return tcs.Task;
+            }
             try
             {
                 _proc.EnableRaisingEvents = true;
@@ -298,10 +325,10 @@ namespace CarroDesk.Services.Tasks
                 };
                 _proc.Exited += handler;
 
-                // 竞态兜底：EnableRaisingEvents 之前进程已退出时不会再有事件
+                // 竞态兜底：EnableRaisingEvents 之前进程已退出或句柄已被 Dispose
                 try
                 {
-                    if (_proc.HasExited)
+                    if (Volatile.Read(ref _disposed) != 0 || _proc.HasExited)
                     {
                         try { _proc.Exited -= handler; } catch { }
                         tcs.TrySetResult(true);
@@ -316,7 +343,7 @@ namespace CarroDesk.Services.Tasks
             }
             catch
             {
-                return Task.Run(() => _proc.WaitForExit());
+                return Task.Run(() => { try { _proc.WaitForExit(); } catch { } });
             }
             return tcs.Task;
         }
@@ -334,8 +361,7 @@ namespace CarroDesk.Services.Tasks
                 {
                     try
                     {
-                        var searcherCmd = "taskkill /PID " + pid + " /T /F";
-                        var psi = new ProcessStartInfo("cmd.exe", "/c " + searcherCmd)
+                        var psi = new ProcessStartInfo("taskkill.exe", $"/PID {pid} /T /F")
                         {
                             CreateNoWindow = true,
                             UseShellExecute = false,

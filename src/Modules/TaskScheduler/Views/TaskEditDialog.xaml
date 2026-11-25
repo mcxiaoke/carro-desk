@@ -323,6 +323,9 @@
                                 <ComboBoxItem Content="{loc:Loc Tasks.MgrAutoANSIOEMUTF, Default='自动 (ANSI/OEM/UTF-8)'}" Tag="" IsSelected="True"/>
                                 <ComboBoxItem Content="GBK (CP936)" Tag="gbk"/>
                                 <ComboBoxItem Content="UTF-8" Tag="utf-8"/>
+                                <ComboBoxItem Content="OEM" Tag="oem"/>
+                                <ComboBoxItem Content="ASCII" Tag="ascii"/>
+                                <ComboBoxItem Content="Unicode (UTF-16)" Tag="unicode"/>
                             </ComboBox>
                         </Grid>
 

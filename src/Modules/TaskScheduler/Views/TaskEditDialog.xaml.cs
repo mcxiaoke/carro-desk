@@ -137,7 +137,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             CatchUpMissedBox.IsChecked = opt.CatchUpMissed;
             NotifyOnFailureBox.IsChecked = opt.NotifyOnFailure;
             SelectComboByTag(ModeBox, (opt.Mode ?? "wait").ToLowerInvariant());
-            SelectComboByTag(EncodingBox, (opt.Encoding ?? "").ToLowerInvariant());
+            SelectComboByTag(EncodingBox, NormalizeEncodingTag(opt.Encoding));
 
             TimeoutBox.Text = opt.TimeoutSec.ToString();
             RetryBox.Text = opt.Retry.ToString();
@@ -161,6 +161,16 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             UpdateTriggerPanels();
             UpdateModePanels();
             UpdateCronPreview();
+        }
+
+        private static string NormalizeEncodingTag(string enc)
+        {
+            var e = (enc ?? "").Trim().ToLowerInvariant();
+            if (e == "utf8") return "utf-8";
+            if (e == "gb2312" || e == "cp936") return "gbk";
+            if (e == "default") return "oem";
+            if (e == "utf16") return "unicode";
+            return e;
         }
 
         private void SelectComboByTag(ComboBox combo, string tag)
@@ -244,6 +254,12 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             if (string.IsNullOrEmpty(expr))
             {
                 CronNextTimeText.Text = "下次: --";
+                return;
+            }
+            if (!CronHelper.Validate(expr, out string cronErr))
+            {
+                CronNextTimeText.Text = $"表达式语法错误: {cronErr}";
+                CronNextTimeText.Foreground = System.Windows.Media.Brushes.Red;
                 return;
             }
             try
@@ -394,10 +410,26 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                     }
                     else if (code == 0 && handle != null)
                     {
-                        // 保存句柄供"停止"按钮与关窗清理使用；否则测试进程脱管，无法停止（M4）
+                        // 保存句柄供"停止"按钮与关窗清理使用；同时监视自然退出以自动恢复按钮状态与关闭日志定时器
                         _testRunHandle = handle;
-                        detachStarted = true;   // 保持"停止"态，用户必须先停掉才能再测
+                        detachStarted = true;   // 保持"停止"态，直到手动停止或进程自然退出
                         TestStatusText.Text = Loc.Format("Tasks.TestRunDetachedStatus", handle.Pid);
+                        handle.Exited += (h, exitCode) =>
+                        {
+                            Dispatcher.BeginInvoke(new Action(() =>
+                            {
+                                if (ReferenceEquals(_testRunHandle, h)) _testRunHandle = null;
+                                if (!IsLoaded) return;
+                                if (!h.WasStopped)
+                                {
+                                    TestStatusText.Text = exitCode == 0
+                                        ? Loc.T("Tasks.TestRunSuccess", "🟢 执行成功 (0) 耗时: {0}s", sw.Elapsed.TotalSeconds.ToString("0.0"))
+                                        : Loc.T("Tasks.TestRunExitCode", "🔴 执行返回 {0} 耗时: {1}s", exitCode ?? -1, sw.Elapsed.TotalSeconds.ToString("0.0"));
+                                }
+                                RestoreTestButtons();
+                            }));
+                        };
+                        handle.BeginExitWatch();
                     }
                     else
                     {

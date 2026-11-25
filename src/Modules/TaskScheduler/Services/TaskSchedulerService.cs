@@ -20,6 +20,7 @@ namespace CarroDesk.Services.Tasks
         private List<TaskDefinition> _tasks = new List<TaskDefinition>();
         private List<ITrigger> _triggers = new List<ITrigger>();
         private readonly HashSet<string> _firedStartupTasks = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> _firedIdleTasks = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
         /// 当天已由 DailyTrigger 正常触发过的任务（任务名 → 触发日期）。
@@ -177,6 +178,12 @@ namespace CarroDesk.Services.Tasks
             _fireLimiter = fireLimiter ?? new TaskFireLimiter(TaskFireLimiter.DefaultStatePath);
             _triggerState = triggerState ?? new PersistentTriggerStateStore();
             _lastRunStore = lastRunStore ?? new TaskLastRunStore();
+            if (_idleService != null) _idleService.UserActiveDetected += OnIdleUserActive;
+        }
+
+        private void OnIdleUserActive()
+        {
+            lock (_lock) _firedIdleTasks.Clear();
         }
 
         public void Start()
@@ -233,21 +240,37 @@ namespace CarroDesk.Services.Tasks
         /// </summary>
         private bool SetGlobalEnabled(bool enabled, bool isRollback)
         {
-            bool changed = false;
-            lock (_lock) { if (_globalEnabled != enabled) { _globalEnabled = enabled; changed = true; } }
-            if (!changed) return true;
-            if (enabled)
+            var dispatcher = _dispatcher;
+            if (dispatcher != null && !dispatcher.CheckAccess())
             {
-                // re-apply current tasks to recreate triggers
-                TaskLoadResult result = null;
-                try { result = TaskConfigService.Load(); } catch { result = new TaskLoadResult(); }
-                if (result != null) Apply(result);
-                TaskLogger.Info("system", "TaskScheduler global enabled");
+                return (bool)dispatcher.Invoke(new Func<bool>(() => SetGlobalEnabled(enabled, isRollback)));
             }
-            else
+
+            bool changed = false;
+            lock (_applyLock)
             {
-                StopTriggers();
-                TaskLogger.Info("system", "TaskScheduler global disabled");
+                lock (_lock)
+                {
+                    if (_globalEnabled != enabled)
+                    {
+                        _globalEnabled = enabled;
+                        changed = true;
+                    }
+                }
+                if (!changed) return true;
+                if (enabled)
+                {
+                    // re-apply current tasks to recreate triggers
+                    TaskLoadResult result = null;
+                    try { result = TaskConfigService.Load(); } catch { result = new TaskLoadResult(); }
+                    if (result != null) ApplyCoreLocked(result);
+                    TaskLogger.Info("system", "TaskScheduler global enabled");
+                }
+                else
+                {
+                    StopTriggers();
+                    TaskLogger.Info("system", "TaskScheduler global disabled");
+                }
             }
             if (isRollback) return false;
             // persist to config.json if possible
@@ -282,6 +305,7 @@ namespace CarroDesk.Services.Tasks
             if (!_started) return;
             _started = false;
             try { SystemEvents.PowerModeChanged -= OnPowerModeChanged; } catch { }
+            try { if (_idleService != null) _idleService.UserActiveDetected -= OnIdleUserActive; } catch { }
             StopTriggers();
             StopRunningInstances();
             TaskLogger.Info("system", "TaskScheduler stopped");
@@ -299,15 +323,26 @@ namespace CarroDesk.Services.Tasks
 
         public TaskLoadResult Reload()
         {
-            var result = TaskConfigService.Load();
-            // refresh global flag from config in case it was edited externally
-            try
+            var dispatcher = _dispatcher;
+            if (dispatcher != null && !dispatcher.CheckAccess())
             {
-                var cur = GetCurrentTasksEnabled();
-                if (cur.HasValue) _globalEnabled = cur.Value;
+                return (TaskLoadResult)dispatcher.Invoke(new Func<TaskLoadResult>(Reload));
             }
-            catch { }
-            Apply(result);
+            var result = TaskConfigService.Load();
+            lock (_applyLock)
+            {
+                // refresh global flag from config in case it was edited externally
+                try
+                {
+                    var cur = GetCurrentTasksEnabled();
+                    if (cur.HasValue)
+                    {
+                        lock (_lock) { _globalEnabled = cur.Value; }
+                    }
+                }
+                catch { }
+                ApplyCoreLocked(result);
+            }
             TaskLogger.Info("system", "TaskScheduler reloaded, tasks=" + _tasks.Count + ", errors=" + result.Errors.Count + ", globalEnabled=" + _globalEnabled);
             foreach (var e in result.Errors) TaskLogger.Warn("system", e);
             NotifyLoadIssues(result);
@@ -393,6 +428,7 @@ namespace CarroDesk.Services.Tasks
                         {
                             if (s == null) continue;
                             s.StopRequested = true;
+                            try { s.RetryCts?.Cancel(); } catch { }
                             var h = s.Handle;
                             s.Handle = null;
                             if (h != null) toKill.Add(new KeyValuePair<string, TaskProcessHandle>(name, h));
@@ -400,13 +436,67 @@ namespace CarroDesk.Services.Tasks
                     }
                 }
 
+                // 对于仍启用的任务，若配置已不再是 detach + restartOnFailure，取消其挂起中的 WaitingRetry 槽；
+                // 仍为 detach + restartOnFailure 的保留运行槽以便守护链跨重载延续，但状态机保持 WaitingRetry。
+                var taskByName = newTasks
+                    .Where(t => t != null && !string.IsNullOrEmpty(t.Name))
+                    .GroupBy(t => t.Name, StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+                var keptWaitingRetry = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var retryCleanup = new List<string>();
+                foreach (var pair in _running)
+                {
+                    TaskDefinition currentDef;
+                    bool keepSupervise = taskByName.TryGetValue(pair.Key, out currentDef)
+                        && currentDef.Enabled
+                        && currentDef.Options != null
+                        && currentDef.Options.IsDetach
+                        && currentDef.Options.RestartOnFailure;
+
+                    var slots = pair.Value;
+                    for (int i = slots.Count - 1; i >= 0; i--)
+                    {
+                        var s = slots[i];
+                        if (s == null) { slots.RemoveAt(i); continue; }
+                        if (s.Handle == null)
+                        {
+                            if (keepSupervise)
+                            {
+                                keptWaitingRetry.Add(pair.Key);
+                            }
+                            else
+                            {
+                                s.StopRequested = true;
+                                try { s.RetryCts?.Cancel(); } catch { }
+                                slots.RemoveAt(i);
+                            }
+                        }
+                    }
+                    if (slots.Count == 0) retryCleanup.Add(pair.Key);
+                }
+                foreach (var name in retryCleanup) _running.Remove(name);
+
                 _tasks = newTasks;
                 // 配置变化 = 用户干预信号：清空守护计数与失败标记（同"保存任务即可重置"的语义）
                 _supervision.Clear();
-                foreach (var fsm in _stateMachines.Values)
+                foreach (var kv in _stateMachines)
                 {
-                    fsm.Reset();
+                    if (keptWaitingRetry.Contains(kv.Key))
+                        kv.Value.ResetFailuresKeepWaitingRetry();
+                    else
+                        kv.Value.Reset();
                 }
+
+                // 清理已从配置移除且不再有活跃运行槽的状态机和会话 idle 标记
+                var allTaskNames = new HashSet<string>(
+                    newTasks.Where(t => t != null && !string.IsNullOrEmpty(t.Name)).Select(t => t.Name),
+                    StringComparer.OrdinalIgnoreCase);
+                var goneFsmKeys = _stateMachines.Keys
+                    .Where(k => !allTaskNames.Contains(k) && !_running.ContainsKey(k))
+                    .ToList();
+                foreach (var k in goneFsmKeys) _stateMachines.Remove(k);
+                _firedIdleTasks.RemoveWhere(k => !enabledNames.Contains(k));
             }
 
             if (toKill.Count > 0)
@@ -418,9 +508,10 @@ namespace CarroDesk.Services.Tasks
                     foreach (var kv in toKill)
                     {
                         try { kv.Value.Stop(); } catch { }
+                        try { kv.Value.Dispose(); } catch { }
                         try
                         {
-                            GetOrCreateFsm(kv.Key).OnStopCompleted();
+                            GetOrCreateFsm(kv.Key).OnStopCompleted(onlyIfStopping: true);
                             NotifyStateChanged(kv.Key);
                         }
                         catch { }
@@ -483,6 +574,13 @@ namespace CarroDesk.Services.Tasks
                 lock (_lock) alreadyFired = _firedStartupTasks.Contains(task.Name);
                 if (alreadyFired) continue;
 
+                if (reason == "startup:runAtStartup")
+                {
+                    var matchingInterval = newTriggers.OfType<IntervalTrigger>()
+                        .FirstOrDefault(it => string.Equals(it.Task?.Name, task.Name, StringComparison.OrdinalIgnoreCase));
+                    matchingInterval?.RescheduleFromNow();
+                }
+
                 TaskLogger.Info(task.Name, "dispatching one-time startup catch-up (" + reason + ")");
                 OnTriggerFired(task, reason);
             }
@@ -504,7 +602,10 @@ namespace CarroDesk.Services.Tasks
                 case TaskTriggerType.Cron: return new CronTrigger(task, _triggerState);
                 case TaskTriggerType.SessionLock:
                 case TaskTriggerType.SessionUnlock: return new SessionEventTrigger(task);
-                case TaskTriggerType.Idle: return new IdleTrigger(task, _idleService, _fireLimiter);
+                case TaskTriggerType.Idle:
+                    bool idleAlreadyFired;
+                    lock (_lock) idleAlreadyFired = _firedIdleTasks.Contains(task.Name);
+                    return new IdleTrigger(task, _idleService, _fireLimiter, idleAlreadyFired);
                 case TaskTriggerType.Manual: return new ManualTrigger(task);
                 case TaskTriggerType.Hotkey: return new HotkeyTrigger(task, _hotkeyService);
                 case TaskTriggerType.Watch: return new FileWatcherTrigger(task);
@@ -688,19 +789,18 @@ namespace CarroDesk.Services.Tasks
                         _lastDailyFire[task.Name] = DateTime.Today;
                     }
                 }
-            }
-
-            // 频率限制统一门：插在 startup/daily 会话记录之后、Task.Run 之前。
-            // 被限流的 startup:catchup 仍记为「本会话已尝试补跑」，语义与 _firedStartupTasks 一致。
-            string fireRefusal;
-            if (!TryPassFireLimit(task, reason, out fireRefusal))
-            {
-                TaskLogger.Info(task.Name, "skipped(" + reason + ") fire limit: " + fireRefusal);
-                AddRecent(task.Name, "throttled");
-                return;
+                else if (reason.StartsWith("idle:", StringComparison.OrdinalIgnoreCase))
+                {
+                    lock (_lock)
+                    {
+                        _firedIdleTasks.Add(task.Name);
+                    }
+                }
             }
 
             // dispatch to thread pool, avoid blocking trigger thread (especially UI timer)
+            // 频率限制（TryPassFireLimit）延后到 ExecuteAsync 通过 ShouldRun 与 TryOccupySlot 后消耗，
+            // 防止条件不满足或并发占槽被拒的无效触发白白耗尽每日/间隔配额。
             var t = task;
             var r = reason;
             Task.Run(() => ExecuteAsync(t, r));
@@ -770,6 +870,22 @@ namespace CarroDesk.Services.Tasks
                 return;
             }
 
+            // 仅 RunManual / RestartTask 已经在同步入口消耗过限流配额，其余触发在此统一消耗
+            if (!string.Equals(reason, "manual", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(reason, "restart", StringComparison.OrdinalIgnoreCase))
+            {
+                string fireRefusal;
+                if (!TryPassFireLimit(task, reason, out fireRefusal))
+                {
+                    RemoveSlot(task.Name, slot);
+                    fsm.OnAbandon();
+                    NotifyStateChanged(task.Name);
+                    TaskLogger.Info(task.Name, "skipped(" + reason + ") fire limit: " + fireRefusal);
+                    AddRecent(task.Name, "throttled");
+                    return;
+                }
+            }
+
             // detach（常驻）模式：启动即返回，不等退出；配置校验已拒绝 detach+retry/timeout 组合
             if (task.Options != null && task.Options.IsDetach)
             {
@@ -794,17 +910,7 @@ namespace CarroDesk.Services.Tasks
                     if (task.Options.RestartOnFailure && newState == TaskRuntimeState.WaitingRetry)
                     {
                         slot.Handle = null;
-                        var t = task;
-                        var s = slot;
-                        _ = Task.Run(async () =>
-                        {
-                            try
-                            {
-                                await Task.Delay(TimeSpan.FromSeconds(Math.Max(1, delay))).ConfigureAwait(false);
-                                RestartContinue(t, s);
-                            }
-                            catch { }
-                        });
+                        ScheduleRestartContinue(task, slot, delay);
                     }
                     else
                     {
@@ -821,6 +927,7 @@ namespace CarroDesk.Services.Tasks
             }
 
             int lastCode = 0;
+            bool startedProcess = false;
             try
             {
                 int retry = task.Options != null ? task.Options.Retry : 0;
@@ -858,17 +965,18 @@ namespace CarroDesk.Services.Tasks
                                     TaskLogger.Info(task.Name, "process " + h.Pid + " spawned after user stop request; terminating immediately");
                                     try { h.Stop(); } catch { }
                                     RemoveSlot(task.Name, slot);
-                                    fsm.OnStopCompleted();
                                     NotifyStateChanged(task.Name);
                                     return;
                                 }
                                 slot.Handle = h;
+                                startedProcess = true;
                                 // 一次执行只登记一个实例：重试是同一实例的新进程，
                                 // 每轮都 OnProcessStarted 会让 ActiveInstances 累加而退出只减一次（S1）。
                                 if (attempt == 1) fsm.OnProcessStarted(h.Pid, h.StartedAt);
                                 else fsm.OnAttemptStarted(h.Pid, h.StartedAt);
                                 NotifyStateChanged(task.Name);
-                            }).ConfigureAwait(false);
+                            },
+                            attempt).ConfigureAwait(false);
                     }
                     catch (Exception ex)
                     {
@@ -879,11 +987,10 @@ namespace CarroDesk.Services.Tasks
                     // 用户主动停止（TryStop 已杀进程树）：不得判为失败，也不得触发重试/守护重启。
                     if (slot.StopRequested)
                     {
-                        fsm.OnProcessExited(code, true, false, 0, 0, 0);
-                        NotifyStateChanged(task.Name);
+                        lastCode = code;
                         TaskLogger.Info(task.Name, "stopped by user request (exit code " + code + "); not counted as failure");
                         AddRecent(task.Name, "skipped");
-                        return; // finally 仍会移除运行槽
+                        return; // 统一由 finally 调用 OnProcessExited/OnAbandon 并移除运行槽
                     }
 
                     lastCode = code;
@@ -894,7 +1001,14 @@ namespace CarroDesk.Services.Tasks
             }
             finally
             {
-                fsm.OnProcessExited(lastCode, slot.StopRequested, false, 0, 0, 0);
+                if (startedProcess)
+                {
+                    fsm.OnProcessExited(lastCode, slot.StopRequested, false, 0, 0, 0);
+                }
+                else
+                {
+                    fsm.OnAbandon();
+                }
                 NotifyStateChanged(task.Name);
                 RemoveSlot(task.Name, slot);
             }
@@ -925,6 +1039,9 @@ namespace CarroDesk.Services.Tasks
 
             /// <summary>TryStop 置位：终止活实例并取消挂起中的自动重启（等价 systemctl stop 的语义）。</summary>
             public volatile bool StopRequested;
+
+            /// <summary>WaitingRetry 延迟期可取消令牌。</summary>
+            public CancellationTokenSource RetryCts;
         }
 
         /// <summary>
@@ -1026,8 +1143,9 @@ namespace CarroDesk.Services.Tasks
             {
                 TaskLogger.Info(task.Name, "detached process " + handle.Pid + " spawned after user stop request; terminating immediately");
                 try { handle.Stop(); } catch { }
+                try { handle.Dispose(); } catch { }
                 RemoveSlot(task.Name, slot);
-                GetOrCreateFsm(task.Name).OnStopCompleted();
+                GetOrCreateFsm(task.Name).OnStopCompleted(onlyIfStopping: true);
                 NotifyStateChanged(task.Name);
                 AddRecent(task.Name, "stopped");
                 return;
@@ -1160,18 +1278,39 @@ namespace CarroDesk.Services.Tasks
 
             TaskLogger.Warn(task.Name, "supervise: " + what + " failure #" + failures + "/" + (limit + 1) +
                 " exit=" + exitCode + ", restart in " + delay + "s");
+            ScheduleRestartContinue(task, slot, delay);
+        }
+
+        private void ScheduleRestartContinue(TaskDefinition task, RunSlot slot, int delaySec)
+        {
+            var cts = new CancellationTokenSource();
+            var prev = Interlocked.Exchange(ref slot.RetryCts, cts);
+            try { prev?.Cancel(); prev?.Dispose(); } catch { }
+
             var t = task;
             var s = slot;
-            Task.Run(async () =>
+            _ = Task.Run(async () =>
             {
                 try
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(Math.Max(1, delay))).ConfigureAwait(false);
+                    await Task.Delay(TimeSpan.FromSeconds(Math.Max(1, delaySec)), cts.Token).ConfigureAwait(false);
                     RestartContinue(t, s);
+                }
+                catch (OperationCanceledException)
+                {
+                    // 被配置重载或用户停止主动取消：确保槽出册与状态机归位
+                    RemoveSlot(t.Name, s);
+                    GetOrCreateFsm(t.Name).OnAbandon();
+                    NotifyStateChanged(t.Name);
                 }
                 catch (Exception ex)
                 {
                     try { TaskLogger.Error(t.Name, "supervise restart error: " + ex); } catch { }
+                }
+                finally
+                {
+                    if (ReferenceEquals(s.RetryCts, cts)) Interlocked.CompareExchange(ref s.RetryCts, null, cts);
+                    try { cts.Dispose(); } catch { }
                 }
             });
         }
@@ -1192,14 +1331,32 @@ namespace CarroDesk.Services.Tasks
                     TaskLogger.Info(task.Name, "supervise: restart cancelled (slot released)");
                     return;
                 }
-                if (!_started || !_globalEnabled || !IsTaskStillEnabled(task) || slot.StopRequested)
+                if (!_started || !_globalEnabled || slot.StopRequested)
                 {
                     RemoveSlot(task.Name, slot);
-                    fsm.OnStopCompleted();
+                    fsm.OnStopCompleted(onlyIfStopping: true);
+                    fsm.OnAbandon();
                     NotifyStateChanged(task.Name);
                     TaskLogger.Info(task.Name, "supervise: restart cancelled (task disabled/stopped or scheduler stopped)");
                     return;
                 }
+
+                // 始终从当前 _tasks 读取最新 TaskDefinition，避免延迟期间配置修改后仍沿用旧定义
+                TaskDefinition latestTask = null;
+                lock (_lock)
+                {
+                    latestTask = _tasks.FirstOrDefault(t =>
+                        t != null && string.Equals(t.Name, task.Name, StringComparison.OrdinalIgnoreCase));
+                }
+                if (latestTask == null || !latestTask.Enabled || latestTask.Options == null || !latestTask.Options.IsDetach)
+                {
+                    RemoveSlot(task.Name, slot);
+                    fsm.OnAbandon();
+                    NotifyStateChanged(task.Name);
+                    TaskLogger.Info(task.Name, "supervise: restart cancelled (task disabled, removed, or no longer detach)");
+                    return;
+                }
+                task = latestTask;
 
                 TaskProcessHandle handle;
                 int code = TaskRunner.StartDetached(task, "supervise", out handle);
@@ -1306,7 +1463,7 @@ namespace CarroDesk.Services.Tasks
                         try { h.Stop(); }
                         catch { okAll = false; }
                     }
-                    fsmToFinish.OnStopCompleted();
+                    fsmToFinish.OnStopCompleted(onlyIfStopping: true);
                     NotifyStateChanged(name);
                     if (!okAll)
                     {
@@ -1345,7 +1502,7 @@ namespace CarroDesk.Services.Tasks
                 return ok;
             }).ConfigureAwait(false);
 
-            fsm.OnStopCompleted();
+            fsm.OnStopCompleted(onlyIfStopping: true);
             NotifyStateChanged(taskName);
             if (!allExited)
             {
@@ -1382,6 +1539,7 @@ namespace CarroDesk.Services.Tasks
                         var s = slots[i];
                         if (s == null) { slots.RemoveAt(i); continue; }
                         s.StopRequested = true;
+                        try { s.RetryCts?.Cancel(); } catch { }
                         var h = s.Handle;
                         if (h == null)
                         {
@@ -1443,10 +1601,15 @@ namespace CarroDesk.Services.Tasks
                         // 仍在等待的 exit watcher 只能拿到异常退出码，会被判定为意外退出
                         // 而弹一次虚假"失败"通知（Dispose 使 WaitForExit 抛异常 → 返回 -1）。
                         s.StopRequested = true;
+                        try { s.RetryCts?.Cancel(); } catch { }
                         if (s.Handle != null) handles.Add(s.Handle);
                     }
                 }
                 _running.Clear();
+                foreach (var fsm in _stateMachines.Values)
+                {
+                    fsm.OnStopCompleted();
+                }
             }
             foreach (var h in handles)
             {
@@ -1540,17 +1703,19 @@ namespace CarroDesk.Services.Tasks
                 try { timer.Stop(); } catch { }
                 try
                 {
+                    ITrigger[] triggersSnapshot;
                     lock (_lock)
                     {
-                        foreach (var trig in _triggers)
-                        {
-                            var d = trig as DailyTrigger;
-                            if (d != null) d.CheckCatchUp();
-                            var c = trig as CronTrigger;
-                            if (c != null) c.CheckCatchUp();
-                            var i = trig as IntervalTrigger;
-                            if (i != null) i.CheckCatchUp();
-                        }
+                        triggersSnapshot = _triggers.ToArray();
+                    }
+                    foreach (var trig in triggersSnapshot)
+                    {
+                        var d = trig as DailyTrigger;
+                        if (d != null) d.CheckCatchUp();
+                        var c = trig as CronTrigger;
+                        if (c != null) c.CheckCatchUp();
+                        var i = trig as IntervalTrigger;
+                        if (i != null) i.CheckCatchUp();
                     }
                     TaskLogger.Info("system", "resume catch-up checked");
                 }

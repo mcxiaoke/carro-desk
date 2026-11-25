@@ -39,11 +39,12 @@ namespace CarroDesk.Services.Tasks.Triggers
         private string _lastRefusal = "";
         private DateTime _lastRefusalLogAtUtc = DateTime.MinValue;
 
-        public IdleTrigger(TaskDefinition task, IIdleService idle, TaskFireLimiter limiter = null)
+        public IdleTrigger(TaskDefinition task, IIdleService idle, TaskFireLimiter limiter = null, bool initialFired = false)
         {
             Task = task;
             _idle = idle;
             _limiter = limiter;
+            _fired = initialFired ? 1 : 0;
 
             var opt = task != null ? task.Options : null;
             _policy = new FireLimitPolicy
@@ -57,7 +58,6 @@ namespace CarroDesk.Services.Tasks.Triggers
         {
             if (_subscribed) return;
             if (_idle == null) return;
-            Interlocked.Exchange(ref _fired, 0);
             _idle.IdleTick += OnIdleTick;
             _idle.UserActiveDetected += OnUserActive;
             _subscribed = true;

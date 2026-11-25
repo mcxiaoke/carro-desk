@@ -270,5 +270,26 @@ namespace CarroDesk.Tests
             Assert.AreEqual(0, fsm.NextRetryDelaySec);
             Assert.AreEqual(0, fsm.ConsecutiveFailures);
         }
+
+        [TestMethod]
+        public void OnStopCompleted_OnlyIfStopping_DoesNotOverwriteNewRunningInstance()
+        {
+            var fsm = new TaskStateMachine("stop-race");
+            Assert.IsTrue(fsm.TryBeginStarting(false, out _));
+            fsm.OnProcessStarted(9301, DateTime.Now);
+            Assert.AreEqual(TaskRuntimeState.Running, fsm.CurrentState);
+
+            fsm.OnStopCompleted(onlyIfStopping: true);
+            Assert.AreEqual(TaskRuntimeState.Running, fsm.CurrentState, "非 Stopping 态不得被延迟的 OnStopCompleted 覆盖为 Idle");
+            Assert.AreEqual(1, fsm.ActiveInstances);
+            Assert.AreEqual(9301, fsm.CurrentPid);
+        }
+
+        [TestMethod]
+        public void ParseDuration_Overflow_ReturnsZeroInsteadOfNegative()
+        {
+            Assert.AreEqual(0, CarroDesk.Models.TaskDefinition.ParseDuration("1000000h"));
+            Assert.AreEqual(3661, CarroDesk.Models.TaskDefinition.ParseDuration("1h1m1s"));
+        }
     }
 }

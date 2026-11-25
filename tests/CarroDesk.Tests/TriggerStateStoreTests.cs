@@ -105,17 +105,47 @@ namespace CarroDesk.Tests
             store.Set("DailyState", "daily:lastDate", DateTime.Today.AddDays(-1));
             int fired = 0;
 
-            var first = new DailyTrigger(task, store);
+            // 先在触发点之前构造触发器，再通过 CheckCatchUp 模拟当天首次越过触发点
+            var futureTask = new TaskDefinition
+            {
+                Name = "DailyState",
+                Trigger = new TaskTrigger { Type = TaskTriggerType.Daily, At = "23:59" },
+                Action = new TaskAction { File = "x.bat" }
+            };
+            var first = new DailyTrigger(futureTask, store);
             first.Fired += (t, r) => fired++;
             first.Start();
-            Assert.AreEqual(1, fired, "上次触发是昨天，今天应触发一次");
+            // 当天 00:00 已过，但模拟从昨晚睡眠醒来，把 _at 设为 00:00 触发 CheckCatchUp
+            typeof(DailyTrigger).GetField("_at", BindingFlags.Instance | BindingFlags.NonPublic)
+                .SetValue(first, TimeSpan.Zero);
+            first.CheckCatchUp();
+            Assert.AreEqual(1, fired, "上次触发是昨天，越过触发点后今天应触发一次");
             first.Dispose();
 
             var second = new DailyTrigger(task, store);   // 模拟 ApplyCoreLocked 重建触发器
             second.Fired += (t, r) => fired++;
             second.Start();
+            second.CheckCatchUp();
             Assert.AreEqual(1, fired, "重建后同一天不得重复触发");
             second.Dispose();
+        }
+
+        [TestMethod]
+        public void DailyTrigger_PastDue_WithYesterdayState_DoesNotFireOnStart()
+        {
+            var store = new InMemoryTriggerStateStore();
+            var task = NewDailyTask("DailyPastDue");
+            task.Options = new TaskOptions { CatchUpMissed = false };
+            store.Set("DailyPastDue", "daily:lastDate", DateTime.Today.AddDays(-1));
+            int fired = 0;
+
+            var trigger = new DailyTrigger(task, store);
+            trigger.Fired += (t, r) => fired++;
+            trigger.Start();
+            trigger.CheckCatchUp();
+            trigger.Dispose();
+
+            Assert.AreEqual(0, fired, "昨天跑过但今天错过时间点后启动且 catchUpMissed=false 时，不得立即补跑");
         }
 
         [TestMethod]

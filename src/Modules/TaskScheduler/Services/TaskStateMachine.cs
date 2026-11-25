@@ -298,11 +298,17 @@ namespace CarroDesk.Services.Tasks
 
         /// <summary>
         /// 停止清理完成，跃迁回 Idle。
+        /// <paramref name="onlyIfStopping"/> 为 true 时仅在当前仍处于 Stopping 态才归位，
+        /// 避免异步杀进程回调覆盖后续新启动实例的运行状态。
         /// </summary>
-        public void OnStopCompleted()
+        public void OnStopCompleted(bool onlyIfStopping = false)
         {
             lock (_lock)
             {
+                if (onlyIfStopping && CurrentState != TaskRuntimeState.Stopping)
+                {
+                    return;
+                }
                 ActiveInstances = 0;
                 CurrentState = TaskRuntimeState.Idle;
                 CurrentPid = null;
@@ -329,6 +335,16 @@ namespace CarroDesk.Services.Tasks
                     CurrentState = TaskRuntimeState.Idle;
                     LastOutcome = "已重置";
                 }
+            }
+        }
+
+        /// <summary>配置重载保留仍有效的挂起重试槽时：仅清零失败计数并保持 WaitingRetry 状态。</summary>
+        internal void ResetFailuresKeepWaitingRetry()
+        {
+            lock (_lock)
+            {
+                ConsecutiveFailures = 0;
+                MarkedFailedAt = null;
             }
         }
 

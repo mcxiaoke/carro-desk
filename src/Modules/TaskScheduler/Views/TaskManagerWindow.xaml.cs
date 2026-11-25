@@ -240,10 +240,13 @@ namespace CarroDesk.Modules.TaskScheduler.Views
 
         private void FinishSampling(CancellationTokenSource cts)
         {
-            Volatile.Write(ref _perfSampling, 0);
+            if (cts == null || ReferenceEquals(_sampleCts, cts))
+            {
+                Volatile.Write(ref _perfSampling, 0);
+                _sampleCts = null;
+            }
             if (cts != null)
             {
-                if (ReferenceEquals(_sampleCts, cts)) _sampleCts = null;
                 try { cts.Dispose(); } catch { }
             }
             if (_closed || Interlocked.Exchange(ref _pendingResample, 0) != 1) return;
@@ -566,7 +569,15 @@ namespace CarroDesk.Modules.TaskScheduler.Views
         private void OnGlobalEnabledClick(object sender, RoutedEventArgs e)
         {
             bool enabled = GlobalEnabledBox.IsChecked ?? true;
-            _scheduler?.SetGlobalEnabled(enabled);
+            if (_scheduler != null)
+            {
+                bool ok = _scheduler.SetGlobalEnabled(enabled);
+                if (!ok)
+                {
+                    GlobalEnabledBox.IsChecked = _scheduler.IsGlobalEnabled;
+                    MessageBox.Show(this, Loc.T("Config.SaveFailed", "保存配置失败"), Loc.T("Common.Error", "错误"), MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
             _onTasksChanged?.Invoke();
             UpdateStatsSummary();
         }
@@ -577,8 +588,8 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             var dlg = new TaskEditDialog(null, true, existingNames) { Owner = this };
             if (dlg.ShowDialog() == true && dlg.ResultTask != null)
             {
-                _tasks.Add(dlg.ResultTask);
-                SaveTasksAndNotify(dlg.ResultTask.Name);
+                var candidate = new List<TaskDefinition>(_tasks) { dlg.ResultTask };
+                SaveTasksAndNotify(candidate, dlg.ResultTask.Name);
             }
         }
 
@@ -594,8 +605,9 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                 int index = _tasks.FindIndex(t => string.Equals(t.Name, row.Task.Name, StringComparison.OrdinalIgnoreCase));
                 if (index >= 0)
                 {
-                    _tasks[index] = dlg.ResultTask;
-                    SaveTasksAndNotify(dlg.ResultTask.Name);
+                    var candidate = new List<TaskDefinition>(_tasks);
+                    candidate[index] = dlg.ResultTask;
+                    SaveTasksAndNotify(candidate, dlg.ResultTask.Name);
                 }
             }
         }
@@ -612,8 +624,8 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             var dlg = new TaskEditDialog(clone, true, existingNames) { Owner = this };
             if (dlg.ShowDialog() == true && dlg.ResultTask != null)
             {
-                _tasks.Add(dlg.ResultTask);
-                SaveTasksAndNotify(dlg.ResultTask.Name);
+                var candidate = new List<TaskDefinition>(_tasks) { dlg.ResultTask };
+                SaveTasksAndNotify(candidate, dlg.ResultTask.Name);
             }
         }
 
@@ -636,13 +648,12 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             var res = MessageBox.Show(this, Loc.Format("Tasks.DeleteConfirm", row.Name), Loc.T("Tasks.DeleteConfirmTitle", "删除确认"), MessageBoxButton.YesNo, MessageBoxImage.Warning);
             if (res != MessageBoxResult.Yes) return;
 
-            if (row.IsRunning)
+            var candidate = new List<TaskDefinition>(_tasks);
+            candidate.RemoveAll(t => string.Equals(t.Name, row.Name, StringComparison.OrdinalIgnoreCase));
+            if (SaveTasksAndNotify(candidate, null) && row.IsRunning)
             {
                 _scheduler?.TryStop(row.Name);
             }
-
-            _tasks.RemoveAll(t => string.Equals(t.Name, row.Name, StringComparison.OrdinalIgnoreCase));
-            SaveTasksAndNotify(null);
         }
 
         private void OnToggleEnabledClick(object sender, RoutedEventArgs e)
@@ -650,19 +661,24 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             var row = GetSelectedRow();
             if (row == null) return;
 
-            row.Task.Enabled = !row.Task.Enabled;
-            if (!row.Task.Enabled && row.IsRunning)
+            int index = _tasks.FindIndex(t => string.Equals(t.Name, row.Name, StringComparison.OrdinalIgnoreCase));
+            if (index < 0) return;
+
+            var cloned = _tasks[index].Clone();
+            cloned.Enabled = !cloned.Enabled;
+            var candidate = new List<TaskDefinition>(_tasks);
+            candidate[index] = cloned;
+
+            if (SaveTasksAndNotify(candidate, row.Name) && !cloned.Enabled && row.IsRunning)
             {
                 _scheduler?.TryStop(row.Name);
             }
-
-            SaveTasksAndNotify(row.Name);
         }
 
         private void OnRunClick(object sender, RoutedEventArgs e)
         {
             var row = GetSelectedRow();
-            if (row == null) return;
+            if (row == null || _scheduler == null) return;
 
             if (!_scheduler.IsGlobalEnabled)
             {
@@ -680,7 +696,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
         private void OnStopClick(object sender, RoutedEventArgs e)
         {
             var row = GetSelectedRow();
-            if (row == null) return;
+            if (row == null || _scheduler == null) return;
 
             bool ok = _scheduler.TryStop(row.Name);
             if (!ok)
@@ -692,7 +708,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
         private void OnRestartClick(object sender, RoutedEventArgs e)
         {
             var row = GetSelectedRow();
-            if (row == null) return;
+            if (row == null || _scheduler == null) return;
 
             if (!_scheduler.IsGlobalEnabled)
             {
@@ -767,13 +783,13 @@ namespace CarroDesk.Modules.TaskScheduler.Views
             Close();
         }
 
-        private void SaveTasksAndNotify(string selectName)
+        private bool SaveTasksAndNotify(List<TaskDefinition> candidateTasks, string selectName)
         {
             string error;
             bool saved;
             try
             {
-                saved = TaskConfigService.Save(_tasks, _loadResult, out error);
+                saved = TaskConfigService.Save(candidateTasks, _loadResult, out error);
             }
             catch (Exception ex)
             {
@@ -786,9 +802,11 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                 // 只在这次用户主动保存被拒绝时给提示，不打扰后台运行。
                 MessageBox.Show(this, error ?? Loc.T("Tasks.SaveConfigFailed", "保存任务配置文件失败"), Loc.T("Tasks.SaveRejectedTitle", "保存被拒绝"),
                     MessageBoxButton.OK, MessageBoxImage.Warning);
-                // 不 Reload、不 LoadTasks：保留用户本次编辑，修好文件后可重试。
-                return;
+                // 不修改 _tasks，也不 Reload/LoadTasks：保持内存、UI 与磁盘状态一致。
+                return false;
             }
+
+            _tasks = candidateTasks;
 
             try
             {
@@ -807,6 +825,7 @@ namespace CarroDesk.Modules.TaskScheduler.Views
                 // 落盘已成功，后续刷新失败只记日志，不误报"保存失败"。
                 TaskLogger.Warn("system", "post-save reload failed: " + ex.Message);
             }
+            return true;
         }
     }
 

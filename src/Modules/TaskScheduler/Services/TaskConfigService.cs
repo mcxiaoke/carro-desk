@@ -288,7 +288,7 @@ namespace CarroDesk.Services.Tasks
                     {
                         if (!reader.Read()) break;
                     }
-                    if (reader.TokenType == JsonToken.None) return CurrentSchemaVersion;
+                    if (reader.TokenType == JsonToken.None || reader.TokenType == JsonToken.Comment) return CurrentSchemaVersion;
 
                     var obj = JToken.Load(reader, loadSettings) as JObject;
                     if (obj != null && obj["version"] != null)
@@ -441,7 +441,8 @@ namespace CarroDesk.Services.Tasks
                     o["delaySec"] = tr.DelaySec;
                     break;
                 case TaskTriggerType.Interval:
-                    if (!string.IsNullOrWhiteSpace(tr.Every)) o["every"] = tr.Every;
+                    if (tr.EverySec > 0) o["everySec"] = tr.EverySec;
+                    else if (!string.IsNullOrWhiteSpace(tr.Every)) o["every"] = tr.Every;
                     else o["everySec"] = tr.EverySec;
                     break;
                 case TaskTriggerType.Daily:
