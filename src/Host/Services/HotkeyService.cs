@@ -2,8 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Windows.Interop;
+using CarroDesk.Common;
 using CarroDesk.Core;
-using CarroDesk.Models;
 using CarroDesk.Services.Localization;
 
 namespace CarroDesk.Services.Tasks
@@ -189,7 +189,8 @@ namespace CarroDesk.Services.Tasks
                 lock (_lock) _map.TryGetValue(id, out cb);
                 if (cb != null)
                 {
-                    try { cb(); } catch { }
+                    try { cb(); }
+                    catch (Exception ex) { StaticLog.Warn("HotkeyService", "快捷键回调执行异常: " + ex.Message); }
                     handled = true;
                 }
             }
@@ -218,6 +219,10 @@ namespace CarroDesk.Services.Tasks
                     catch { }
                     _hwndSource = null;
                     _created = false;
+                }
+                if (ReferenceEquals(_instance, this))
+                {
+                    _instance = null;
                 }
             }
         }

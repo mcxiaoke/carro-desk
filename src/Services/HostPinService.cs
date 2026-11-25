@@ -31,11 +31,38 @@ namespace CarroDesk.Services
 
         public bool IsConfigured
         {
-            get { return !string.IsNullOrEmpty(_pendingSalt) || !string.IsNullOrEmpty(_pendingHash) || Current().HasPin(); }
+            get
+            {
+                lock (_verifyLock)
+                {
+                    return !string.IsNullOrEmpty(_pendingSalt)
+                        || !string.IsNullOrEmpty(_pendingHash)
+                        || (Current()?.HasPin() == true);
+                }
+            }
         }
 
-        public string Salt { get { return _pendingSalt ?? Current().PinSalt; } }
-        public string Hash { get { return _pendingHash ?? Current().PinHash; } }
+        public string Salt
+        {
+            get
+            {
+                lock (_verifyLock)
+                {
+                    return _pendingSalt ?? Current()?.PinSalt;
+                }
+            }
+        }
+
+        public string Hash
+        {
+            get
+            {
+                lock (_verifyLock)
+                {
+                    return _pendingHash ?? Current()?.PinHash;
+                }
+            }
+        }
 
         public bool Verify(string pin)
         {
@@ -89,16 +116,22 @@ namespace CarroDesk.Services
 
         public void SetNewPin(string pin)
         {
-            _inner.SetNewPin(pin);
-            _pendingSalt = _inner.Salt;
-            _pendingHash = _inner.Hash;
+            lock (_verifyLock)
+            {
+                _inner.SetNewPin(pin);
+                _pendingSalt = _inner.Salt;
+                _pendingHash = _inner.Hash;
+            }
         }
 
         public void SetFromConfig(string salt, string hash)
         {
-            _pendingSalt = null;
-            _pendingHash = null;
-            _inner.SetFromConfig(salt, hash);
+            lock (_verifyLock)
+            {
+                _pendingSalt = null;
+                _pendingHash = null;
+                _inner.SetFromConfig(salt, hash);
+            }
         }
 
         private AppSettings Current()

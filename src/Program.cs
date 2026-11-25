@@ -35,9 +35,7 @@ namespace CarroDesk
             if (args != null && args.Length > 0
                 && string.Equals(args[0], "--mcp", StringComparison.OrdinalIgnoreCase))
             {
-                ParentConsole.TryAttach();
-                try { Console.OutputEncoding = Encoding.UTF8; } catch { }
-                Environment.ExitCode = McpStdioServer.Run(Console.In, Console.Out, Console.Error, () => new PipeRpcClient());
+                Environment.ExitCode = McpStdioServer.RunStdio(() => new PipeRpcClient());
                 return;
             }
 
@@ -126,9 +124,10 @@ namespace CarroDesk
                 return 1;
             }
 
-            // --timeout 同时约束连接与等待响应：宿主卡死时二实例转发必须有界退出（H7）
-            int timeoutMs = parsed.TimeoutMs > 0 ? parsed.TimeoutMs : 3000;
-            var client = new PipeRpcClient(parsed.PipeName, timeoutMs, timeoutMs);
+            // --timeout 同时约束连接（上限 3s，宿主未启动时快速失败）与等待响应（未指定时默认 35s，覆盖 services.* 30s）
+            int connectTimeoutMs = parsed.TimeoutMs > 0 ? Math.Min(parsed.TimeoutMs, 3000) : 3000;
+            int readTimeoutMs = parsed.TimeoutMs > 0 ? parsed.TimeoutMs : 35000;
+            var client = new PipeRpcClient(parsed.PipeName, connectTimeoutMs, readTimeoutMs);
             return ControlForwarder.Forward(parsed, client, Console.Out, Console.Error);
         }
     }

@@ -12,6 +12,7 @@ namespace CarroDesk.Host.Services
     {
         private readonly object _lock = new object();
         private readonly Dictionary<Type, List<Registration>> _registrations = new Dictionary<Type, List<Registration>>();
+        private volatile bool _isDisposed;
 
         private sealed class Registration
         {
@@ -49,22 +50,23 @@ namespace CarroDesk.Host.Services
 
         public object GetService(Type serviceType)
         {
-            if (serviceType == null) return null;
+            if (serviceType == null || _isDisposed) return null;
 
-            // 定向解析：只构造第一个匹配的注册。
-            // 此前实现先调用 ResolveAll() 再取 [0]，会把该类型下**所有**注册都实例化一遍，
-            // 等于用一次解析的代价构造了全部实例（并可能触发不必要的副作用）。
+            Registration[] snapshot;
             lock (_lock)
             {
-                if (!_registrations.TryGetValue(serviceType, out var list)) return null;
-
-                foreach (var reg in list)
-                {
-                    var value = Resolve(reg);
-                    if (value != null) return value;
-                }
-                return null;
+                if (_isDisposed || !_registrations.TryGetValue(serviceType, out var list) || list.Count == 0)
+                    return null;
+                snapshot = list.ToArray();
             }
+
+            // 定向解析：在容器锁外执行工厂构造，避免工厂内部解析其他服务时长期占用全局锁。
+            foreach (var reg in snapshot)
+            {
+                var value = Resolve(reg);
+                if (value != null) return value;
+            }
+            return null;
         }
 
         public T GetService<T>() where T : class
@@ -99,43 +101,78 @@ namespace CarroDesk.Host.Services
             return list;
         }
 
-        /// <summary>解析单个注册（首次解析时执行工厂并缓存）。调用方须已持有 _lock。</summary>
         private object Resolve(Registration reg)
         {
-            if (reg == null) return null;
+            if (reg == null || _isDisposed) return null;
             if (reg.Created) return reg.Instance;
             if (reg.Factory == null) return null;
 
-            var created = reg.Factory(this);
-            if (created == null) return null;
+            object lateDisposed = null;
+            object result = null;
+            lock (reg)
+            {
+                if (reg.Created) return reg.Instance;
+                if (_isDisposed) return null;
 
-            reg.Instance = created;
-            reg.Created = true;
-            return created;
+                var created = reg.Factory(this);
+                if (created == null) return null;
+
+                if (_isDisposed)
+                {
+                    lateDisposed = created;
+                }
+                else
+                {
+                    reg.Instance = created;
+                    reg.Created = true;
+                    result = created;
+                }
+            }
+
+            if (lateDisposed is IDisposable d)
+            {
+                try { d.Dispose(); } catch { }
+            }
+            return result;
         }
 
         private List<object> ResolveAll(Type serviceType)
         {
             var result = new List<object>();
+            if (_isDisposed) return result;
+
+            Registration[] snapshot;
             lock (_lock)
             {
-                if (!_registrations.TryGetValue(serviceType, out var list)) return result;
-                foreach (var reg in list)
-                {
-                    var value = Resolve(reg);
-                    if (value != null) result.Add(value);
-                }
+                if (_isDisposed || !_registrations.TryGetValue(serviceType, out var list) || list.Count == 0)
+                    return result;
+                snapshot = list.ToArray();
+            }
+
+            foreach (var reg in snapshot)
+            {
+                var value = Resolve(reg);
+                if (value != null) result.Add(value);
             }
             return result;
         }
 
-        private HashSet<object> _disposed = new HashSet<object>();
+        private sealed class ReferenceComparer : IEqualityComparer<object>
+        {
+            public static readonly ReferenceComparer Instance = new ReferenceComparer();
+            public new bool Equals(object x, object y) => ReferenceEquals(x, y);
+            public int GetHashCode(object obj) => System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(obj);
+        }
+
+        private readonly HashSet<object> _disposed = new HashSet<object>(ReferenceComparer.Instance);
 
         public void Dispose()
         {
             List<object> all;
             lock (_lock)
             {
+                if (_isDisposed) return;
+                _isDisposed = true;
                 all = _registrations.Values
                     .SelectMany(l => l.Where(r => r.Created))
                     .Select(r => r.Instance)
@@ -145,7 +182,10 @@ namespace CarroDesk.Host.Services
 
             foreach (var obj in ((IEnumerable<object>)all).Reverse())
             {
-                if (obj == null || !_disposed.Add(obj)) continue;
+                if (obj == null) continue;
+                bool added;
+                lock (_disposed) { added = _disposed.Add(obj); }
+                if (!added) continue;
                 try
                 {
                     (obj as IDisposable)?.Dispose();

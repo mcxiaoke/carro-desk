@@ -7,6 +7,7 @@ using System.Linq;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
+using CarroDesk.Common;
 using CarroDesk.Core;
 using CarroDesk.Core.Commands;
 using CarroDesk.Host.Services;
@@ -30,11 +31,22 @@ namespace CarroDesk.Host.Commands
         public static void Install(CommandRegistry registry, ModuleManager modules)
         {
             if (registry == null) throw new ArgumentNullException(nameof(registry));
-            registry.Register(ModuleId, Hello(registry));
-            registry.Register(ModuleId, Guide());
-            registry.Register(ModuleId, Status(registry, modules));
-            registry.Register(ModuleId, ModulesList(registry, modules));
-            registry.Register(ModuleId, CapabilitiesList(registry));
+            foreach (var pair in CreateDescriptors(registry, modules))
+            {
+                registry.Register(pair.Key, pair.Value);
+            }
+        }
+
+        /// <summary>生成宿主自身能力条目序列，供 CommandRegistry.Rebuild 原子替换。</summary>
+        public static IEnumerable<KeyValuePair<string, CommandDescriptor>> CreateDescriptors(
+            CommandRegistry registry, ModuleManager modules)
+        {
+            if (registry == null) throw new ArgumentNullException(nameof(registry));
+            yield return new KeyValuePair<string, CommandDescriptor>(ModuleId, Hello(registry));
+            yield return new KeyValuePair<string, CommandDescriptor>(ModuleId, Guide());
+            yield return new KeyValuePair<string, CommandDescriptor>(ModuleId, Status(registry, modules));
+            yield return new KeyValuePair<string, CommandDescriptor>(ModuleId, ModulesList(registry, modules));
+            yield return new KeyValuePair<string, CommandDescriptor>(ModuleId, CapabilitiesList(registry));
         }
 
         private static CommandDescriptor Hello(CommandRegistry registry)
@@ -233,8 +245,7 @@ namespace CarroDesk.Host.Commands
         {
             try
             {
-                var version = typeof(HostCommands).Assembly.GetName().Version;
-                return version != null ? version.ToString() : "unknown";
+                return AppInfo.DisplayVersion ?? "unknown";
             }
             catch
             {
@@ -257,7 +268,16 @@ namespace CarroDesk.Host.Commands
                             c.Summary,
                             risk = c.Risk.ToString(),
                             c.RequiresPin,
-                            c.TimeoutMs
+                            pinPolicy = c.RequiresPin ? "always" : (c.RequiresPinFor != null ? "per-request" : "none"),
+                            c.TimeoutMs,
+                            parameters = (c.Params ?? (IReadOnlyList<CommandParam>)new CommandParam[0]).Select(p => new
+                            {
+                                p.Name,
+                                type = string.IsNullOrEmpty(p.Type) ? "string" : p.Type,
+                                p.Required,
+                                p.Description,
+                                p.AllowedValues
+                            }).ToList()
                         })
                         .ToList(),
                     Formatting.None);

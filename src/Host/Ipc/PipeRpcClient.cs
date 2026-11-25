@@ -14,7 +14,7 @@ namespace CarroDesk.Host.Ipc
     public sealed class PipeRpcClient
     {
         private const int DefaultConnectTimeoutMs = 3000;
-        private const int DefaultReadTimeoutMs = 10000;
+        private const int DefaultReadTimeoutMs = 35000;
 
         private readonly string _pipeName;
         private readonly int _connectTimeoutMs;
@@ -23,8 +23,7 @@ namespace CarroDesk.Host.Ipc
         /// <param name="pipeName">空 = 默认 \\.\pipe\CarroDesk.ctl.&lt;当前用户SID&gt;（与服务端一致）。</param>
         /// <param name="connectTimeoutMs">连接超时；宿主未运行时快速失败。</param>
         /// <param name="readTimeoutMs">
-        /// 等待响应的读超时（H7）。宿主卡死/只写半帧时必须有界返回，
-        /// 否则 CLI、MCP 瘦进程与二实例转发会永久挂起。
+        /// 等待响应的读超时（H7）。默认 35s，覆盖长耗时命令（如 services.* 的 30s）；宿主卡死/只写半帧时有界返回。
         /// </param>
         public PipeRpcClient(string pipeName = null, int connectTimeoutMs = DefaultConnectTimeoutMs,
             int readTimeoutMs = DefaultReadTimeoutMs)
@@ -43,15 +42,14 @@ namespace CarroDesk.Host.Ipc
             if (request == null) throw new ArgumentNullException(nameof(request));
             try
             {
-                // 必须用异步句柄：同步句柄上的挂起 Read 无法被取消，
+                // 必须用异步句柄：同步句柄上的挂起 Read/Write 无法被取消，
                 // 读超时后 CloseHandle 会一直等 I/O 完成，等于没超时（H7）。
                 using (var pipe = new NamedPipeClientStream(".", _pipeName, PipeDirection.InOut, PipeOptions.Asynchronous))
                 {
                     pipe.Connect(_connectTimeoutMs);
 
                     var frame = FrameCodec.EncodeFrame(RpcProtocol.EncodeRequest(request));
-                    pipe.Write(frame, 0, frame.Length);
-                    pipe.Flush();
+                    WriteFrameWithTimeout(pipe, frame);
 
                     var response = ReadFrameWithTimeout(pipe);
                     if (response == null)
@@ -68,10 +66,32 @@ namespace CarroDesk.Host.Ipc
             }
         }
 
+        private void WriteFrameWithTimeout(PipeStream pipe, byte[] frame)
+        {
+            var writeTask = WriteAndFlushAsync(pipe, frame);
+            try
+            {
+                writeTask.WaitAsync(TimeSpan.FromMilliseconds(_readTimeoutMs)).GetAwaiter().GetResult();
+            }
+            catch (TimeoutException)
+            {
+                try { pipe.Dispose(); } catch { }
+                writeTask.ContinueWith(t => { var ignored = t.Exception; },
+                    TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
+                throw new TimeoutException("timeout after " + _readTimeoutMs + "ms writing request");
+            }
+        }
+
+        private static async Task WriteAndFlushAsync(PipeStream pipe, byte[] frame)
+        {
+            await pipe.WriteAsync(frame, 0, frame.Length).ConfigureAwait(false);
+            await pipe.FlushAsync().ConfigureAwait(false);
+        }
+
         /// <summary>带读超时的整帧读取；超时后关闭流，避免挂起的异步读长期占用连接。</summary>
         private byte[] ReadFrameWithTimeout(PipeStream pipe)
         {
-            var readTask = ReadFrameAsync(pipe);
+            var readTask = FrameCodec.ReadFrameAsync(pipe, FrameCodec.DefaultMaxFrameBytes);
             try
             {
                 return readTask.WaitAsync(TimeSpan.FromMilliseconds(_readTimeoutMs)).GetAwaiter().GetResult();
@@ -84,31 +104,6 @@ namespace CarroDesk.Host.Ipc
                     TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
                 throw new TimeoutException("timeout after " + _readTimeoutMs + "ms waiting for response");
             }
-        }
-
-        private static async Task<byte[]> ReadFrameAsync(PipeStream stream)
-        {
-            var header = new byte[4];
-            if (!await ReadExactlyAsync(stream, header).ConfigureAwait(false)) return null;
-            var length = BitConverter.ToInt32(header, 0);
-            if (length <= 0 || length > FrameCodec.DefaultMaxFrameBytes)
-                throw new IOException("response frame length out of range: " + length);
-            var body = new byte[length];
-            if (!await ReadExactlyAsync(stream, body).ConfigureAwait(false))
-                throw new EndOfStreamException("stream ended mid-response");
-            return body;
-        }
-
-        private static async Task<bool> ReadExactlyAsync(PipeStream stream, byte[] buffer)
-        {
-            int read = 0;
-            while (read < buffer.Length)
-            {
-                var n = await stream.ReadAsync(buffer, read, buffer.Length - read).ConfigureAwait(false);
-                if (n <= 0) return false;
-                read += n;
-            }
-            return true;
         }
     }
 }

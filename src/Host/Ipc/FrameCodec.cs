@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace CarroDesk.Host.Ipc
@@ -13,11 +14,14 @@ namespace CarroDesk.Host.Ipc
         public const int DefaultMaxFrameBytes = 1024 * 1024;
 
         /// <summary>读取一帧。返回 null 表示帧间干净 EOF（对端正常关闭）。</summary>
-        public static async Task<byte[]> ReadFrameAsync(Stream stream, int maxFrameBytes)
+        public static async Task<byte[]> ReadFrameAsync(
+            Stream stream,
+            int maxFrameBytes,
+            CancellationToken cancellationToken = default)
         {
             if (stream == null) throw new ArgumentNullException(nameof(stream));
             var header = new byte[4];
-            var headerRead = await ReadExactlyAsync(stream, header, 4).ConfigureAwait(false);
+            var headerRead = await ReadExactlyAsync(stream, header, 4, cancellationToken).ConfigureAwait(false);
             if (headerRead == 0) return null;
             if (headerRead < 4) throw new EndOfStreamException("stream ended in frame header");
 
@@ -26,7 +30,7 @@ namespace CarroDesk.Host.Ipc
                 throw new InvalidDataException("frame length out of range: " + length);
 
             var body = new byte[length];
-            var bodyRead = await ReadExactlyAsync(stream, body, length).ConfigureAwait(false);
+            var bodyRead = await ReadExactlyAsync(stream, body, length, cancellationToken).ConfigureAwait(false);
             if (bodyRead < length) throw new EndOfStreamException("stream ended mid-frame");
             return body;
         }
@@ -41,12 +45,16 @@ namespace CarroDesk.Host.Ipc
         }
 
         /// <summary>恰好读 count 字节；返回实际读取数（小于 count 仅在 EOF 时发生）。</summary>
-        private static async Task<int> ReadExactlyAsync(Stream stream, byte[] buffer, int count)
+        private static async Task<int> ReadExactlyAsync(
+            Stream stream,
+            byte[] buffer,
+            int count,
+            CancellationToken cancellationToken)
         {
             int read = 0;
             while (read < count)
             {
-                var n = await stream.ReadAsync(buffer, read, count - read).ConfigureAwait(false);
+                var n = await stream.ReadAsync(buffer, read, count - read, cancellationToken).ConfigureAwait(false);
                 if (n <= 0) return read;
                 read += n;
             }

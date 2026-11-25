@@ -1,5 +1,8 @@
 using System;
 using System.IO;
+using System.Linq;
+using System.Text;
+using CarroDesk.Common;
 using CarroDesk.Core.Commands;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -9,14 +12,26 @@ namespace CarroDesk.Host.Ipc
     /// <summary>
     /// MCP stdio 瘦进程（IPC 设计 §5.5，S4）：stdio 上按行收发 JSON-RPC（MCP 规范：
     /// 换行分隔、单行内不得有嵌入换行），工具调用经控制管道转发给宿主。
-    /// stdout 只输出协议消息；一切日志走 stderr。能力表在首次 tools/list 时经
-    /// host.capabilities.list 拉取并缓存（listChanged 未支持，宿主升级后重启会话即可）。
+    /// stdout 只输出协议消息；一切日志走 stderr。能力表在 tools/list 时经
+    /// host.capabilities.list 拉取并按 host.hello 的 capabilitiesHash 动态刷新。
     /// 约定：工具参数里的 "pin" 被提取为请求口令（§9.6 口令即确认），不进入业务参数。
     /// </summary>
     public static class McpStdioServer
     {
         public const string DefaultProtocolVersion = "2025-06-18";
         private const string ServerName = "carrodesk";
+
+        /// <summary>直接包装标准输入/输出/错误流为无 BOM UTF-8，避免受系统代码页或 WinExe AttachConsole 影响。</summary>
+        public static int RunStdio(Func<PipeRpcClient> clientFactory = null)
+        {
+            var utf8NoBom = new UTF8Encoding(false);
+            using (var input = new StreamReader(Console.OpenStandardInput(), utf8NoBom, detectEncodingFromByteOrderMarks: true))
+            using (var output = new StreamWriter(Console.OpenStandardOutput(), utf8NoBom) { AutoFlush = true, NewLine = "\n" })
+            using (var log = new StreamWriter(Console.OpenStandardError(), utf8NoBom) { AutoFlush = true })
+            {
+                return Run(input, output, log, clientFactory);
+            }
+        }
 
         /// <summary>阻塞运行直至 stdin EOF；返回进程退出码（0 = 正常）。</summary>
         public static int Run(TextReader input, TextWriter output, TextWriter log, Func<PipeRpcClient> clientFactory)
@@ -167,7 +182,23 @@ namespace CarroDesk.Host.Ipc
 
             private void EnsureCapabilities()
             {
-                if (_capabilities != null) return;
+                if (_capabilities != null)
+                {
+                    var hello = _clientFactory().Call(CommandRequest.Create("host.hello", "mcp"));
+                    var helloObj = hello.Ok ? hello.Data as JObject : null;
+                    var currentHash = helloObj != null ? (string)helloObj["capabilitiesHash"] : null;
+                    var cachedHash = (string)_capabilities["hash"];
+                    if (!string.IsNullOrEmpty(currentHash)
+                        && !string.Equals(currentHash, cachedHash, StringComparison.Ordinal))
+                    {
+                        _capabilities = null;
+                    }
+                    else
+                    {
+                        return;
+                    }
+                }
+
                 var result = _clientFactory().Call(CommandRequest.Create("host.capabilities.list", "mcp"));
                 if (!result.Ok)
                 {
@@ -187,18 +218,22 @@ namespace CarroDesk.Host.Ipc
                 var parameters = request["params"] as JObject;
                 var name = parameters == null ? null : (string)parameters["name"];
                 if (string.IsNullOrWhiteSpace(name))
-                    return Error(id, -32602, "missing tool name");
+                    return Error(id, CommandErrorCodes.InvalidParams, "missing tool name");
 
-                var arguments = parameters == null ? null : parameters["arguments"] as JObject;
-                var dict = RpcProtocol.ExtractParams(arguments);
+                var rawArgs = parameters == null ? null : parameters["arguments"];
+                if (rawArgs != null && rawArgs.Type != JTokenType.Null && !(rawArgs is JObject))
+                    return Error(id, CommandErrorCodes.InvalidParams, "arguments must be an object");
 
-                // 约定：arguments["pin"] → 请求口令（若工具本身声明了 pin 参数，此约定冲突；当前无此工具）
+                var dict = RpcProtocol.ExtractParams(rawArgs as JObject);
+
+                // 约定：arguments["pin"]（大小写不敏感）→ 请求口令，不进入业务参数
                 string pin = null;
-                object pinValue;
-                if (dict.TryGetValue("pin", out pinValue))
+                var pinKey = dict.Keys.FirstOrDefault(k => string.Equals(k, "pin", StringComparison.OrdinalIgnoreCase));
+                if (pinKey != null)
                 {
+                    var pinValue = dict[pinKey];
                     pin = pinValue == null ? null : pinValue.ToString();
-                    dict.Remove("pin");
+                    dict.Remove(pinKey);
                 }
 
                 var result = _clientFactory().Call(new CommandRequest
@@ -211,7 +246,9 @@ namespace CarroDesk.Host.Ipc
 
                 var text = result.Ok
                     ? Textify(result.Data)
-                    : "error " + result.Error.Code + ": " + result.Error.Message;
+                    : (result.Error != null
+                        ? "error " + result.Error.Code + ": " + result.Error.Message
+                        : "error: unknown failure");
                 return Ok(id, new JObject
                 {
                     ["content"] = new JArray { new JObject { ["type"] = "text", ["text"] = text } },
@@ -258,6 +295,7 @@ namespace CarroDesk.Host.Ipc
                             ? "本能力需要 PIN，请在 arguments 中传入"
                             : "按参数动态判定是否需要 PIN；若返回 -32002 请向用户索取后重试"
                     };
+                    if (alwaysPin) required.Add("pin");
                 }
 
                 var summary = (string)capability["summary"] ?? (string)capability["name"];
@@ -307,8 +345,7 @@ namespace CarroDesk.Host.Ipc
             {
                 try
                 {
-                    var version = typeof(McpStdioServer).Assembly.GetName().Version;
-                    return version != null ? version.ToString() : "unknown";
+                    return AppInfo.DisplayVersion ?? "unknown";
                 }
                 catch
                 {

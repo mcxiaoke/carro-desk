@@ -497,6 +497,10 @@ namespace CarroDesk.Views
 
         public void RebuildMenu()
         {
+            foreach (var existing in ItemsHostMenu.Items)
+            {
+                MenuProjectionEngine.DetachVisual(existing);
+            }
             ItemsHostMenu.Items.Clear();
 
             // ① 挂载各业务模块导出的标准二级根项

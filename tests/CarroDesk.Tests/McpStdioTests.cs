@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Text;
 using CarroDesk.Core;
 using CarroDesk.Core.Commands;
@@ -199,6 +200,8 @@ namespace CarroDesk.Tests
                 Assert.AreEqual("text", (string)echo["inputSchema"]["required"][0]);
                 var secret = FindTool(tools, "test.secret");
                 Assert.IsTrue(((string)secret["description"]).Contains("pin"), "需口令的工具描述必须提示 pin 约定");
+                Assert.IsTrue(((JArray)secret["inputSchema"]["required"]).Values<string>().Contains("pin"),
+                    "alwaysPin 工具的 required 数组应包含 pin");
 
                 // 4. tools/call 成功：字符串结果原样文本化
                 var call = FindResponse(responses, 3);
@@ -272,6 +275,68 @@ namespace CarroDesk.Tests
                 var response = FindResponse(responses, 1);
                 Assert.IsNotNull(response);
                 Assert.AreEqual(-32602, (int)response["error"]["code"]);
+            }
+            finally { server.Dispose(); }
+        }
+
+        [TestMethod]
+        public void Run_ToolsList_RefreshesWhenHostCapabilitiesChange_AndCaseInsensitivePinWorks()
+        {
+            string pipeName = "CarroDesk.mcp-refresh." + Guid.NewGuid().ToString("N");
+            var registry = new CommandRegistry();
+            registry.Register("test", new CommandDescriptor
+            {
+                Name = "test.secret",
+                Summary = "需要口令",
+                Risk = CommandRisk.Low,
+                RequiresPin = true,
+                Handler = r => CommandResult.Success("granted")
+            });
+            HostCommands.Install(registry, null);
+            var host = new CommandHost(registry, id => ModuleStatus.Running, new PinGuard(new FakePinService()), new NullCommandAuditSink());
+            var server = new NamedPipeCommandServer(host, pipeName, null, useAcl: false);
+            server.Start();
+
+            var reader = new ScriptedReader(new[]
+            {
+                "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}",
+                "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}",
+                "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"test.secret\",\"arguments\":{\"PIN\":\"1234\"}}}",
+                "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"test.secret\",\"arguments\":\"bad\"}}"
+            }, i =>
+            {
+                if (i == 1)
+                {
+                    registry.Register("test", new CommandDescriptor
+                    {
+                        Name = "test.added",
+                        Summary = "新增",
+                        Risk = CommandRisk.ReadOnly,
+                        Handler = r => CommandResult.Success("ok")
+                    });
+                }
+            });
+
+            try
+            {
+                var output = new StringWriter();
+                int exit = McpStdioServer.Run(reader, output, new StringWriter(), () => new PipeRpcClient(pipeName));
+                Assert.AreEqual(0, exit);
+
+                var lines = output.ToString().Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                Assert.AreEqual(4, lines.Length);
+
+                var tools1 = (JArray)JObject.Parse(lines[0])["result"]["tools"];
+                var tools2 = (JArray)JObject.Parse(lines[1])["result"]["tools"];
+                Assert.IsFalse(tools1.Any(t => (string)t["name"] == "test.added"));
+                Assert.IsTrue(tools2.Any(t => (string)t["name"] == "test.added"), "abilities hash 变化后 tools/list 必须刷新");
+
+                var pinCall = JObject.Parse(lines[2])["result"];
+                Assert.AreEqual(false, (bool)pinCall["isError"], "大写 PIN 应被正确提取并放行");
+                Assert.AreEqual("granted", (string)pinCall["content"][0]["text"]);
+
+                var badArgs = JObject.Parse(lines[3]);
+                Assert.AreEqual(-32602, (int)badArgs["error"]["code"], "非对象 arguments 应返回 -32602");
             }
             finally { server.Dispose(); }
         }

@@ -148,7 +148,9 @@ namespace CarroDesk.Host.Commands
 
             var timeoutMs = descriptor.TimeoutMs > 0 ? descriptor.TimeoutMs : DefaultTimeoutMs;
             var captured = effective;
-            using (var cts = new CancellationTokenSource(timeoutMs))
+            var cts = new CancellationTokenSource(timeoutMs);
+            var timedOut = false;
+            try
             {
                 Task<CommandResult> task = Task.Run(() =>
                 {
@@ -159,11 +161,11 @@ namespace CarroDesk.Host.Commands
                 var finished = await Task.WhenAny(task, DelayUntilCancelled(cts)).ConfigureAwait(false);
                 if (finished != task)
                 {
-                    // 超时：取消并观察 eventual 异常，避免未观察异常在 GC 时引发
-                    // TaskScheduler.UnobservedTaskException（.NET 4.5 起不再终止进程，
-                    // 但会静默丢失 handler 的真实失败原因）。
+                    // 超时：取消并把 cts 释放延迟到后台 handler 完成，避免仍在等待 token.WaitHandle
+                    // 的可取消 handler 触发 ObjectDisposedException。
+                    timedOut = true;
                     CancelQuietly(cts);
-                    ObserveLateCompletion(task, descriptor, timeoutMs);
+                    ObserveLateCompletion(task, cts, descriptor, timeoutMs);
                     return Fail(CommandErrorCodes.Timeout, "timeout after " + timeoutMs + "ms");
                 }
 
@@ -182,16 +184,20 @@ namespace CarroDesk.Host.Commands
                     _logger?.LogError(descriptor.ModuleId, "能力 '" + descriptor.Name + "' 执行异常", ex);
                     return Fail(CommandErrorCodes.Internal, "internal error: " + ex.Message);
                 }
-                finally
-                {
-                    // handler 已结束，取消只是为了释放仍在挂着的超时定时器
-                    // （Task.Delay(Infinite, token) 不会因 CTS 被 Dispose 而撤销）
-                    CancelQuietly(cts);
-                }
 
                 if (handlerResult == null)
                     return Fail(CommandErrorCodes.Internal, "handler returned no result");
                 return handlerResult;
+            }
+            finally
+            {
+                if (!timedOut)
+                {
+                    // handler 已结束，取消只是为了释放仍在挂着的超时定时器
+                    // （Task.Delay(Infinite, token) 不会因 CTS 被 Dispose 而撤销）
+                    CancelQuietly(cts);
+                    try { cts.Dispose(); } catch { }
+                }
             }
         }
 
@@ -220,11 +226,16 @@ namespace CarroDesk.Host.Commands
         /// 变成 UnobservedTaskException；同时记一条日志 —— 此刻调用方已经拿到
         /// -32004，若handler 的副作用稍后才落地，这是唯一的排障线索。
         /// </summary>
-        private void ObserveLateCompletion(Task<CommandResult> task, CommandDescriptor descriptor, int timeoutMs)
+        private void ObserveLateCompletion(
+            Task<CommandResult> task,
+            CancellationTokenSource cts,
+            CommandDescriptor descriptor,
+            int timeoutMs)
         {
             task.ContinueWith(t =>
             {
                 var ignored = t.Exception;
+                try { cts.Dispose(); } catch { }
                 try
                 {
                     if (t.IsFaulted && t.Exception != null)

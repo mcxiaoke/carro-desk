@@ -287,4 +287,107 @@ namespace CarroDesk.Tests
             }
         }
     }
+
+    [TestClass]
+    public class HostAndContainerFixesTests
+    {
+        private sealed class FakePin : IPinService
+        {
+            public bool IsConfigured => true;
+            public string Salt => "s";
+            public string Hash => "h";
+            public bool Verify(string pin) => pin == "1234";
+            public void SetNewPin(string pin) { }
+            public void SetFromConfig(string salt, string hash) { }
+        }
+
+        private sealed class DepService : IDisposable
+        {
+            public bool Disposed { get; private set; }
+            public void Dispose() => Disposed = true;
+        }
+
+        private sealed class MainService : IDisposable
+        {
+            public DepService Dep { get; }
+            public bool Disposed { get; private set; }
+            public MainService(DepService dep) { Dep = dep; }
+            public void Dispose() => Disposed = true;
+        }
+
+        [TestMethod]
+        public void PinGuard_Reload_ClearsPersistedBlockFileImmediately()
+        {
+            var statePath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "pin-guard-reload-" + Guid.NewGuid().ToString("N") + ".json");
+            try
+            {
+                var guard1 = new PinGuard(new FakePin(), statePath);
+                TimeSpan rem;
+                for (int i = 0; i < 6; i++) guard1.Try("wrong", out rem);
+                Assert.IsTrue(guard1.RemainingBlock() > TimeSpan.Zero);
+                Assert.IsTrue(System.IO.File.Exists(statePath));
+
+                guard1.Reload(new FakePin());
+                Assert.AreEqual(TimeSpan.Zero, guard1.RemainingBlock());
+                Assert.IsFalse(System.IO.File.Exists(statePath), "Reload 应同步清理持久化状态文件");
+
+                var guard2 = new PinGuard(new FakePin(), statePath);
+                Assert.AreEqual(TimeSpan.Zero, guard2.RemainingBlock());
+            }
+            finally
+            {
+                try { if (System.IO.File.Exists(statePath)) System.IO.File.Delete(statePath); } catch { }
+            }
+        }
+
+        [TestMethod]
+        public void ServiceContainer_NestedFactoryResolution_WorksAndDisposes()
+        {
+            var container = new ServiceContainer();
+            container.AddSingleton<DepService>(_ => new DepService());
+            container.AddSingleton<MainService>(sp => new MainService(sp.GetService<DepService>()));
+
+            var main = container.GetService<MainService>();
+            var dep = container.GetService<DepService>();
+            Assert.IsNotNull(main);
+            Assert.AreSame(dep, main.Dep);
+
+            container.Dispose();
+            Assert.IsTrue(main.Disposed);
+            Assert.IsTrue(dep.Disposed);
+            Assert.IsNull(container.GetService<MainService>());
+        }
+
+        [TestMethod]
+        public void MenuProjectionEngine_NullDispatcherSafe_AndDetachVisualUnsubscribes()
+        {
+            Exception threadEx = null;
+            var t = new Thread(() =>
+            {
+                try
+                {
+                    var node = new CarroDesk.Core.Models.TrayMenuItem { Header = "Root" };
+                    int refreshes = 0;
+                    var options = new MenuProjectionEngine.ProjectionOptions { RequestRefresh = () => refreshes++ };
+
+                    var visual = MenuProjectionEngine.CreateVisual(node, options, dispatcher: null);
+                    node.Header = "Updated"; // dispatcher == null 不应抛 NullReferenceException
+
+                    node.Children.Add(new CarroDesk.Core.Models.TrayMenuItem { Header = "Child1" });
+                    Assert.AreEqual(1, refreshes);
+
+                    // 显式 DetachVisual（即使从未触发 WPF Unloaded）必须解除订阅
+                    MenuProjectionEngine.DetachVisual(visual);
+                    node.Children.Add(new CarroDesk.Core.Models.TrayMenuItem { Header = "Child2" });
+                    Assert.AreEqual(1, refreshes, "DetachVisual 后不应再响应模块节点 Children 变更");
+                }
+                catch (Exception ex) { threadEx = ex; }
+            });
+            t.SetApartmentState(ApartmentState.STA);
+            t.Start();
+            t.Join();
+
+            Assert.IsNull(threadEx, threadEx?.ToString());
+        }
+    }
 }

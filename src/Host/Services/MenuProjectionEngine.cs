@@ -1,6 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.ComponentModel;
+using System.Runtime.CompilerServices;
+using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -11,6 +14,9 @@ namespace CarroDesk.Host.Services
 {
     public static class MenuProjectionEngine
     {
+        private static readonly ConditionalWeakTable<DependencyObject, Action> DetachActions =
+            new ConditionalWeakTable<DependencyObject, Action>();
+
         public class ProjectionOptions
         {
             public bool EnableHoverBehavior { get; set; }
@@ -90,7 +96,7 @@ namespace CarroDesk.Host.Services
 
                 PropertyChangedEventHandler onPropertyChanged = (s, pc) =>
                 {
-                    if (!dispatcher.CheckAccess())
+                    if (dispatcher != null && !dispatcher.CheckAccess())
                     {
                         options?.BackgroundPropertyWarn?.Invoke(node, pc.PropertyName);
                     }
@@ -99,14 +105,49 @@ namespace CarroDesk.Host.Services
                 node.Children.CollectionChanged += onChildrenChanged;
                 node.PropertyChanged += onPropertyChanged;
 
-                menuItem.Unloaded += (s, e) =>
+                int detached = 0;
+                Action detach = () =>
                 {
+                    if (Interlocked.Exchange(ref detached, 1) != 0) return;
                     node.Children.CollectionChanged -= onChildrenChanged;
                     node.PropertyChanged -= onPropertyChanged;
                 };
+                DetachActions.Remove(menuItem);
+                DetachActions.Add(menuItem, detach);
+                menuItem.Unloaded += (s, e) => detach();
             }
 
             return menuItem;
+        }
+
+        /// <summary>
+        /// 递归解除视觉树的数据绑定与模块事件订阅，即使菜单从未打开过（Unloaded 未触发）也不会泄漏。
+        /// </summary>
+        public static void DetachVisual(object visual)
+        {
+            if (visual == null) return;
+            if (visual is DependencyObject d)
+            {
+                if (DetachActions.TryGetValue(d, out var detach))
+                {
+                    DetachActions.Remove(d);
+                    try { detach(); } catch { }
+                }
+                BindingOperations.ClearAllBindings(d);
+            }
+            if (visual is ItemsControl itemsControl)
+            {
+                var children = new List<object>();
+                foreach (var child in itemsControl.Items)
+                {
+                    children.Add(child);
+                }
+                foreach (var child in children)
+                {
+                    DetachVisual(child);
+                }
+                itemsControl.Items.Clear();
+            }
         }
 
         public static void AttachHoverBehavior(MenuItem mi)

@@ -88,7 +88,6 @@ namespace CarroDesk.Core
 
             try
             {
-                lock (_managedHotkeys) { _managedHotkeys.Clear(); }
                 OnStart();
                 bool stopRequested;
                 lock (_stateLock)
@@ -153,6 +152,11 @@ namespace CarroDesk.Core
             }
             finally
             {
+                lock (_trayRoots)
+                {
+                    _trayRoots.Clear();
+                    _trayRoot = null;
+                }
                 Status = ModuleStatus.Stopped;
             }
         }
@@ -285,6 +289,7 @@ namespace CarroDesk.Core
         {
             lock (_managedHotkeys)
             {
+                if (!IsRunning) return;
                 foreach (var binding in _managedHotkeys)
                 {
                     ApplyHotkeyBinding(binding);
@@ -386,23 +391,82 @@ namespace CarroDesk.Core
             catch { }
         }
 
-        /// <summary>当前模块托盘根项引用（供线程安全 Header/ToolTip 刷新）</summary>
-        protected TrayMenuItem TrayRoot { get; set; }
+        private TrayMenuItem _trayRoot;
+        private readonly List<WeakReference<TrayMenuItem>> _trayRoots = new List<WeakReference<TrayMenuItem>>();
 
-        /// <summary>跨线程安全刷新当前模块托盘根项的 Header 与 ToolTip</summary>
+        /// <summary>当前模块托盘根项引用（同时跟踪多个投影视图的根项，供线程安全 Header/ToolTip 同步刷新）</summary>
+        protected TrayMenuItem TrayRoot
+        {
+            get => _trayRoot;
+            set
+            {
+                lock (_trayRoots)
+                {
+                    _trayRoot = value;
+                    if (value == null) return;
+                    bool exists = false;
+                    for (int i = _trayRoots.Count - 1; i >= 0; i--)
+                    {
+                        if (!_trayRoots[i].TryGetTarget(out var target))
+                        {
+                            _trayRoots.RemoveAt(i);
+                        }
+                        else if (ReferenceEquals(target, value))
+                        {
+                            exists = true;
+                        }
+                    }
+                    if (!exists)
+                    {
+                        _trayRoots.Add(new WeakReference<TrayMenuItem>(value));
+                        while (_trayRoots.Count > 4)
+                        {
+                            _trayRoots.RemoveAt(0);
+                        }
+                    }
+                }
+            }
+        }
+
+        /// <summary>跨线程安全刷新当前模块所有存活托盘/浮窗根项的 Header 与 ToolTip</summary>
         protected void SetTrayItemSelf(string header, string toolTip = null)
         {
-            if (TrayRoot == null) return;
+            List<TrayMenuItem> targets;
+            lock (_trayRoots)
+            {
+                if (_trayRoots.Count == 0 && _trayRoot == null) return;
+                targets = new List<TrayMenuItem>(_trayRoots.Count);
+                for (int i = _trayRoots.Count - 1; i >= 0; i--)
+                {
+                    if (_trayRoots[i].TryGetTarget(out var target))
+                    {
+                        targets.Add(target);
+                    }
+                    else
+                    {
+                        _trayRoots.RemoveAt(i);
+                    }
+                }
+                if (_trayRoot != null && !targets.Contains(_trayRoot))
+                {
+                    targets.Add(_trayRoot);
+                }
+            }
+            if (targets.Count == 0) return;
+
             var d = Context?.Dispatcher;
             if (d != null && !d.CheckAccess())
             {
                 d.BeginInvoke(new Action(() => SetTrayItemSelf(header, toolTip)));
                 return;
             }
-            TrayRoot.Header = header;
-            if (toolTip != null)
+            foreach (var node in targets)
             {
-                TrayRoot.ToolTip = toolTip;
+                node.Header = header;
+                if (toolTip != null)
+                {
+                    node.ToolTip = toolTip;
+                }
             }
         }
 

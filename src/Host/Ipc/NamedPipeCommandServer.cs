@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.IO.Pipes;
 using System.Security.AccessControl;
@@ -24,8 +25,12 @@ namespace CarroDesk.Host.Ipc
         private readonly ILoggerService _logger;
         private readonly int _maxFrameBytes;
         private readonly bool _useAcl;
+        private readonly PipeSecurity _cachedSecurity;
+        private readonly object _lifecycleLock = new object();
+        private readonly HashSet<NamedPipeServerStream> _activeStreams = new HashSet<NamedPipeServerStream>();
         private CancellationTokenSource _cts;
-        private int _started;   // Start 幂等：避免两个 accept 循环争抢同一管道名
+        private NamedPipeServerStream _pendingServer;
+        private bool _started;
 
         /// <param name="useAcl">false 仅限测试环境（同用户回环自测）；生产恒为 true。</param>
         public NamedPipeCommandServer(CommandHost host, string pipeName, ILoggerService logger,
@@ -36,6 +41,7 @@ namespace CarroDesk.Host.Ipc
             _logger = logger;
             _maxFrameBytes = maxFrameBytes;
             _useAcl = useAcl;
+            _cachedSecurity = useAcl ? BuildDefaultSecurity() : null;
         }
 
         public string PipeName { get; }
@@ -45,9 +51,12 @@ namespace CarroDesk.Host.Ipc
         {
             try
             {
-                var sid = WindowsIdentity.GetCurrent() != null ? WindowsIdentity.GetCurrent().User : null;
-                if (sid != null && !string.IsNullOrEmpty(sid.Value))
-                    return @"\\.\pipe\CarroDesk.ctl." + sid.Value;
+                using (var identity = WindowsIdentity.GetCurrent())
+                {
+                    var sid = identity != null ? identity.User : null;
+                    if (sid != null && !string.IsNullOrEmpty(sid.Value))
+                        return @"\\.\pipe\CarroDesk.ctl." + sid.Value;
+                }
             }
             catch (Exception ex)
             {
@@ -63,11 +72,13 @@ namespace CarroDesk.Host.Ipc
             var security = new PipeSecurity();
             try
             {
-                var identity = WindowsIdentity.GetCurrent();
-                if (identity != null && identity.User != null)
+                using (var identity = WindowsIdentity.GetCurrent())
                 {
-                    security.AddAccessRule(new PipeAccessRule(
-                        identity.User, PipeAccessRights.ReadWrite, AccessControlType.Allow));
+                    if (identity != null && identity.User != null)
+                    {
+                        security.AddAccessRule(new PipeAccessRule(
+                            identity.User, PipeAccessRights.ReadWrite, AccessControlType.Allow));
+                    }
                 }
             }
             catch (Exception ex)
@@ -83,32 +94,53 @@ namespace CarroDesk.Host.Ipc
 
         public void Start()
         {
-            if (Interlocked.Exchange(ref _started, 1) != 0) return;
-            var cts = new CancellationTokenSource();
-            _cts = cts;
-            // 用局部变量而非 _cts：Dispose 可能已把字段置 null。
-            // continuation 观察异常，避免 accept 循环抛错成为未观察 Task 异常。
+            CancellationTokenSource cts;
+            lock (_lifecycleLock)
+            {
+                if (_started) return;
+                _started = true;
+                cts = new CancellationTokenSource();
+                _cts = cts;
+            }
+
+            // 由 accept 循环结束后的 continuation 统一释放 cts，避免 Dispose 期间后台任务遇到 ObjectDisposedException。
             _ = Task.Run(() => AcceptLoopAsync(cts.Token)).ContinueWith(t =>
             {
-                if (t.IsFaulted)
+                if (t.IsFaulted && t.Exception != null)
                 {
-                    StaticLog.Warn("Ipc", "管道 accept 循环异常终止: " +
-                        (t.Exception == null ? "unknown" : t.Exception.GetBaseException().Message));
+                    StaticLog.Warn("Ipc", "管道 accept 循环异常终止: " + t.Exception.GetBaseException().Message);
                 }
-            }, TaskContinuationOptions.OnlyOnFaulted);
+                try { cts.Dispose(); } catch { }
+            }, TaskContinuationOptions.ExecuteSynchronously);
         }
 
         public void Dispose()
         {
-            // 取消并释放 CTS；accept 循环在下一次等待周期退出，进程退出时后台任务随之终止。
-            var cts = _cts;
-            _cts = null;
+            CancellationTokenSource cts;
+            NamedPipeServerStream pending;
+            NamedPipeServerStream[] active;
+            lock (_lifecycleLock)
+            {
+                if (!_started && _cts == null && _pendingServer == null && _activeStreams.Count == 0)
+                    return;
+                _started = false;
+                cts = _cts;
+                _cts = null;
+                pending = _pendingServer;
+                _pendingServer = null;
+                active = _activeStreams.Count > 0 ? new List<NamedPipeServerStream>(_activeStreams).ToArray() : new NamedPipeServerStream[0];
+                _activeStreams.Clear();
+            }
+
             if (cts != null)
             {
                 try { cts.Cancel(); } catch { }
-                try { cts.Dispose(); } catch { }
             }
-            Interlocked.Exchange(ref _started, 0);
+            CleanupStream(pending);
+            foreach (var stream in active)
+            {
+                CleanupStream(stream);
+            }
         }
 
         private NamedPipeServerStream CreateServerStream()
@@ -123,7 +155,7 @@ namespace CarroDesk.Host.Ipc
                     PipeName, PipeDirection.InOut,
                     NamedPipeServerStream.MaxAllowedServerInstances,
                     PipeTransmissionMode.Byte, PipeOptions.Asynchronous,
-                    BufferSize, BufferSize, BuildDefaultSecurity());
+                    BufferSize, BufferSize, _cachedSecurity ?? BuildDefaultSecurity());
             }
             return new NamedPipeServerStream(
                 PipeName, PipeDirection.InOut,
@@ -140,15 +172,32 @@ namespace CarroDesk.Host.Ipc
                 try
                 {
                     server = CreateServerStream();
+                    lock (_lifecycleLock)
+                    {
+                        if (token.IsCancellationRequested || !_started)
+                        {
+                            CleanupStream(server);
+                            return;
+                        }
+                        _pendingServer = server;
+                    }
                     await server.WaitForConnectionAsync(token).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
                 {
+                    ClearPendingServer(server);
                     CleanupStream(server);
                     return;
                 }
+                catch (ObjectDisposedException)
+                {
+                    ClearPendingServer(server);
+                    if (token.IsCancellationRequested) return;
+                    continue;
+                }
                 catch (Exception ex)
                 {
+                    ClearPendingServer(server);
                     CleanupStream(server);
                     _logger?.LogWarning("Ipc", "管道等待连接失败，0.5s 后重试: " + ex.Message);
                     try { await Task.Delay(500, token).ConfigureAwait(false); }
@@ -156,9 +205,34 @@ namespace CarroDesk.Host.Ipc
                     continue;
                 }
 
+                bool accepted = false;
+                lock (_lifecycleLock)
+                {
+                    if (_pendingServer == server) _pendingServer = null;
+                    if (_started && !token.IsCancellationRequested)
+                    {
+                        _activeStreams.Add(server);
+                        accepted = true;
+                    }
+                }
+                if (!accepted)
+                {
+                    CleanupStream(server);
+                    return;
+                }
+
                 // 每连接独立任务；accept 循环立即回到等待下一个实例（§5.1，照 GetItemsGuarded 隔离风格）
                 var connection = server;
                 var ignored = Task.Run(() => HandleConnectionAsync(connection, token));
+            }
+        }
+
+        private void ClearPendingServer(NamedPipeServerStream server)
+        {
+            if (server == null) return;
+            lock (_lifecycleLock)
+            {
+                if (_pendingServer == server) _pendingServer = null;
             }
         }
 
@@ -171,7 +245,11 @@ namespace CarroDesk.Host.Ipc
                     byte[] frame;
                     try
                     {
-                        frame = await FrameCodec.ReadFrameAsync(server, _maxFrameBytes).ConfigureAwait(false);
+                        frame = await FrameCodec.ReadFrameAsync(server, _maxFrameBytes, token).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        return;
                     }
                     catch (InvalidDataException ex)
                     {
@@ -192,16 +270,29 @@ namespace CarroDesk.Host.Ipc
 
                     var response = RpcProtocol.EncodeResult(call.Id, result);
                     var responseFrame = FrameCodec.EncodeFrame(response);
-                    await server.WriteAsync(responseFrame, 0, responseFrame.Length).ConfigureAwait(false);
-                    await server.FlushAsync().ConfigureAwait(false);
+                    await server.WriteAsync(responseFrame, 0, responseFrame.Length, token).ConfigureAwait(false);
+                    await server.FlushAsync(token).ConfigureAwait(false);
                 }
+            }
+            catch (OperationCanceledException)
+            {
+                // 服务端正在停止
+            }
+            catch (ObjectDisposedException)
+            {
+                // 服务端 Dispose 时强制关流
             }
             catch (Exception ex)
             {
-                _logger?.LogWarning("Ipc", "管道连接异常断开: " + ex.Message);
+                if (!token.IsCancellationRequested)
+                    _logger?.LogWarning("Ipc", "管道连接异常断开: " + ex.Message);
             }
             finally
             {
+                lock (_lifecycleLock)
+                {
+                    _activeStreams.Remove(server);
+                }
                 CleanupStream(server);
             }
         }

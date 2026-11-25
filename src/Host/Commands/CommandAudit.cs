@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
+using CarroDesk.Common;
 using Newtonsoft.Json;
 
 namespace CarroDesk.Host.Commands
@@ -42,7 +43,6 @@ namespace CarroDesk.Host.Commands
     public sealed class FileCommandAuditSink : ICommandAuditSink
     {
         private static readonly object FileLock = new object();
-        private static readonly UTF8Encoding Utf8NoBom = new UTF8Encoding(false);
 
         private readonly string _path;
         private readonly long _maxBytes;
@@ -60,25 +60,8 @@ namespace CarroDesk.Host.Commands
             if (entry == null) return;
             try
             {
-                var line = JsonConvert.SerializeObject(entry, Formatting.None) + Environment.NewLine;
-                var dir = Path.GetDirectoryName(_path);
-                if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-
-                lock (FileLock)
-                {
-                    try
-                    {
-                        var info = new FileInfo(_path);
-                        if (info.Exists && info.Length >= _maxBytes)
-                        {
-                            var backup = _path + ".1";
-                            if (File.Exists(backup)) File.Delete(backup);
-                            File.Move(_path, backup);
-                        }
-                    }
-                    catch { /* 轮转失败不阻断追加 */ }
-                    File.AppendAllText(_path, line, Utf8NoBom);
-                }
+                var line = JsonConvert.SerializeObject(entry, Formatting.None);
+                StaticLog.AppendRotatedLine(_path, line, _maxBytes, FileLock);
             }
             catch { /* 审计失败不影响执行结果 */ }
         }

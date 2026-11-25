@@ -149,9 +149,11 @@ namespace CarroDesk.Services
         {
             lock (_sync)
             {
+                _stateLoaded = true;
                 _fails = 0;
                 _blockedUntil = DateTime.MinValue;
                 _lastUpdateUtc = DateTime.MinValue;
+                PersistNoLock();
             }
         }
 

@@ -153,9 +153,15 @@ namespace CarroDesk.Host.Ipc
 
                 var error = obj["error"] as JObject;
                 if (error != null)
+                {
+                    var codeToken = error["code"];
+                    int code = (codeToken != null && codeToken.Type == JTokenType.Integer)
+                        ? (int)codeToken
+                        : CommandErrorCodes.Internal;
                     return CommandResult.Fail(
-                        (int)error["code"],
+                        code,
                         (string)error["message"] ?? "unknown error");
+                }
 
                 if (obj["result"] != null)
                     return CommandResult.Success(

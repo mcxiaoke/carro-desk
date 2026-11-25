@@ -399,7 +399,7 @@ namespace CarroDesk.Services
                 catch
                 {
                     if (hadPrevious) _moduleConfigs[moduleId] = previous;
-                    else _moduleConfigs[moduleId] = null;
+                    else _moduleConfigs.Remove(moduleId);
                     throw;
                 }
             }

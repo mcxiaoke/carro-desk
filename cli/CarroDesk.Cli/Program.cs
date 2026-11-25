@@ -27,8 +27,8 @@ namespace CarroDesk.Cli
                 if (args != null && args.Length > 0
                     && string.Equals(args[0], "--mcp", StringComparison.OrdinalIgnoreCase))
                 {
-                    // S4：MCP stdio 瘦进程——stdout 只输出协议 JSON，日志走 stderr
-                    return McpStdioServer.Run(Console.In, Console.Out, Console.Error, () => new PipeRpcClient());
+                    // S4：MCP stdio 瘦进程——stdout 只输出协议 JSON，日志走 stderr（无 BOM UTF-8）
+                    return McpStdioServer.RunStdio(() => new PipeRpcClient());
                 }
 
                 // 人肉 / AI 自助发现入口：--help / -h / help / ctl help / --version / -v
@@ -58,9 +58,10 @@ namespace CarroDesk.Cli
                     return 1;
                 }
 
-                // --timeout 同时约束连接与等待响应：宿主卡死时 CLI 必须有界退出（H7）
-                int timeoutMs = parsed.TimeoutMs > 0 ? parsed.TimeoutMs : 3000;
-                var client = new PipeRpcClient(parsed.PipeName, timeoutMs, timeoutMs);
+                // --timeout 同时约束连接（上限 3s，宿主未启动时快速失败）与等待响应（未指定时默认 35s，覆盖 services.* 30s）
+                int connectTimeoutMs = parsed.TimeoutMs > 0 ? Math.Min(parsed.TimeoutMs, 3000) : 3000;
+                int readTimeoutMs = parsed.TimeoutMs > 0 ? parsed.TimeoutMs : 35000;
+                var client = new PipeRpcClient(parsed.PipeName, connectTimeoutMs, readTimeoutMs);
                 return ControlForwarder.Forward(parsed, client, Console.Out, Console.Error);
             }
             catch (Exception ex)

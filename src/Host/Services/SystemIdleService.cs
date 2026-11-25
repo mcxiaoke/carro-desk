@@ -61,6 +61,7 @@ namespace CarroDesk.Host.Services
         private volatile bool _isSystemBusy;
         private volatile bool _disposed;
         private int _tickCount;
+        private int _tickBusy;
 
         public TimeSpan RawIdle
         {
@@ -98,70 +99,84 @@ namespace CarroDesk.Host.Services
 
         public void Start()
         {
-            if (_disposed) return;
-            _timer.Change(0, 1000);
+            lock (_handlerLock)
+            {
+                if (_disposed) return;
+                _timer.Change(0, 1000);
+            }
         }
 
         public void Stop()
         {
-            if (_disposed) return;
-            _timer.Change(Timeout.Infinite, Timeout.Infinite);
+            lock (_handlerLock)
+            {
+                if (_disposed) return;
+                _timer.Change(Timeout.Infinite, Timeout.Infinite);
+            }
         }
 
         private void RefreshLazy()
         {
-            if (_disposed) return;
-
-            bool hasConsumers;
             lock (_handlerLock)
             {
-                hasConsumers = _idleTickHandlers != null || _userActiveHandlers != null || _systemBusyHandlers != null;
+                if (_disposed) return;
+                bool hasConsumers = _idleTickHandlers != null || _userActiveHandlers != null || _systemBusyHandlers != null;
+                if (hasConsumers) _timer.Change(0, 1000);
+                else _timer.Change(Timeout.Infinite, Timeout.Infinite);
             }
-
-            if (hasConsumers) Start(); else Stop();
         }
 
         private void Tick(object state)
         {
             if (_disposed) return;
+            if (Interlocked.CompareExchange(ref _tickBusy, 1, 0) != 0) return;
 
-            TimeSpan raw = GetRawIdle();
-            // 边沿触发：与"上一拍的物理空闲"比较，仅当由"空闲"变为"活跃"时才广播一次。
-            // 旧实现用 `_rawIdleTicks <= 0` 判断上一拍，几乎只在首拍成立，导致用户活跃期间每秒误触发。
-            long prevIdleTicks = Interlocked.Exchange(ref _rawIdleTicks, raw.Ticks);
-            bool wasActive = prevIdleTicks <= ActiveIdleThresholdTicks;
-            bool isActive = raw.Ticks <= ActiveIdleThresholdTicks;
-
-            // 在锁内取快照、在锁外调用：既保证读到完整委托链，又不持锁执行外部代码
-            Action<TimeSpan> idleHandlers;
-            lock (_handlerLock) { idleHandlers = _idleTickHandlers; }
-            if (idleHandlers != null)
+            try
             {
-                foreach (Action<TimeSpan> handler in idleHandlers.GetInvocationList())
-                {
-                    try { handler(raw); } catch { }
-                }
-            }
+                if (_disposed) return;
 
-            if (isActive && !wasActive)
-            {
-                Action activeHandlers;
-                lock (_handlerLock) { activeHandlers = _userActiveHandlers; }
-                if (activeHandlers != null)
+                TimeSpan raw = GetRawIdle();
+                // 边沿触发：与"上一拍的物理空闲"比较，仅当由"空闲"变为"活跃"时才广播一次。
+                // 旧实现用 `_rawIdleTicks <= 0` 判断上一拍，几乎只在首拍成立，导致用户活跃期间每秒误触发。
+                long prevIdleTicks = Interlocked.Exchange(ref _rawIdleTicks, raw.Ticks);
+                bool wasActive = prevIdleTicks <= ActiveIdleThresholdTicks;
+                bool isActive = raw.Ticks <= ActiveIdleThresholdTicks;
+
+                // 在锁内取快照、在锁外调用：既保证读到完整委托链，又不持锁执行外部代码
+                Action<TimeSpan> idleHandlers;
+                lock (_handlerLock) { idleHandlers = _idleTickHandlers; }
+                if (idleHandlers != null)
                 {
-                    foreach (Action handler in activeHandlers.GetInvocationList())
+                    foreach (Action<TimeSpan> handler in idleHandlers.GetInvocationList())
                     {
-                        try { handler(); } catch { }
+                        try { handler(raw); } catch { }
                     }
                 }
-            }
 
-            // 每 2 次 tick（约 2 秒）轮询一次系统忙碌状态。
-            // 原先用 "DateTime.UtcNow 秒数 % 2 == 0" 判断，受计时抖动影响会出现
-            // 某个 2 秒窗口触发 0 次或 2 次的情况；改为按 tick 计数，节奏确定。
-            if ((Interlocked.Increment(ref _tickCount) & 1) == 0)
+                if (isActive && !wasActive)
+                {
+                    Action activeHandlers;
+                    lock (_handlerLock) { activeHandlers = _userActiveHandlers; }
+                    if (activeHandlers != null)
+                    {
+                        foreach (Action handler in activeHandlers.GetInvocationList())
+                        {
+                            try { handler(); } catch { }
+                        }
+                    }
+                }
+
+                // 每 2 次 tick（约 2 秒）轮询一次系统忙碌状态。
+                // 原先用 "DateTime.UtcNow 秒数 % 2 == 0" 判断，受计时抖动影响会出现
+                // 某个 2 秒窗口触发 0 次或 2 次的情况；改为按 tick 计数，节奏确定。
+                if ((Interlocked.Increment(ref _tickCount) & 1) == 0)
+                {
+                    PollBusy();
+                }
+            }
+            finally
             {
-                PollBusy();
+                Interlocked.Exchange(ref _tickBusy, 0);
             }
         }
 
@@ -220,10 +235,12 @@ namespace CarroDesk.Host.Services
 
         public void Dispose()
         {
-            if (_disposed) return;
-            _disposed = true;
-
-            try { _timer.Change(Timeout.Infinite, Timeout.Infinite); } catch { }
+            lock (_handlerLock)
+            {
+                if (_disposed) return;
+                _disposed = true;
+                try { _timer.Change(Timeout.Infinite, Timeout.Infinite); } catch { }
+            }
             try { _timer.Dispose(); } catch { }
         }
     }

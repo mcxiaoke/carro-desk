@@ -731,6 +731,49 @@ namespace CarroDesk.Tests
             }
         }
 
+        [TestMethod]
+        public void Invoke_CancellableTimeout_DefersCtsDisposeUntilLateCompletion()
+        {
+            var waitingStarted = new ManualResetEventSlim(false);
+            var lateCompleted = new ManualResetEventSlim(false);
+            Exception lateError = null;
+
+            var host = BuildHost(r => r.Register("test", new CommandDescriptor
+            {
+                Name = "test.slow_wait",
+                Summary = "慢取消",
+                Risk = CommandRisk.ReadOnly,
+                TimeoutMs = 50,
+                CancellableHandler = (req, token) =>
+                {
+                    waitingStarted.Set();
+                    try
+                    {
+                        // 模拟超时后短暂停留再读取 WaitHandle（如 ServiceController 轮询尾部）
+                        Thread.Sleep(120);
+                        var signaled = token.WaitHandle.WaitOne(0);
+                        if (!signaled) lateError = new InvalidOperationException("token was not cancelled");
+                    }
+                    catch (Exception ex)
+                    {
+                        lateError = ex;
+                    }
+                    finally
+                    {
+                        lateCompleted.Set();
+                    }
+                    return CommandResult.Success("late");
+                }
+            }));
+
+            var result = host.Invoke(CommandRequest.Create("test.slow_wait"));
+            Assert.IsFalse(result.Ok);
+            Assert.AreEqual(CommandErrorCodes.Timeout, result.Error.Code);
+            Assert.IsTrue(waitingStarted.Wait(1000));
+            Assert.IsTrue(lateCompleted.Wait(2000), "后台任务应正常结束");
+            Assert.IsNull(lateError, "超时后后台读取 WaitHandle 不应触发 ObjectDisposedException: " + lateError);
+        }
+
         private static void TryDelete(string path)
         {
             try { if (System.IO.File.Exists(path)) System.IO.File.Delete(path); } catch { }

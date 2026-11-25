@@ -105,19 +105,22 @@ namespace CarroDesk.Common
             try
             {
                 DateTime cutoff = DateTime.UtcNow - maxAge;
-                foreach (var path in Directory.GetFiles(directory, "*.tmp.*"))
+                foreach (var pattern in new[] { "*.tmp.*", "*.bak.*" })
                 {
-                    try
+                    foreach (var path in Directory.GetFiles(directory, pattern))
                     {
-                        if (!IsOwnTempFile(path)) continue;
-                        if (File.GetLastWriteTimeUtc(path) > cutoff) continue;
+                        try
+                        {
+                            if (!IsOwnArtifactFile(path)) continue;
+                            if (File.GetLastWriteTimeUtc(path) > cutoff) continue;
 
-                        File.Delete(path);
-                        removed++;
-                    }
-                    catch
-                    {
-                        // 单个文件删除失败（被占用等）不影响其余清理
+                            File.Delete(path);
+                            removed++;
+                        }
+                        catch
+                        {
+                            // 单个文件删除失败（被占用等）不影响其余清理
+                        }
                     }
                 }
             }
@@ -128,15 +131,19 @@ namespace CarroDesk.Common
             return removed;
         }
 
-        /// <summary>判断文件名是否为 WriteAllText 生成的 "xxx.tmp.&lt;32位十六进制&gt;" 形态。</summary>
-        private static bool IsOwnTempFile(string path)
+        /// <summary>判断文件名是否为 WriteAllText 生成的 "xxx.tmp.&lt;32位十六进制&gt;" 或 "xxx.bak.&lt;32位十六进制&gt;" 形态。</summary>
+        private static bool IsOwnArtifactFile(string path)
         {
             string name = Path.GetFileName(path);
-            const string marker = ".tmp.";
-            int idx = name.LastIndexOf(marker, StringComparison.Ordinal);
+            int idx = name.LastIndexOf(".tmp.", StringComparison.Ordinal);
+            int markerLen = 5;
+            if (idx < 0)
+            {
+                idx = name.LastIndexOf(".bak.", StringComparison.Ordinal);
+            }
             if (idx < 0) return false;
 
-            string suffix = name.Substring(idx + marker.Length);
+            string suffix = name.Substring(idx + markerLen);
             if (suffix.Length != 32) return false;
 
             for (int i = 0; i < suffix.Length; i++)

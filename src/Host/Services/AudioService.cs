@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows.Interop;
 using System.Windows.Threading;
@@ -47,6 +48,7 @@ namespace CarroDesk.Host.Services
         private bool _deviceNotifyStarted;
         private DispatcherTimer _deviceChangeDebounceTimer;
         private string _lastDefaultDeviceId;
+        private string _lastDeviceSignature;
         private bool _hasLastDefaultSample;
         private bool _deviceWatchStopped;
 
@@ -120,6 +122,9 @@ namespace CarroDesk.Host.Services
                                 IntPtr.Zero,
                                 DEVICE_NOTIFY_WINDOW_HANDLE | DEVICE_NOTIFY_ALL_CLASSES);
                             _lastDefaultDeviceId = GetDefaultPlaybackDevice()?.Id;
+                            _lastDeviceSignature = string.Join("|", GetPlaybackDevices()
+                                .Select(dev => dev.Id)
+                                .OrderBy(id => id, StringComparer.OrdinalIgnoreCase));
                             _hasLastDefaultSample = true;
                             _deviceNotifyStarted = true;
                         }
@@ -129,7 +134,7 @@ namespace CarroDesk.Host.Services
                         /* intentionally ignored: device notification is a convenience, audio must keep working without it */
                         Debug.WriteLine("[AudioService] StartDeviceNotifications failed: " + ex.Message);
                         _deviceNotifyStarted = false;
-                        CleanupWindowLocked();
+                        CleanupWindowLocked(allowUiCleanup: true);
                     }
                 }
             }
@@ -157,45 +162,72 @@ namespace CarroDesk.Host.Services
                 d = _dispatcher;
             }
 
-            void StopCore()
+            void StopUiCore()
             {
                 lock (_deviceWatchLock)
                 {
-                    CleanupWindowLocked();
+                    CleanupWindowLocked(allowUiCleanup: true);
                 }
             }
 
-            if (d == null || d.HasShutdownStarted || d.HasShutdownFinished || d.CheckAccess()) StopCore();
-            else
+            if (d == null || d.CheckAccess())
             {
-                try { d.Invoke(StopCore); } catch { StopCore(); }
+                bool onOwnerThread = d == null || d.Thread == System.Threading.Thread.CurrentThread;
+                lock (_deviceWatchLock)
+                {
+                    CleanupWindowLocked(allowUiCleanup: onOwnerThread);
+                }
+                return;
+            }
+
+            if (!d.HasShutdownStarted && !d.HasShutdownFinished)
+            {
+                try
+                {
+                    d.Invoke(StopUiCore);
+                    return;
+                }
+                catch { }
+            }
+
+            // Dispatcher 已开始/完成关闭或跨线程 Invoke 失败：避免跨线程直接 Dispose HwndSource 抛异常，
+            // 仍须安全注销 Win32 设备通知句柄并清空引用。
+            lock (_deviceWatchLock)
+            {
+                CleanupWindowLocked(allowUiCleanup: false);
             }
         }
 
-        private void CleanupWindowLocked()
+        private void CleanupWindowLocked(bool allowUiCleanup)
         {
-            try
+            if (_deviceNotifyHandle != IntPtr.Zero)
             {
-                if (_deviceNotifyHandle != IntPtr.Zero)
-                {
-                    try { UnregisterDeviceNotification(_deviceNotifyHandle); } catch { }
-                    _deviceNotifyHandle = IntPtr.Zero;
-                }
-                if (_deviceChangeDebounceTimer != null)
-                {
-                    _deviceChangeDebounceTimer.Stop();
-                    _deviceChangeDebounceTimer = null;
-                }
-                if (_deviceNotifyWindow != null)
-                {
-                    _deviceNotifyWindow.RemoveHook(DeviceWndProc);
-                    _deviceNotifyWindow.Dispose();
-                    _deviceNotifyWindow = null;
-                }
+                try { UnregisterDeviceNotification(_deviceNotifyHandle); } catch { }
+                _deviceNotifyHandle = IntPtr.Zero;
             }
-            catch (Exception ex)
+            if (_deviceChangeDebounceTimer != null)
             {
-                Debug.WriteLine("[AudioService] CleanupWindow failed: " + ex.Message);
+                if (allowUiCleanup)
+                {
+                    try { _deviceChangeDebounceTimer.Stop(); } catch { }
+                }
+                _deviceChangeDebounceTimer = null;
+            }
+            if (_deviceNotifyWindow != null)
+            {
+                if (allowUiCleanup)
+                {
+                    try
+                    {
+                        _deviceNotifyWindow.RemoveHook(DeviceWndProc);
+                        _deviceNotifyWindow.Dispose();
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine("[AudioService] CleanupWindow failed: " + ex.Message);
+                    }
+                }
+                _deviceNotifyWindow = null;
             }
         }
 
@@ -240,7 +272,15 @@ namespace CarroDesk.Host.Services
         public void RaiseDevicesChanged()
         {
             string currentId = null;
-            try { currentId = GetDefaultPlaybackDevice()?.Id; }
+            string currentSig = null;
+            try
+            {
+                currentId = GetDefaultPlaybackDevice()?.Id;
+                var devices = GetPlaybackDevices();
+                currentSig = string.Join("|", devices
+                    .Select(d => d.Id)
+                    .OrderBy(id => id, StringComparer.OrdinalIgnoreCase));
+            }
             catch (Exception ex)
             {
                 Debug.WriteLine("[AudioService] RaiseDevicesChanged probe failed: " + ex.Message);
@@ -249,11 +289,13 @@ namespace CarroDesk.Host.Services
             lock (_deviceWatchLock)
             {
                 if (_hasLastDefaultSample &&
-                    string.Equals(currentId, _lastDefaultDeviceId, StringComparison.OrdinalIgnoreCase))
+                    string.Equals(currentId, _lastDefaultDeviceId, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(currentSig, _lastDeviceSignature, StringComparison.OrdinalIgnoreCase))
                 {
                     return;
                 }
                 _lastDefaultDeviceId = currentId;
+                _lastDeviceSignature = currentSig;
                 _hasLastDefaultSample = true;
             }
 
@@ -415,91 +457,17 @@ namespace CarroDesk.Host.Services
                 : processName;
 
             bool anyModified = false;
-
-            try
+            ForEachRenderSession("SetProcessMute", (sessionControl, pid, procName) =>
             {
-                if (_deviceEnumerator.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eMultimedia, out var device) == 0 && device != null)
+                if (string.Equals(procName, targetName, StringComparison.OrdinalIgnoreCase) &&
+                    sessionControl is ISimpleAudioVolume volume)
                 {
-                    try
-                    {
-                        var iid = typeof(IAudioSessionManager2).GUID;
-                        if (device.Activate(ref iid, 0, IntPtr.Zero, out var sessionMgrObj) == 0 && sessionMgrObj is IAudioSessionManager2 sessionManager)
-                        {
-                            try
-                            {
-                                if (sessionManager.GetSessionEnumerator(out var sessionEnum) == 0 && sessionEnum != null)
-                                {
-                                    try
-                                    {
-                                        sessionEnum.GetCount(out int count);
-                                        for (int i = 0; i < count; i++)
-                                        {
-                                            if (sessionEnum.GetSession(i, out var sessionControl) == 0 && sessionControl != null)
-                                            {
-                                                try
-                                                {
-                                                    if (sessionControl is IAudioSessionControl2 sessionControl2)
-                                                    {
-                                                        sessionControl2.GetProcessId(out uint pid);
-                                                        if (pid > 0)
-                                                        {
-                                                            string procName = null;
-                                                            try
-                                                            {
-                                                                using (var proc = Process.GetProcessById((int)pid))
-                                                                {
-                                                                    procName = proc.ProcessName;
-                                                                }
-                                                            }
-                                                            catch (Exception ex)
-                                                            {
-                                                                /* intentionally ignored: process may exit or access denied during iteration */
-                                                                Debug.WriteLine($"[AudioService] GetProcessById({pid}) failed: {ex.Message}");
-                                                            }
-
-                                                            if (!string.IsNullOrEmpty(procName) && string.Equals(procName, targetName, StringComparison.OrdinalIgnoreCase))
-                                                            {
-                                                                if (sessionControl is ISimpleAudioVolume volume)
-                                                                {
-                                                                    Guid ctx = Guid.Empty;
-                                                                    int hr = volume.SetMute(mute, ref ctx);
-                                                                    if (hr == 0) anyModified = true;
-                                                                    else Debug.WriteLine($"[AudioService] SetMute failed for pid={pid}, hr=0x{hr:X8}");
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                                finally
-                                                {
-                                                    Marshal.ReleaseComObject(sessionControl);
-                                                }
-                                            }
-                                        }
-                                    }
-                                    finally
-                                    {
-                                        Marshal.ReleaseComObject(sessionEnum);
-                                    }
-                                }
-                            }
-                            finally
-                            {
-                                Marshal.ReleaseComObject(sessionManager);
-                            }
-                        }
-                    }
-                    finally
-                    {
-                        Marshal.ReleaseComObject(device);
-                    }
+                    Guid ctx = Guid.Empty;
+                    int hr = volume.SetMute(mute, ref ctx);
+                    if (hr == 0) anyModified = true;
+                    else Debug.WriteLine($"[AudioService] SetMute failed for pid={pid}, hr=0x{hr:X8}");
                 }
-            }
-            catch (Exception ex)
-            {
-                /* intentionally ignored: audio session enumeration failed (device removed or CoreAudio restart) */
-                Debug.WriteLine($"[AudioService] SetProcessMute failed: {ex.Message}");
-            }
+            });
 
             return anyModified;
         }
@@ -556,84 +524,93 @@ namespace CarroDesk.Host.Services
             var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (_deviceEnumerator == null) return new List<string>();
 
+            ForEachRenderSession("GetActiveAudioProcesses", (sessionControl, pid, procName) =>
+            {
+                result.Add(procName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? procName : procName + ".exe");
+            });
+
+            return new List<string>(result);
+        }
+
+        private void ForEachRenderSession(string callerName, Action<IAudioSessionControl, uint, string> visitor)
+        {
             try
             {
-                if (_deviceEnumerator.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eMultimedia, out var device) == 0 && device != null)
+                if (_deviceEnumerator.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eMultimedia, out var device) != 0 || device == null)
+                    return;
+
+                try
                 {
+                    var iid = typeof(IAudioSessionManager2).GUID;
+                    if (device.Activate(ref iid, 0, IntPtr.Zero, out var sessionMgrObj) != 0 || !(sessionMgrObj is IAudioSessionManager2 sessionManager))
+                        return;
+
                     try
                     {
-                        var iid = typeof(IAudioSessionManager2).GUID;
-                        if (device.Activate(ref iid, 0, IntPtr.Zero, out var sessionMgrObj) == 0 && sessionMgrObj is IAudioSessionManager2 sessionManager)
+                        if (sessionManager.GetSessionEnumerator(out var sessionEnum) != 0 || sessionEnum == null)
+                            return;
+
+                        try
                         {
-                            try
+                            sessionEnum.GetCount(out int count);
+                            for (int i = 0; i < count; i++)
                             {
-                                if (sessionManager.GetSessionEnumerator(out var sessionEnum) == 0 && sessionEnum != null)
+                                if (sessionEnum.GetSession(i, out var sessionControl) != 0 || sessionControl == null)
+                                    continue;
+
+                                try
                                 {
+                                    if (!(sessionControl is IAudioSessionControl2 sessionControl2))
+                                        continue;
+
+                                    sessionControl2.GetProcessId(out uint pid);
+                                    if (pid == 0) continue;
+
+                                    string procName = null;
                                     try
                                     {
-                                        sessionEnum.GetCount(out int count);
-                                        for (int i = 0; i < count; i++)
+                                        using (var proc = Process.GetProcessById((int)pid))
                                         {
-                                            if (sessionEnum.GetSession(i, out var sessionControl) == 0 && sessionControl != null)
-                                            {
-                                                try
-                                                {
-                                                    if (sessionControl is IAudioSessionControl2 sessionControl2)
-                                                    {
-                                                        sessionControl2.GetProcessId(out uint pid);
-                                                        if (pid > 0)
-                                                        {
-                                                            try
-                                                            {
-                                                                using (var proc = Process.GetProcessById((int)pid))
-                                                                {
-                                                                    string pName = proc.ProcessName;
-                                                                    if (!string.IsNullOrEmpty(pName))
-                                                                    {
-                                                                        result.Add(pName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? pName : pName + ".exe");
-                                                                    }
-                                                                }
-                                                            }
-                                                            catch (Exception ex)
-                                                            {
-                                                                /* intentionally ignored: process exited or access denied during active process iteration */
-                                                                Debug.WriteLine($"[AudioService] Active session GetProcessById({pid}) failed: {ex.Message}");
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                                finally
-                                                {
-                                                    Marshal.ReleaseComObject(sessionControl);
-                                                }
-                                            }
+                                            procName = proc.ProcessName;
                                         }
                                     }
-                                    finally
+                                    catch (Exception ex)
                                     {
-                                        Marshal.ReleaseComObject(sessionEnum);
+                                        /* intentionally ignored: process exited or access denied during iteration */
+                                        Debug.WriteLine($"[AudioService] {callerName} GetProcessById({pid}) failed: {ex.Message}");
+                                    }
+
+                                    if (!string.IsNullOrEmpty(procName))
+                                    {
+                                        visitor(sessionControl, pid, procName);
                                     }
                                 }
+                                finally
+                                {
+                                    Marshal.ReleaseComObject(sessionControl);
+                                }
                             }
-                            finally
-                            {
-                                Marshal.ReleaseComObject(sessionManager);
-                            }
+                        }
+                        finally
+                        {
+                            Marshal.ReleaseComObject(sessionEnum);
                         }
                     }
                     finally
                     {
-                        Marshal.ReleaseComObject(device);
+                        Marshal.ReleaseComObject(sessionManager);
                     }
+                }
+                finally
+                {
+                    Marshal.ReleaseComObject(device);
                 }
             }
             catch (Exception ex)
             {
-                /* intentionally ignored: audio session iteration failed (device disconnected) */
-                Debug.WriteLine($"[AudioService] GetActiveAudioProcesses failed: {ex.Message}");
+                /* intentionally ignored: audio session iteration failed (device disconnected or CoreAudio restart) */
+                Debug.WriteLine($"[AudioService] {callerName} failed: {ex.Message}");
             }
-
-            return new List<string>(result);
         }
 
         public void Dispose()

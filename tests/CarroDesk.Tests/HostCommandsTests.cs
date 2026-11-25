@@ -177,5 +177,42 @@ namespace CarroDesk.Tests
             Assert.AreEqual("per-request", (string)find("test.dynamic")["pinPolicy"]);
             Assert.AreEqual("none", (string)find("test.none")["pinPolicy"]);
         }
+
+        [TestMethod]
+        public void ComputeHash_ChangesWhenParamsOrPinPolicyChange()
+        {
+            var cmd1 = new CommandDescriptor
+            {
+                Name = "test.cmd",
+                Summary = "cmd",
+                Risk = CommandRisk.ReadOnly,
+                Params = new[] { new CommandParam { Name = "p", Type = "string", Required = false } },
+                Handler = r => CommandResult.Success()
+            };
+            var cmd2 = new CommandDescriptor
+            {
+                Name = "test.cmd",
+                Summary = "cmd",
+                Risk = CommandRisk.ReadOnly,
+                Params = new[] { new CommandParam { Name = "p", Type = "int", Required = true } },
+                Handler = r => CommandResult.Success()
+            };
+            var cmd3 = new CommandDescriptor
+            {
+                Name = "test.cmd",
+                Summary = "cmd",
+                Risk = CommandRisk.ReadOnly,
+                RequiresPinFor = r => true,
+                Params = new[] { new CommandParam { Name = "p", Type = "string", Required = false } },
+                Handler = r => CommandResult.Success()
+            };
+
+            string h1 = HostCommands.ComputeHash(new[] { cmd1 });
+            string h2 = HostCommands.ComputeHash(new[] { cmd2 });
+            string h3 = HostCommands.ComputeHash(new[] { cmd3 });
+
+            Assert.AreNotEqual(h1, h2, "Params 类型或 Required 变更必须改变哈希");
+            Assert.AreNotEqual(h1, h3, "pinPolicy 从 none 变为 per-request 必须改变哈希");
+        }
     }
 }

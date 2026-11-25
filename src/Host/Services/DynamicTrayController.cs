@@ -219,51 +219,7 @@ namespace CarroDesk.Host.Services
 
         private void DetachVisual(IModule module, object visual)
         {
-            if (visual is MenuItem menuItem)
-            {
-                menuItem.Click -= OnToggleClick;
-            }
-            if (visual is ItemsControl itemsControl)
-            {
-                BindingOperations.ClearAllBindings(itemsControl);
-                var children = new List<object>();
-                foreach (var child in itemsControl.Items)
-                {
-                    children.Add(child);
-                }
-                foreach (var child in children)
-                {
-                    DetachVisual(module, child);
-                }
-                itemsControl.Items.Clear();
-            }
-            else if (visual is FrameworkElement fe)
-            {
-                BindingOperations.ClearAllBindings(fe);
-            }
-        }
-
-        private void OnToggleClick(object sender, RoutedEventArgs e)
-        {
-            var menuItem = sender as MenuItem;
-            var node = menuItem != null ? menuItem.DataContext as TrayMenuItem : null;
-            if (node == null || node.Command != null || node.ClickAction == null)
-            {
-                return;
-            }
-            try
-            {
-                node.ClickAction();
-            }
-            catch (Exception ex)
-            {
-                // ClickAction 异常由 Host 记日志并气泡一次，禁止静默吞
-                IModule module = null;
-                if (!_nodeOwner.TryGetValue(node, out module)) module = null;
-                TryLog(module, "托盘菜单点击执行异常（ClickAction）", ex);
-                try { _notify?.Invoke((node.Header ?? Loc.T("Msg.TrayAction", "托盘操作")) + " " + Loc.T("Msg.TrayActionFailed", "执行失败"), "CarroDesk"); }
-                catch { }
-            }
+            MenuProjectionEngine.DetachVisual(visual);
         }
 
         // ---- 构建 ----

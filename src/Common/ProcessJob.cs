@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Threading;
 
 namespace CarroDesk.Common
 {
@@ -150,12 +151,12 @@ namespace CarroDesk.Common
 
         public void Dispose()
         {
-            var handle = _handle;
-            _handle = IntPtr.Zero;
+            var handle = Interlocked.Exchange(ref _handle, IntPtr.Zero);
             if (handle == IntPtr.Zero) return;
 
             try { CloseHandle(handle); }
             catch (Exception ex) { Debug.WriteLine("[ProcessJob] CloseHandle failed: " + ex.Message); }
+            GC.SuppressFinalize(this);
         }
 
         /// <summary>
@@ -168,8 +169,7 @@ namespace CarroDesk.Common
         {
             try
             {
-                var handle = _handle;
-                _handle = IntPtr.Zero;
+                var handle = Interlocked.Exchange(ref _handle, IntPtr.Zero);
                 if (handle != IntPtr.Zero) CloseHandle(handle);
             }
             catch

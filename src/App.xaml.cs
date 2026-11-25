@@ -226,8 +226,7 @@ namespace CarroDesk
             var commandRegistry = new CommandRegistry();
             try
             {
-                commandRegistry.Rebuild(Modules.CollectCommands());
-                HostCommands.Install(commandRegistry, Modules);
+                commandRegistry.Rebuild(Modules.CollectCommands().Concat(HostCommands.CreateDescriptors(commandRegistry, Modules)));
             }
             catch (Exception ex)
             {
@@ -394,8 +393,7 @@ namespace CarroDesk
                 var commandRegistry = Services?.GetService<CommandRegistry>();
                 if (commandRegistry != null && Modules != null)
                 {
-                    commandRegistry.Rebuild(Modules.CollectCommands());
-                    HostCommands.Install(commandRegistry, Modules);
+                    commandRegistry.Rebuild(Modules.CollectCommands().Concat(HostCommands.CreateDescriptors(commandRegistry, Modules)));
                 }
             }
             catch (Exception ex)
@@ -661,8 +659,7 @@ namespace CarroDesk
                 }
                 else
                 {
-                    var path = Path.Combine(ConfigService.DirPath, "log.txt");
-                    File.AppendAllText(path, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [CRITICAL] {ex}{Environment.NewLine}");
+                    StaticLog.Critical("Host", "全局未处理异常", ex);
                 }
             }
             catch { /* intentionally ignored: file write failure during emergency logging */ }
@@ -672,7 +669,7 @@ namespace CarroDesk
         {
             IsShuttingDown = true;
             try { FloatingPanelWindow.ForceCloseIfOpen(); } catch { }
-            try { Modules?.StopAll(); } catch { /* intentionally ignored: best-effort stop during exit */ }
+            // ModuleManager.Dispose() 内部已包含 StopAll() 与逐模块释放，避免重复调用
             try { Modules?.Dispose(); } catch { /* intentionally ignored: best-effort module dispose */ }
             try { Services?.Dispose(); } catch { /* intentionally ignored: service container dispose */ }
             try

@@ -69,7 +69,10 @@ namespace CarroDesk.Host.Services
                 win.ShowDialog();
                 onClosed?.Invoke();
             }
-            catch { }
+            catch (Exception ex)
+            {
+                services?.GetService<ILoggerService>()?.LogError("HostMenu", "打开设置窗口失败", ex);
+            }
         }
 
         /// <summary>
@@ -117,8 +120,8 @@ namespace CarroDesk.Host.Services
                 catch (Exception ex)
                 {
                     config.Language = oldLang;
-                    services.GetService<ILoggerService>()?.LogError("HostMenu", "保存语言配置失败", ex);
-                    services.GetService<INotificationService>()?.Show(Loc.T("Config.SaveFailed"), "CarroDesk");
+                    services?.GetService<ILoggerService>()?.LogError("HostMenu", "保存语言配置失败", ex);
+                    services?.GetService<INotificationService>()?.Show(Loc.T("Config.SaveFailed"), "CarroDesk");
                     return;
                 }
             }
